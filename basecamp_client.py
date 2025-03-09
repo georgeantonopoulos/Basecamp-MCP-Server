@@ -164,11 +164,19 @@ class BasecampClient:
     # Campfire (chat) methods
     def get_campfires(self, project_id):
         """Get the campfire for a project."""
-        response = self.get(f'projects/{project_id}/campfire.json')
+        response = self.get(f'buckets/{project_id}/chats.json')
         if response.status_code == 200:
             return response.json()
         else:
             raise Exception(f"Failed to get campfire: {response.status_code} - {response.text}")
+    
+    def get_campfire_lines(self, project_id, campfire_id):
+        """Get chat lines from a campfire."""
+        response = self.get(f'buckets/{project_id}/chats/{campfire_id}/lines.json')
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to get campfire lines: {response.status_code} - {response.text}")
             
     # Message board methods
     def get_message_board(self, project_id):

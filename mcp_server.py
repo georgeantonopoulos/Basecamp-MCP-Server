@@ -12,6 +12,7 @@ from basecamp_client import BasecampClient
 from search_utils import BasecampSearch
 import token_storage  # Import the token storage module
 import requests  # For token refresh
+from flask_cors import CORS
 
 # Import MCP integration components, using try/except to catch any import errors
 try:
@@ -32,6 +33,34 @@ except Exception as e:
     print(f"Error importing MCP integration: {str(e)}")
     traceback.print_exc()
     sys.exit(1)
+
+# Helper function for consistent response format
+def mcp_response(data=None, status="success", error=None, message=None, status_code=200):
+    """
+    Generate a standardized MCP response.
+    
+    Args:
+        data: The response data
+        status: 'success' or 'error'
+        error: Error code in case of an error
+        message: Human-readable message
+        status_code: HTTP status code
+    
+    Returns:
+        tuple: JSON response and HTTP status code
+    """
+    response = {
+        "status": status
+    }
+    
+    if data is not None:
+        response.update(data)
+    
+    if status == "error":
+        response["error"] = error
+        response["message"] = message
+    
+    return jsonify(response), status_code
 
 # Configure logging with more verbose output
 logging.basicConfig(
@@ -317,57 +346,167 @@ def mcp_action():
                     "oauth_url": "http://localhost:8000/"
                 })
         
-        # Handle action based on type
-        try:
-            if action == 'get_projects':
-                client = get_basecamp_client(auth_mode='oauth')
-                projects = client.get_projects()
-                return jsonify({
-                    "status": "success",
-                    "projects": projects,
-                    "count": len(projects)
-                })
-            
-            elif action == 'search':
-                client = get_basecamp_client(auth_mode='oauth')
-                search = BasecampSearch(client=client)
-                
-                query = params.get('query', '')
-                include_completed = params.get('include_completed', False)
-                
-                logger.info(f"Searching with query: {query}")
-                
-                results = {
-                    "projects": search.search_projects(query),
-                    "todos": search.search_todos(query, include_completed=include_completed),
-                    "messages": search.search_messages(query),
-                }
-                
-                return jsonify({
-                    "status": "success",
-                    "results": results
-                })
-            
-            else:
-                logger.error(f"Unknown action: {action}")
-                return jsonify({
-                    "status": "error",
-                    "error": "unknown_action",
-                    "message": f"Unknown action: {action}"
-                })
-                
-        except Exception as action_error:
-            logger.error(f"Error executing action {action}: {str(action_error)}")
-            return jsonify({
-                "status": "error",
-                "error": "execution_failed",
-                "message": str(action_error)
+        # Create a Basecamp client
+        client = get_basecamp_client(auth_mode='oauth')
+        
+        # Handle actions
+        if action == 'get_projects':
+            projects = client.get_projects()
+            return mcp_response({
+                "projects": projects,
+                "count": len(projects)
             })
             
+        elif action == 'get_project':
+            project_id = params.get('project_id')
+            if not project_id:
+                return mcp_response(
+                    status="error",
+                    error="missing_parameter",
+                    message="Missing project_id parameter",
+                    status_code=400
+                )
+            
+            project = client.get_project(project_id)
+            return mcp_response({
+                "project": project
+            })
+            
+        elif action == 'get_todolists':
+            project_id = params.get('project_id')
+            if not project_id:
+                return mcp_response(
+                    status="error",
+                    error="missing_parameter",
+                    message="Missing project_id parameter",
+                    status_code=400
+                )
+            
+            todolists = client.get_todolists(project_id)
+            return mcp_response({
+                "todolists": todolists,
+                "count": len(todolists)
+            })
+            
+        elif action == 'get_todos':
+            todolist_id = params.get('todolist_id')
+            if not todolist_id:
+                return jsonify({"status": "error", "error": "missing_parameter", "message": "Missing todolist_id parameter"}), 400
+            
+            todos = client.get_todos(todolist_id)
+            return jsonify({
+                "status": "success",
+                "todos": todos,
+                "count": len(todos)
+            })
+            
+        elif action == 'create_todo':
+            todolist_id = params.get('todolist_id')
+            content = params.get('content')
+            
+            if not todolist_id or not content:
+                return jsonify({"status": "error", "error": "missing_parameter", "message": "Missing todolist_id or content parameter"}), 400
+            
+            todo = client.create_todo(
+                todolist_id=todolist_id,
+                content=content,
+                description=params.get('description', ''),
+                assignee_ids=params.get('assignee_ids', [])
+            )
+            
+            return jsonify({
+                "status": "success",
+                "todo": todo
+            })
+            
+        elif action == 'complete_todo':
+            todo_id = params.get('todo_id')
+            if not todo_id:
+                return jsonify({"status": "error", "error": "missing_parameter", "message": "Missing todo_id parameter"}), 400
+            
+            result = client.complete_todo(todo_id)
+            return jsonify({
+                "status": "success",
+                "result": result
+            })
+            
+        elif action == 'get_comments':
+            recording_id = params.get('recording_id')
+            bucket_id = params.get('bucket_id')
+            
+            if not recording_id or not bucket_id:
+                return jsonify({"status": "error", "error": "missing_parameter", "message": "Missing recording_id or bucket_id parameter"}), 400
+            
+            comments = client.get_comments(recording_id, bucket_id)
+            return jsonify({
+                "status": "success",
+                "comments": comments,
+                "count": len(comments)
+            })
+
+        elif action == 'get_campfire':
+            project_id = params.get('project_id')
+            if not project_id:
+                return jsonify({"status": "error", "error": "missing_parameter", "message": "Missing project_id parameter"}), 400
+            
+            campfire = client.get_campfires(project_id)
+            return jsonify({
+                "status": "success",
+                "campfire": campfire
+            })
+            
+        elif action == 'get_campfire_lines':
+            project_id = params.get('project_id')
+            campfire_id = params.get('campfire_id')
+            
+            if not project_id or not campfire_id:
+                return jsonify({"status": "error", "error": "missing_parameter", "message": "Missing project_id or campfire_id parameter"}), 400
+            
+            try:
+                lines = client.get_campfire_lines(project_id, campfire_id)
+                return jsonify({
+                    "status": "success",
+                    "lines": lines,
+                    "count": len(lines)
+                })
+            except Exception as e:
+                return jsonify({
+                    "status": "error",
+                    "error": "api_error",
+                    "message": str(e)
+                }), 500
+            
+        elif action == 'search':
+            search = BasecampSearch(client=client)
+            query = params.get('query', '')
+            include_completed = params.get('include_completed', False)
+            
+            logger.info(f"Searching with query: {query}")
+            
+            results = {
+                "projects": search.search_projects(query),
+                "todos": search.search_todos(query, include_completed=include_completed),
+                "messages": search.search_messages(query),
+            }
+            
+            return jsonify({
+                "status": "success",
+                "results": results
+            })
+            
+        else:
+            return jsonify({
+                "status": "error",
+                "error": "unknown_action", 
+                "message": f"Unknown action: {action}"
+            }), 400
+            
     except Exception as e:
-        logger.error(f"Error in MCP action endpoint: {str(e)}")
+        logger.error(f"Error in mcp_action: {str(e)}", exc_info=True)
         return jsonify({
-            "error": str(e)
+            "status": "error",
+            "error": "server_error",
+            "message": str(e)
         }), 500
 
 @app.route('/')

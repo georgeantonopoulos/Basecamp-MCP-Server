@@ -499,9 +499,60 @@ class BasecampSearch:
                     if content_matched:
                         filtered_comments.append(comment)
                 
-                comments = filtered_comments
-            
+                return filtered_comments
+                
             return comments
         except Exception as e:
             logger.error(f"Error searching comments: {str(e)}")
+            return []
+    
+    def search_campfire_lines(self, query=None, project_id=None, campfire_id=None):
+        """
+        Search for lines in campfire chats.
+        
+        Args:
+            query (str, optional): Search term to filter lines
+            project_id (int, optional): Project ID
+            campfire_id (int, optional): Campfire ID
+            
+        Returns:
+            list: Matching chat lines
+        """
+        try:
+            if not project_id or not campfire_id:
+                logger.warning("Cannot search campfire lines without project_id and campfire_id")
+                return [{
+                    "content": "To search campfire lines, you need to specify both a project ID and a campfire ID.",
+                    "api_limitation": True,
+                    "title": "Campfire Search Limitation"
+                }]
+            
+            lines = self.client.get_campfire_lines(project_id, campfire_id)
+            
+            if query and lines:
+                query = query.lower()
+                
+                filtered_lines = []
+                for line in lines:
+                    # Check content
+                    content_matched = False
+                    content = line.get('content', '')
+                    if content and query in content.lower():
+                        content_matched = True
+                    
+                    # Check creator name
+                    if not content_matched and line.get('creator'):
+                        creator_name = line['creator'].get('name', '')
+                        if creator_name and query in creator_name.lower():
+                            content_matched = True
+                    
+                    # If matched, add to results
+                    if content_matched:
+                        filtered_lines.append(line)
+                
+                return filtered_lines
+            
+            return lines
+        except Exception as e:
+            logger.error(f"Error searching campfire lines: {str(e)}")
             return [] 

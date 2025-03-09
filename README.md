@@ -149,3 +149,17 @@ This method also checks for OAuth authentication and returns appropriate error m
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details. 
+
+## Recent Changes
+
+### March 9, 2024 - Improved MCP Server Functionality
+
+- Added standardized error and success response handling with new `mcp_response` helper function
+- Fixed API endpoint issues for Basecamp Campfire (chat) functionality:
+  - Updated the URL format for retrieving campfires from `projects/{project_id}/campfire.json` to `buckets/{project_id}/chats.json`
+  - Added support for retrieving campfire chat lines
+- Enhanced search capabilities to include campfire lines content
+- Improved error handling and response formatting across all action handlers
+- Fixed CORS support by adding the Flask-CORS package
+
+These changes ensure more reliable and consistent responses from the MCP server, particularly for Campfire chat functionality. 
