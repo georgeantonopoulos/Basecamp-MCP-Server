@@ -34,6 +34,14 @@ except Exception as e:
     traceback.print_exc()
     sys.exit(1)
 
+# Import Composio integration components
+try:
+    from composio_integration import get_schema, handle_composio_request
+except Exception as e:
+    print(f"Error importing Composio integration: {str(e)}")
+    traceback.print_exc()
+    # Don't exit since Composio integration is optional
+
 # Helper function for consistent response format
 def mcp_response(data=None, status="success", error=None, message=None, status_code=200):
     """
@@ -243,65 +251,38 @@ def handle_options(path):
 # MCP Info endpoint
 @app.route('/mcp/info', methods=['GET'])
 def mcp_info():
-    """Return information about this MCP server."""
-    logger.info("MCP info endpoint called")
-    try:
-        # Keep this operation lightweight - no external API calls here
-        return jsonify({
-            "name": "Basecamp",
-            "version": "1.0.0",
-            "description": "Basecamp 3 API integration for Cursor",
-            "author": "Cursor",
-            "actions": [
-                {
-                    "name": "get_required_parameters",
-                    "description": "Get required parameters for connecting to Basecamp"
-                },
-                {
-                    "name": "initiate_connection",
-                    "description": "Connect to Basecamp using credentials"
-                },
-                {
-                    "name": "check_active_connection",
-                    "description": "Check if the connection to Basecamp is active"
-                },
-                {
-                    "name": "get_projects",
-                    "description": "Get all projects with optional filtering"
-                },
-                {
-                    "name": "get_todo_lists",
-                    "description": "Get all to-do lists for a project"
-                },
-                {
-                    "name": "get_todos",
-                    "description": "Get all to-dos with various filters"
-                },
-                {
-                    "name": "get_comments",
-                    "description": "Get comments for a specific recording (todo, message, etc.)"
-                },
-                {
-                    "name": "create_comment",
-                    "description": "Create a comment on a recording"
-                },
-                {
-                    "name": "update_comment",
-                    "description": "Update a comment"
-                },
-                {
-                    "name": "delete_comment",
-                    "description": "Delete a comment"
-                },
-                {
-                    "name": "search_all",
-                    "description": "Search across all Basecamp resources"
-                }
-            ]
-        })
-    except Exception as e:
-        logger.error(f"Error in mcp_info: {str(e)}", exc_info=True)
-        return jsonify({"status": "error", "message": str(e)}), 500
+    """
+    Provides information about this MCP server.
+    """
+    server_info = {
+        "name": "Basecamp MCP Server",
+        "version": "1.0.0",
+        "description": "A MCP server for Basecamp 3",
+        "auth_modes": ["oauth"],
+        "actions": [
+            "get_projects",
+            "get_project",
+            "get_todosets",
+            "get_todolists",
+            "get_todolist",
+            "get_todos",
+            "get_todo",
+            "get_people",
+            "get_campfire",
+            "get_campfire_lines",
+            "get_message_board",
+            "get_messages",
+            "get_schedule",
+            "get_schedule_entries",
+            "get_comments",
+            "create_comment",
+            "update_comment",
+            "delete_comment",
+            "search"
+        ],
+        "composio_compatible": True  # Add this flag to indicate Composio compatibility
+    }
+    return jsonify(server_info)
 
 # MCP Action endpoint with improved error handling
 @app.route('/mcp/action', methods=['POST'])
@@ -782,6 +763,54 @@ def tool(connection_id):
         return jsonify({
             "error": str(e)
         }), 500
+
+# Add Composio-specific routes
+@app.route('/composio/schema', methods=['GET'])
+def composio_schema():
+    """
+    Returns the schema for Basecamp tools compatible with Composio.
+    """
+    try:
+        schema = get_schema()
+        return jsonify(schema)
+    except Exception as e:
+        logger.error(f"Error generating Composio schema: {str(e)}")
+        return jsonify({"error": "server_error", "message": f"Error generating schema: {str(e)}"}), 500
+
+@app.route('/composio/tool', methods=['POST'])
+def composio_tool():
+    """
+    Handles tool calls from Composio.
+    """
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"error": "invalid_request", "message": "Invalid request data"}), 400
+            
+        result = handle_composio_request(data)
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error handling Composio tool call: {str(e)}")
+        return jsonify({"error": "server_error", "message": f"Error handling tool call: {str(e)}"}), 500
+
+@app.route('/composio/check_auth', methods=['GET'])
+def composio_check_auth():
+    """
+    Checks if OAuth authentication is available for Composio.
+    """
+    try:
+        token_data = token_storage.get_token()
+        if token_data and 'access_token' in token_data:
+            return jsonify({"authenticated": True})
+        else:
+            return jsonify({
+                "authenticated": False, 
+                "auth_url": f"http://localhost:8000/",
+                "message": "OAuth authentication required. Please visit the auth URL to authenticate."
+            })
+    except Exception as e:
+        logger.error(f"Error checking Composio auth: {str(e)}")
+        return jsonify({"error": "server_error", "message": f"Error checking auth: {str(e)}"}), 500
 
 if __name__ == '__main__':
     try:

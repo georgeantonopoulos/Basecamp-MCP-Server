@@ -49,6 +49,7 @@ The project consists of the following components:
    BASECAMP_ACCOUNT_ID=your_account_id
    FLASK_SECRET_KEY=random_secret_key
    MCP_API_KEY=your_api_key
+   COMPOSIO_API_KEY=your_composio_api_key
    ```
 
 ## Usage
@@ -163,3 +164,81 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - Fixed CORS support by adding the Flask-CORS package
 
 These changes ensure more reliable and consistent responses from the MCP server, particularly for Campfire chat functionality. 
+
+### March 9, 2024 - Added Composio Integration
+
+Added support for [Composio](https://composio.dev/) integration, allowing the Basecamp MCP server to be used with Composio for AI-powered workflows. This integration follows the Model Context Protocol (MCP) standards and includes:
+
+- New endpoints for Composio compatibility:
+  - `/composio/schema` - Returns the schema of available tools in Composio-compatible format
+  - `/composio/tool` - Handles Composio tool calls with standardized parameters
+  - `/composio/check_auth` - Checks authentication status for Composio requests
+
+- Standardized tool naming and parameter formats to work with Composio's MCP specifications
+- A standalone example client for testing and demonstrating the integration
+
+## Using with Composio
+
+### Prerequisites
+
+1. Create a Composio account at [https://app.composio.dev](https://app.composio.dev)
+2. Obtain a Composio API key from your Composio dashboard
+3. Add your API key to your `.env` file:
+   ```
+   COMPOSIO_API_KEY=your_composio_api_key
+   ```
+
+### Setting Up Composio Integration
+
+1. Make sure you have authenticated with Basecamp using the OAuth app (http://localhost:8000/)
+2. Run the MCP server with the Composio integration enabled:
+   ```
+   python mcp_server.py
+   ```
+
+3. In your Composio dashboard, add a new custom integration:
+   - Integration URL: `http://localhost:5001/composio/schema`
+   - Authentication: OAuth (managed by our implementation)
+
+4. You can now use Composio to connect to your Basecamp account through the MCP server:
+   - Composio will discover available tools via the schema endpoint
+   - Tool executions will be handled by the `/composio/tool` endpoint
+   - Authentication status is checked via the `/composio/check_auth` endpoint
+
+### Example Composio Client
+
+We provide a simple client example in `composio_client_example.py` that demonstrates how to:
+
+1. Check authentication status
+2. Retrieve the tool schema
+3. Execute various Basecamp operations through the Composio integration
+
+Run the example with:
+```
+python composio_client_example.py
+```
+
+### Testing the Integration
+
+To test the integration without connecting to Composio:
+
+1. Run the MCP server:
+   ```
+   python mcp_server.py
+   ```
+
+2. Use curl to test the endpoints directly:
+   ```bash
+   # Check authentication status
+   curl http://localhost:5001/composio/check_auth
+
+   # Get the schema
+   curl http://localhost:5001/composio/schema
+
+   # Execute a tool (get projects)
+   curl -X POST http://localhost:5001/composio/tool \
+     -H "Content-Type: application/json" \
+     -d '{"tool": "GET_PROJECTS", "params": {}}'
+   ```
+
+For more detailed documentation on Composio integration, refer to the [official Composio documentation](https://docs.composio.dev). 
