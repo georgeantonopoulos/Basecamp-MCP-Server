@@ -10,21 +10,31 @@ import os
 import json
 import threading
 from datetime import datetime, timedelta
+import logging
 
-# Token storage file - in production, use a database instead
-TOKEN_FILE = 'oauth_tokens.json'
+# Determine the directory where this script (token_storage.py) is located
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+# Define TOKEN_FILE as an absolute path within that directory
+TOKEN_FILE = os.path.join(SCRIPT_DIR, 'oauth_tokens.json')
 
 # Lock for thread-safe operations
 _lock = threading.Lock()
+_logger = logging.getLogger(__name__)
 
 def _read_tokens():
     """Read tokens from storage."""
     try:
         with open(TOKEN_FILE, 'r') as f:
-            return json.load(f)
+            data = json.load(f)
+            basecamp_data = data.get('basecamp', {})
+            updated_at = basecamp_data.get('updated_at')
+            _logger.info(f"Read tokens from {TOKEN_FILE}. Basecamp token updated_at: {updated_at}")
+            return data
     except FileNotFoundError:
+        _logger.info(f"{TOKEN_FILE} not found. Returning empty tokens.")
         return {}  # Return empty dict if file doesn't exist
     except json.JSONDecodeError:
+        _logger.warning(f"Error decoding JSON from {TOKEN_FILE}. Returning empty tokens.")
         # If file exists but isn't valid JSON, return empty dict
         return {}
 
@@ -33,6 +43,10 @@ def _write_tokens(tokens):
     # Create directory for the token file if it doesn't exist
     os.makedirs(os.path.dirname(TOKEN_FILE) if os.path.dirname(TOKEN_FILE) else '.', exist_ok=True)
     
+    basecamp_data_to_write = tokens.get('basecamp', {})
+    updated_at_to_write = basecamp_data_to_write.get('updated_at')
+    _logger.info(f"Writing tokens to {TOKEN_FILE}. Basecamp token updated_at to be written: {updated_at_to_write}")
+
     # Set secure permissions on the file
     with open(TOKEN_FILE, 'w') as f:
         json.dump(tokens, f, indent=2)
