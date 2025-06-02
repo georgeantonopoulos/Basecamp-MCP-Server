@@ -204,6 +204,7 @@ def auth_callback():
         oauth_client = get_oauth_client()
         logger.info("Exchanging code for token")
         token_data = oauth_client.exchange_code_for_token(code)
+        logger.info(f"Raw token data from Basecamp exchange: {token_data}")
         
         # Store the token in our secure storage
         access_token = token_data.get('access_token')
