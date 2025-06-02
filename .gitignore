@@ -49,4 +49,9 @@ icons/
 .idea/
 .vscode/
 *.swp
-*.swo 
+*.swo
+
+# Composio integration files
+composio_client_example.py
+*composio*
+.composio/ 
