@@ -75,9 +75,11 @@ The project consists of the following components:
 
 ### Using with Cursor
 
-1. In Cursor, add the MCP server URL: http://localhost:5001
-2. Interact with Basecamp through the Cursor interface
-3. The MCP server will use the stored OAuth token to authenticate with Basecamp
+1. In Cursor, add the MCP server URL: `http://localhost:5001/mcp/stream`
+   - **Note:** This URL points to the new Server-Sent Events (SSE) endpoint. Cursor may prefer this for real-time updates and for features like `ListOfferings` that stream data.
+   - If you encounter issues, Cursor might alternatively try to use the base URL (`http://localhost:5001`) to first query `/mcp/info` (to discover available actions and endpoints) and then connect to the appropriate endpoint as indicated there.
+2. Interact with Basecamp through the Cursor interface.
+3. The MCP server will use the stored OAuth token to authenticate with Basecamp.
 
 ### Authentication Flow
 

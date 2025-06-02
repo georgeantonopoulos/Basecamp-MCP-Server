@@ -4,7 +4,7 @@ import sys
 import json
 import logging
 import traceback
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 from dotenv import load_dotenv
 from threading import Thread
 import time
@@ -811,6 +811,67 @@ def composio_check_auth():
     except Exception as e:
         logger.error(f"Error checking Composio auth: {str(e)}")
         return jsonify({"error": "server_error", "message": f"Error checking auth: {str(e)}"}), 500
+
+@app.route('/mcp/stream', methods=['GET'])
+def mcp_stream():
+    """
+    Server-Sent Events (SSE) endpoint for real-time updates.
+    """
+    logger.info("SSE stream requested by client")
+    def event_stream():
+        try:
+            logger.info("SSE client connected, sending 'connected' event.")
+            yield f"event: connected\ndata: {json.dumps({'message': 'Connection established'})}\n\n"
+
+            # Attempt to get Basecamp client and fetch projects (offerings)
+            try:
+                logger.info("Attempting to get Basecamp client for offerings list.")
+                client = get_basecamp_client(auth_mode='oauth') # Assuming OAuth for streaming
+                logger.info("Basecamp client obtained successfully.")
+
+                logger.info("Fetching projects as offerings.")
+                projects = client.get_projects()
+                logger.info(f"Successfully fetched {len(projects)} projects.")
+
+                for project in projects:
+                    project_data_json = json.dumps(project) # Ensure project data is JSON serializable
+                    logger.debug(f"SSE sending offering: {project.get('name')}")
+                    yield f"event: offering\ndata: {project_data_json}\n\n"
+
+                logger.info("All offerings sent.")
+                yield f"event: offerings_complete\ndata: {json.dumps({'message': 'All offerings sent'})}\n\n"
+
+            except ValueError as ve: # Handles auth errors from get_basecamp_client
+                error_message = f"Authentication error: {str(ve)}"
+                logger.error(f"SSE stream auth error: {error_message}", exc_info=True)
+                yield f"event: error\ndata: {json.dumps({'type': 'auth_error', 'message': error_message})}\n\n"
+            except Exception as e: # Handles API errors from get_projects or other unexpected issues
+                error_message = f"Failed to fetch projects: {str(e)}"
+                logger.error(f"SSE stream API error: {error_message}", exc_info=True)
+                yield f"event: error\ndata: {json.dumps({'type': 'api_error', 'message': error_message})}\n\n"
+
+            # Continue with periodic pings
+            ping_count = 0
+            while True:
+                time.sleep(5)  # Send a ping every 5 seconds
+                ping_count += 1
+                logger.debug(f"SSE sending ping event #{ping_count}")
+                yield f"event: ping\ndata: {json.dumps({'count': ping_count})}\n\n"
+
+        except GeneratorExit:
+            logger.info("SSE client disconnected.")
+        except Exception as e:
+            # This catches errors in the main try block, including the ping loop or if yield fails
+            logger.error(f"Unhandled error in SSE event stream: {str(e)}", exc_info=True)
+            try:
+                # Attempt to send a final error to the client if possible
+                yield f"event: error\ndata: {json.dumps({'type': 'stream_error', 'message': 'An unexpected error occurred in the stream.'})}\n\n"
+            except Exception: # If yielding fails (e.g. client already gone)
+                pass
+        finally:
+            logger.info("Closing SSE event stream.")
+
+    return Response(event_stream(), mimetype='text/event-stream')
 
 if __name__ == '__main__':
     try:
