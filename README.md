@@ -7,7 +7,7 @@ This project provides a MCP (Model Context Protocol) integration for Basecamp 3,
 ### Prerequisites
 
 - Python 3.7+
-- A Basecamp 3 account  
+- A Basecamp 3 account
 - A Basecamp OAuth application (create one at https://launchpad.37signals.com/integrations)
 
 ### Step-by-Step Instructions
@@ -42,10 +42,10 @@ This project provides a MCP (Model Context Protocol) integration for Basecamp 3,
    ```bash
    python generate_cursor_config.py
    ```
-   
+
    This script will:
    - Generate the correct MCP configuration with full paths
-   - Automatically detect your virtual environment  
+   - Automatically detect your virtual environment
    - Include the BASECAMP_ACCOUNT_ID environment variable
    - Update your Cursor configuration file automatically
 
@@ -71,7 +71,7 @@ python -m pytest tests/ -v
 Once configured, you can use these tools in Cursor:
 
 - `get_projects` - Get all Basecamp projects
-- `get_project` - Get details for a specific project  
+- `get_project` - Get details for a specific project
 - `get_todolists` - Get todo lists for a project
 - `get_todos` - Get todos from a todo list
 - `search_basecamp` - Search across projects, todos, and messages
@@ -90,7 +90,7 @@ Ask Cursor things like:
 The project consists of:
 
 1. **OAuth App** (`oauth_app.py`) - Handles OAuth 2.0 flow with Basecamp
-2. **MCP Server** (`mcp_server_cli.py`) - Implements MCP protocol for Cursor  
+2. **MCP Server** (`mcp_server_cli.py`) - Implements MCP protocol for Cursor
 3. **Token Storage** (`token_storage.py`) - Securely stores OAuth tokens
 4. **Basecamp Client** (`basecamp_client.py`) - Basecamp API client library
 5. **Search Utilities** (`search_utils.py`) - Search across Basecamp resources
@@ -108,7 +108,7 @@ The project consists of:
 
 If automatic configuration doesn't work, manually edit your Cursor MCP configuration:
 
-**On macOS/Linux:** `~/.cursor/mcp.json`  
+**On macOS/Linux:** `~/.cursor/mcp.json`
 **On Windows:** `%APPDATA%\Cursor\mcp.json`
 
 ```json
@@ -152,7 +152,7 @@ Based on [Cursor community forums](https://forum.cursor.com/t/mcp-servers-no-too
 
 ## License
 
-MIT License - see LICENSE file for details. 
+MIT License - see LICENSE file for details.
 
 ## Recent Changes
 
@@ -166,7 +166,7 @@ MIT License - see LICENSE file for details.
 - Improved error handling and response formatting across all action handlers
 - Fixed CORS support by adding the Flask-CORS package
 
-These changes ensure more reliable and consistent responses from the MCP server, particularly for Campfire chat functionality. 
+These changes ensure more reliable and consistent responses from the MCP server, particularly for Campfire chat functionality.
 
 ### March 9, 2024 - Added Local Testing
 
@@ -255,7 +255,7 @@ TODO: To test the integration without connecting to Composio:
      -d '{"tool": "GET_PROJECTS", "params": {}}'
    ```
 
-TODO: For more detailed documentation on Composio integration, refer to the [official Composio documentation](https://docs.composio.dev). 
+TODO: For more detailed documentation on Composio integration, refer to the [official Composio documentation](https://docs.composio.dev).
 
 ## Quick Setup for Cursor
 
@@ -291,7 +291,7 @@ TODO: For more detailed documentation on Composio integration, refer to the [off
    ```bash
    python generate_cursor_config.py
    ```
-   
+
    This script will:
    - Generate the correct MCP configuration with full paths
    - Automatically detect your virtual environment
@@ -323,7 +323,7 @@ Based on the [Cursor community forum](https://forum.cursor.com/t/mcp-servers-no-
 
 If the automatic configuration doesn't work, manually edit your Cursor MCP configuration:
 
-**On macOS/Linux:** `~/.cursor/mcp.json`  
+**On macOS/Linux:** `~/.cursor/mcp.json`
 **On Windows:** `%APPDATA%\Cursor\mcp.json`
 
 ```json
@@ -366,4 +366,4 @@ The key fixes that resolve the "yellow indicator" and "tool not found" issues me
 1. **Full Python executable path** instead of just "python"
 2. **Environment variables** for PYTHONPATH and VIRTUAL_ENV
 3. **Proper MCP protocol handling** including the 'initialized' notification
-4. **Absolute paths** for all configuration values 
+4. **Absolute paths** for all configuration values

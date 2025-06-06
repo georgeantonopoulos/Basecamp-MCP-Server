@@ -69,4 +69,4 @@ To further improve this implementation:
    - Implement proper token encryption
    - Add audit logging for security events
 
-This implementation provides a solid foundation for a production-ready Basecamp integration with Cursor through the MCP protocol. 
+This implementation provides a solid foundation for a production-ready Basecamp integration with Cursor through the MCP protocol.

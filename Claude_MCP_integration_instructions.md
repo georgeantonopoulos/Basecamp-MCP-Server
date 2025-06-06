@@ -138,4 +138,4 @@ Claude's servers need to be able to reach your MCP server over the internet.
 5.  **Firewall/Network:**
     *   If deploying to a server with a firewall, ensure the port your MCP server is running on (e.g., 5001) allows inbound HTTPS traffic.
 
-By following these steps, you should be able to successfully integrate your Basecamp MCP server with Anthropic Claude, empowering Claude with your custom Basecamp functionalities. 
+By following these steps, you should be able to successfully integrate your Basecamp MCP server with Anthropic Claude, empowering Claude with your custom Basecamp functionalities.
