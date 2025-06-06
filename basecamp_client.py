@@ -1,6 +1,8 @@
 import os
+
 import requests
 from dotenv import load_dotenv
+
 
 class BasecampClient:
     """
@@ -106,22 +108,22 @@ class BasecampClient:
             raise Exception(f"Failed to get project: {response.status_code} - {response.text}")
     
     # To-do list methods
-    def get_todosets(self, project_id):
+    def get_todoset(self, project_id):
         """Get the todoset for a project (Basecamp 3 has one todoset per project)."""
-        response = self.get(f'projects/{project_id}/todoset.json')
-        if response.status_code == 200:
-            return response.json()
-        else:
-            raise Exception(f"Failed to get todoset: {response.status_code} - {response.text}")
+        project = self.get_project(project_id)
+        try:
+            return next(_ for _ in project["dock"] if _["name"] == "todoset")
+        except (IndexError, TypeError, StopIteration):
+            raise Exception(f"Failed to get todoset for project: {project.id}. Project response: {project}")
     
     def get_todolists(self, project_id):
         """Get all todolists for a project."""
         # First get the todoset ID for this project
-        todoset = self.get_todosets(project_id)
+        todoset = self.get_todoset(project_id)
         todoset_id = todoset['id']
         
         # Then get all todolists in this todoset
-        response = self.get(f'todolists.json', {'todoset_id': todoset_id})
+        response = self.get(f'buckets/{project_id}/todosets/{todoset_id}/todolists.json')
         if response.status_code == 200:
             return response.json()
         else:
@@ -136,9 +138,9 @@ class BasecampClient:
             raise Exception(f"Failed to get todolist: {response.status_code} - {response.text}")
     
     # To-do methods
-    def get_todos(self, todolist_id):
+    def get_todos(self, project_id, todolist_id):
         """Get all todos in a todolist."""
-        response = self.get(f'todolists/{todolist_id}/todos.json')
+        response = self.get(f'buckets/{project_id}/todolists/{todolist_id}/todos.json')
         if response.status_code == 200:
             return response.json()
         else:
@@ -233,22 +235,18 @@ class BasecampClient:
             raise Exception(f"Failed to get schedule: {str(e)}")
     
     # Comments methods
-    def get_comments(self, recording_id, bucket_id=None):
+    def get_comments(self, project_id, recording_id):
         """
-        Get all comments for a recording (todo, message, etc.).
+        Get all comments for a recording (todos, message, etc.).
         
         Args:
-            recording_id (int): ID of the recording (todo, message, etc.)
-            bucket_id (int, optional): Project/bucket ID. If not provided, it will be extracted from the recording ID.
+            recording_id (int): ID of the recording (todos, message, etc.)
+            project_id (int): Project/bucket ID. If not provided, it will be extracted from the recording ID.
             
         Returns:
             list: Comments for the recording
         """
-        if bucket_id is None:
-            # Try to get the recording first to extract the bucket_id
-            raise ValueError("bucket_id is required")
-            
-        endpoint = f"buckets/{bucket_id}/recordings/{recording_id}/comments.json"
+        endpoint = f"buckets/{project_id}/recordings/{recording_id}/comments.json"
         response = self.get(endpoint)
         if response.status_code == 200:
             return response.json()
@@ -329,4 +327,20 @@ class BasecampClient:
         if response.status_code == 204:
             return True
         else:
-            raise Exception(f"Failed to delete comment: {response.status_code} - {response.text}") 
+            raise Exception(f"Failed to delete comment: {response.status_code} - {response.text}")
+
+    def get_daily_check_ins(self, project_id, page=1):
+        project = self.get_project(project_id)
+        questionnaire = next(_ for _ in project["dock"] if _["name"] == "questionnaire")
+        endpoint = f"buckets/{project_id}/questionnaires/{questionnaire['id']}/questions.json"
+        response = self.get(endpoint, params={"page": page})
+        if response.status_code != 200:
+            raise Exception("Failed to read questions")
+        return response.json()
+
+    def get_question_answers(self, project_id, question_id, page=1):
+        endpoint = f"buckets/{project_id}/questions/{question_id}/answers.json"
+        response = self.get(endpoint, params={"page": page})
+        if response.status_code != 200:
+            raise Exception("Failed to read question answers")
+        return response.json()

@@ -82,9 +82,10 @@ class MCPServer:
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "todolist_id": {"type": "string", "description": "The todo list ID"}
+                        "project_id": {"type": "string", "description": "Project ID"},
+                        "todolist_id": {"type": "string", "description": "The todo list ID"},
                     },
-                    "required": ["todolist_id"]
+                    "required": ["project_id", "todolist_id"]
                 }
             },
             {
@@ -106,9 +107,9 @@ class MCPServer:
                     "type": "object",
                     "properties": {
                         "recording_id": {"type": "string", "description": "The item ID"},
-                        "bucket_id": {"type": "string", "description": "The bucket/project ID"}
+                        "project_id": {"type": "string", "description": "The project ID"}
                     },
-                    "required": ["recording_id", "bucket_id"]
+                    "required": ["recording_id", "project_id"]
                 }
             },
             {
@@ -122,6 +123,31 @@ class MCPServer:
                     },
                     "required": ["project_id", "campfire_id"]
                 }
+            },
+            {
+                "name": "get_daily_check_ins",
+                "description": "Get project's daily checking questionnaire",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "page": {"type": "integer", "description": "Page number paginated response"}
+                    }
+                },
+                "required": ["project_id"]
+            },
+            {
+                "name": "get_question_answers",
+                "description": "Get answers on daily check-in question",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "question_id": {"type": "string", "description": "The question ID"},
+                        "page": {"type": "integer", "description": "Page number paginated response"}
+                    }
+                },
+                "required": ["project_id", "question_id"]
             }
         ]
     
@@ -312,7 +338,8 @@ class MCPServer:
             
             elif tool_name == "get_todos":
                 todolist_id = arguments.get("todolist_id")
-                todos = client.get_todos(todolist_id)
+                project_id = arguments.get("project_id")
+                todos = client.get_todos(project_id, todolist_id)
                 return {
                     "status": "success",
                     "todos": todos,
@@ -344,8 +371,8 @@ class MCPServer:
             
             elif tool_name == "get_comments":
                 recording_id = arguments.get("recording_id")
-                bucket_id = arguments.get("bucket_id")
-                comments = client.get_comments(recording_id, bucket_id)
+                project_id = arguments.get("project_id")
+                comments = client.get_comments(project_id, recording_id)
                 return {
                     "status": "success",
                     "comments": comments,
@@ -360,6 +387,25 @@ class MCPServer:
                     "status": "success",
                     "campfire_lines": lines,
                     "count": len(lines)
+                }
+            elif tool_name == "get_daily_check_ins":
+                project_id = arguments.get("project_id")
+                page = arguments.get("page")
+                answers = client.get_daily_check_ins(project_id, page=page)
+                return {
+                    "status": "success",
+                    "campfire_lines": answers,
+                    "count": len(answers)
+                }
+            elif tool_name == "get_question_answers":
+                project_id = arguments.get("project_id")
+                question_id = arguments.get("question_id")
+                page = arguments.get("page")
+                answers = client.get_question_answers(project_id, question_id, page=page)
+                return {
+                    "status": "success",
+                    "campfire_lines": answers,
+                    "count": len(answers)
                 }
             
             else:
