@@ -56,13 +56,13 @@ RESULTS_TEMPLATE = """
         body { font-family: Arial, sans-serif; margin: 20px; }
         h1 { color: #333; }
         pre { background-color: #f5f5f5; padding: 10px; border-radius: 5px; overflow-x: auto; }
-        .button { 
-            display: inline-block; 
-            background-color: #4CAF50; 
-            color: white; 
-            padding: 10px 20px; 
-            text-decoration: none; 
-            border-radius: 5px; 
+        .button {
+            display: inline-block;
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 5px;
             margin-top: 20px;
         }
         .container { max-width: 1000px; margin: 0 auto; }
@@ -109,9 +109,9 @@ def get_oauth_client():
         client_secret = os.getenv('BASECAMP_CLIENT_SECRET')
         redirect_uri = os.getenv('BASECAMP_REDIRECT_URI')
         user_agent = os.getenv('USER_AGENT')
-        
+
         logger.info("Creating OAuth client with config: %s, %s, %s", client_id, redirect_uri, user_agent)
-        
+
         return BasecampOAuth(
             client_id=client_id,
             client_secret=client_secret,
@@ -127,13 +127,13 @@ def home():
     """Home page."""
     # Check if we have a stored token
     token_data = token_storage.get_token()
-    
+
     if token_data and token_data.get('access_token'):
         # We have a token, show token information
         access_token = token_data['access_token']
         # Mask the token for security
         masked_token = f"{access_token[:10]}...{access_token[-10:]}" if len(access_token) > 20 else "***"
-        
+
         token_info = {
             "access_token": masked_token,
             "account_id": token_data.get('account_id'),
@@ -141,9 +141,9 @@ def home():
             "expires_at": token_data.get('expires_at'),
             "updated_at": token_data.get('updated_at')
         }
-        
+
         logger.info("Home page: User is authenticated")
-        
+
         return render_template_string(
             RESULTS_TEMPLATE,
             title="Basecamp OAuth Status",
@@ -156,9 +156,9 @@ def home():
         try:
             oauth_client = get_oauth_client()
             auth_url = oauth_client.get_authorization_url()
-            
+
             logger.info("Home page: User not authenticated, showing login button")
-            
+
             return render_template_string(
                 RESULTS_TEMPLATE,
                 title="Basecamp OAuth Demo",
@@ -177,10 +177,10 @@ def home():
 def auth_callback():
     """Handle the OAuth callback from Basecamp."""
     logger.info("OAuth callback called with args: %s", request.args)
-    
+
     code = request.args.get('code')
     error = request.args.get('error')
-    
+
     if error:
         logger.error("OAuth callback error: %s", error)
         return render_template_string(
@@ -189,7 +189,7 @@ def auth_callback():
             message=f"Basecamp returned an error: {error}",
             show_home=True
         )
-    
+
     if not code:
         logger.error("OAuth callback: No code provided")
         return render_template_string(
@@ -198,20 +198,20 @@ def auth_callback():
             message="No authorization code received.",
             show_home=True
         )
-    
+
     try:
         # Exchange the code for an access token
         oauth_client = get_oauth_client()
         logger.info("Exchanging code for token")
         token_data = oauth_client.exchange_code_for_token(code)
         logger.info(f"Raw token data from Basecamp exchange: {token_data}")
-        
+
         # Store the token in our secure storage
         access_token = token_data.get('access_token')
         refresh_token = token_data.get('refresh_token')
         expires_in = token_data.get('expires_in')
         account_id = os.getenv('BASECAMP_ACCOUNT_ID')
-        
+
         if not access_token:
             logger.error("OAuth exchange: No access token received")
             return render_template_string(
@@ -220,14 +220,14 @@ def auth_callback():
                 message="No access token received from Basecamp.",
                 show_home=True
             )
-        
+
         # Try to get identity if account_id is not set
         if not account_id:
             try:
                 logger.info("Getting user identity to find account_id")
                 identity = oauth_client.get_identity(access_token)
                 logger.info("Identity response: %s", identity)
-                
+
                 # Find Basecamp 3 account
                 if identity.get('accounts'):
                     for account in identity['accounts']:
@@ -238,7 +238,7 @@ def auth_callback():
             except Exception as identity_error:
                 logger.error("Error getting identity: %s", str(identity_error))
                 # Continue with the flow, but log the error
-        
+
         logger.info("Storing token with account_id: %s", account_id)
         stored = token_storage.store_token(
             access_token=access_token,
@@ -246,7 +246,7 @@ def auth_callback():
             expires_in=expires_in,
             account_id=account_id
         )
-        
+
         if not stored:
             logger.error("Failed to store token")
             return render_template_string(
@@ -255,16 +255,16 @@ def auth_callback():
                 message="Failed to store token. Please try again.",
                 show_home=True
             )
-        
+
         # Also keep the access token in session for convenience
         session['access_token'] = access_token
         if refresh_token:
             session['refresh_token'] = refresh_token
         if account_id:
             session['account_id'] = account_id
-        
+
         logger.info("OAuth flow completed successfully")
-        
+
         return redirect(url_for('home'))
     except Exception as e:
         logger.error("Error in OAuth callback: %s", str(e), exc_info=True)
@@ -282,7 +282,7 @@ def get_token_api():
     This should only be accessible by the MCP server.
     """
     logger.info("Token API called with headers: %s", request.headers)
-    
+
     # In production, implement proper authentication for this endpoint
     # For now, we'll use a simple API key check
     api_key = request.headers.get('X-API-Key')
@@ -292,7 +292,7 @@ def get_token_api():
             "error": "Unauthorized",
             "message": "Invalid or missing API key"
         }), 401
-    
+
     token_data = token_storage.get_token()
     if not token_data or not token_data.get('access_token'):
         logger.error("Token API: No valid token available")
@@ -300,7 +300,7 @@ def get_token_api():
             "error": "Not authenticated",
             "message": "No valid token available"
         }), 404
-    
+
     logger.info("Token API: Successfully returned token")
     return jsonify({
         "access_token": token_data['access_token'],
@@ -320,7 +320,7 @@ def token_info():
     """Display information about the stored token."""
     logger.info("Token info called")
     token_data = token_storage.get_token()
-    
+
     if not token_data:
         logger.info("Token info: No token stored")
         return render_template_string(
@@ -329,14 +329,14 @@ def token_info():
             message="No token stored.",
             show_home=True
         )
-    
+
     # Mask the tokens for security
     access_token = token_data.get('access_token', '')
     refresh_token = token_data.get('refresh_token', '')
-    
+
     masked_access = f"{access_token[:10]}...{access_token[-10:]}" if len(access_token) > 20 else "***"
     masked_refresh = f"{refresh_token[:10]}...{refresh_token[-10:]}" if refresh_token and len(refresh_token) > 20 else "***" if refresh_token else None
-    
+
     display_info = {
         "access_token": masked_access,
         "has_refresh_token": bool(refresh_token),
@@ -344,7 +344,7 @@ def token_info():
         "expires_at": token_data.get('expires_at'),
         "updated_at": token_data.get('updated_at')
     }
-    
+
     logger.info("Token info: Returned token info")
     return render_template_string(
         RESULTS_TEMPLATE,
@@ -367,12 +367,12 @@ if __name__ == '__main__':
         logger.info("Starting OAuth app on port %s", os.environ.get('PORT', 8000))
         # Run the Flask app
         port = int(os.environ.get('PORT', 8000))
-        
+
         # Disable debug and auto-reloader when running in production or background
         is_debug = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
-        
+
         logger.info("Running in %s mode", "debug" if is_debug else "production")
         app.run(host='0.0.0.0', port=port, debug=is_debug, use_reloader=is_debug)
     except Exception as e:
         logger.error("Fatal error: %s", str(e), exc_info=True)
-        sys.exit(1) 
+        sys.exit(1)

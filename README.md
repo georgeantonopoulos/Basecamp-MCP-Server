@@ -7,7 +7,7 @@ This project provides a MCP (Model Context Protocol) integration for Basecamp 3,
 ### Prerequisites
 
 - Python 3.7+
-- A Basecamp 3 account  
+- A Basecamp 3 account
 - A Basecamp OAuth application (create one at https://launchpad.37signals.com/integrations)
 
 ### Step-by-Step Instructions
@@ -43,10 +43,10 @@ This project provides a MCP (Model Context Protocol) integration for Basecamp 3,
    ```bash
    python generate_cursor_config.py
    ```
-   
+
    This script will:
    - Generate the correct MCP configuration with full paths
-   - Automatically detect your virtual environment  
+   - Automatically detect your virtual environment
    - Include the BASECAMP_ACCOUNT_ID environment variable
    - Update your Cursor configuration file automatically
 
@@ -72,7 +72,7 @@ python -m pytest tests/ -v
 Once configured, you can use these tools in Cursor:
 
 - `get_projects` - Get all Basecamp projects
-- `get_project` - Get details for a specific project  
+- `get_project` - Get details for a specific project
 - `get_todolists` - Get todo lists for a project
 - `get_todos` - Get todos from a todo list
 - `search_basecamp` - Search across projects, todos, and messages
@@ -91,7 +91,7 @@ Ask Cursor things like:
 The project consists of:
 
 1. **OAuth App** (`oauth_app.py`) - Handles OAuth 2.0 flow with Basecamp
-2. **MCP Server** (`mcp_server_cli.py`) - Implements MCP protocol for Cursor  
+2. **MCP Server** (`mcp_server_cli.py`) - Implements MCP protocol for Cursor
 3. **Token Storage** (`token_storage.py`) - Securely stores OAuth tokens
 4. **Basecamp Client** (`basecamp_client.py`) - Basecamp API client library
 5. **Search Utilities** (`search_utils.py`) - Search across Basecamp resources
@@ -109,7 +109,7 @@ The project consists of:
 
 If automatic configuration doesn't work, manually edit your Cursor MCP configuration:
 
-**On macOS/Linux:** `~/.cursor/mcp.json`  
+**On macOS/Linux:** `~/.cursor/mcp.json`
 **On Windows:** `%APPDATA%\Cursor\mcp.json`
 
 ```json
