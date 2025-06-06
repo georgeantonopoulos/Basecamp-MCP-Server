@@ -152,7 +152,8 @@ Based on [Cursor community forums](https://forum.cursor.com/t/mcp-servers-no-too
 
 ## License
 
-MIT License - see LICENSE file for details. 
+This project is licensed under the [MIT License](LICENSE).
+
 
 ## Recent Changes
 
