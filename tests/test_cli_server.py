@@ -102,7 +102,7 @@ def test_cli_server_tools_list():
 
         # Check that expected tools are present
         tool_names = [tool["name"] for tool in tools]
-        expected_tools = ["get_projects", "search_basecamp", "get_todos"]
+        expected_tools = ["get_projects", "search_basecamp", "get_todos", "global_search"]
         for expected_tool in expected_tools:
             assert expected_tool in tool_names
 
@@ -170,6 +170,55 @@ def test_cli_server_tool_call_no_auth(mock_get_token):
         # Since we have valid OAuth tokens, this might succeed or fail
         # We just check that we get a valid JSON response
         assert isinstance(content_data, dict)
+
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+
+@patch.object(token_storage, 'get_token')
+def test_cli_server_global_search_call_no_auth(mock_get_token):
+    """Test global search tool call without authentication."""
+    init_request = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {}
+    }
+
+    tool_request = {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/call",
+        "params": {
+            "name": "global_search",
+            "arguments": {"query": "test"}
+        }
+    }
+
+    proc = subprocess.Popen(
+        [sys.executable, "mcp_server_cli.py"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+
+    try:
+        input_data = json.dumps(init_request) + "\n" + json.dumps(tool_request) + "\n"
+        stdout, stderr = proc.communicate(
+            input=input_data,
+            timeout=10
+        )
+
+        lines = stdout.strip().split('\n')
+        assert len(lines) >= 2
+
+        tool_response = json.loads(lines[1])
+
+        assert tool_response["jsonrpc"] == "2.0"
+        assert tool_response["id"] == 2
+        assert "result" in tool_response
+        assert "content" in tool_response["result"]
 
     finally:
         if proc.poll() is None:

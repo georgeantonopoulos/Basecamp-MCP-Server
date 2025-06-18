@@ -101,6 +101,17 @@ class MCPServer:
                 }
             },
             {
+                "name": "global_search",
+                "description": "Search projects, todos and campfire messages across all projects",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Search query"}
+                    },
+                    "required": ["query"]
+                }
+            },
+            {
                 "name": "get_comments",
                 "description": "Get comments for a Basecamp item",
                 "inputSchema": {
@@ -363,6 +374,16 @@ class MCPServer:
                     results["todos"] = search.search_todos(query)
                     results["messages"] = search.search_messages(query)
 
+                return {
+                    "status": "success",
+                    "query": query,
+                    "results": results
+                }
+
+            elif tool_name == "global_search":
+                query = arguments.get("query")
+                search = BasecampSearch(client=client)
+                results = search.global_search(query)
                 return {
                     "status": "success",
                     "query": query,

@@ -556,3 +556,50 @@ class BasecampSearch:
         except Exception as e:
             logger.error(f"Error searching campfire lines: {str(e)}")
             return []
+
+    def search_all_campfire_lines(self, query=None):
+        """Search campfire chat lines across all projects."""
+        all_lines = []
+
+        try:
+            projects = self.client.get_projects()
+
+            for project in projects:
+                project_id = project["id"]
+                try:
+                    campfires = self.client.get_campfires(project_id)
+                    for campfire in campfires:
+                        campfire_id = campfire["id"]
+                        lines = self.client.get_campfire_lines(project_id, campfire_id)
+
+                        for line in lines:
+                            line["project"] = {"id": project_id, "name": project.get("name")}
+                            line["campfire"] = {"id": campfire_id, "title": campfire.get("title")}
+                            all_lines.append(line)
+                except Exception as e:
+                    logger.error(f"Error getting campfire lines for project {project_id}: {str(e)}")
+
+            if query and all_lines:
+                q = query.lower()
+                filtered = []
+                for line in all_lines:
+                    content = line.get("content", "") or ""
+                    creator_name = ""
+                    if line.get("creator"):
+                        creator_name = line["creator"].get("name", "")
+                    if q in content.lower() or (creator_name and q in creator_name.lower()):
+                        filtered.append(line)
+                return filtered
+
+            return all_lines
+        except Exception as e:
+            logger.error(f"Error searching all campfire lines: {str(e)}")
+            return []
+
+    def global_search(self, query=None):
+        """Search projects, todos and campfire lines at once."""
+        return {
+            "projects": self.search_projects(query),
+            "todos": self.search_todos(query),
+            "campfire_lines": self.search_all_campfire_lines(query),
+        }
