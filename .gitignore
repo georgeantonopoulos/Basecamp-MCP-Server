@@ -57,3 +57,5 @@ composio_client_example.py
 .composio/ 
 
 .env
+card_table_implementation.md
+card-tables-docs.md

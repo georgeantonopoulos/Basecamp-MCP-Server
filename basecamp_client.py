@@ -90,6 +90,11 @@ class BasecampClient:
         url = f"{self.base_url}/{endpoint}"
         return requests.delete(url, auth=self.auth, headers=self.headers)
 
+    def patch(self, endpoint, data=None):
+        """Make a PATCH request to the Basecamp API."""
+        url = f"{self.base_url}/{endpoint}"
+        return requests.patch(url, auth=self.auth, headers=self.headers, json=data)
+
     # Project methods
     def get_projects(self):
         """Get all projects."""
@@ -344,3 +349,159 @@ class BasecampClient:
         if response.status_code != 200:
             raise Exception("Failed to read question answers")
         return response.json()
+
+    # Card Table methods
+    def get_card_table(self, project_id):
+        """Get the card table for a project (Basecamp 3 has one card table per project)."""
+        project = self.get_project(project_id)
+        try:
+            return next(_ for _ in project["dock"] if _["name"] == "card_table")
+        except (IndexError, TypeError, StopIteration):
+            raise Exception(f"Failed to get card table for project: {project_id}. Project response: {project}")
+    
+    def get_card_table_details(self, project_id, card_table_id):
+        """Get details for a specific card table."""
+        response = self.get(f'buckets/{project_id}/card_tables/{card_table_id}.json')
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to get card table: {response.status_code} - {response.text}")
+
+    # Card Table Column methods
+    def get_columns(self, project_id, card_table_id):
+        """Get all columns in a card table."""
+        response = self.get(f'buckets/{project_id}/card_tables/{card_table_id}/columns.json')
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to get columns: {response.status_code} - {response.text}")
+
+    def get_column(self, project_id, column_id):
+        """Get a specific column."""
+        response = self.get(f'buckets/{project_id}/card_tables/columns/{column_id}.json')
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to get column: {response.status_code} - {response.text}")
+
+    def create_column(self, project_id, card_table_id, title):
+        """Create a new column in a card table."""
+        data = {"title": title}
+        response = self.post(f'buckets/{project_id}/card_tables/{card_table_id}/columns.json', data)
+        if response.status_code == 201:
+            return response.json()
+        else:
+            raise Exception(f"Failed to create column: {response.status_code} - {response.text}")
+
+    def update_column(self, project_id, column_id, title):
+        """Update a column title."""
+        data = {"title": title}
+        response = self.put(f'buckets/{project_id}/card_tables/columns/{column_id}.json', data)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to update column: {response.status_code} - {response.text}")
+
+    def move_column(self, project_id, column_id, position):
+        """Move a column to a new position."""
+        data = {"position": position}
+        response = self.post(f'buckets/{project_id}/card_tables/columns/{column_id}/moves.json', data)
+        if response.status_code == 204:
+            return True
+        else:
+            raise Exception(f"Failed to move column: {response.status_code} - {response.text}")
+
+    def update_column_color(self, project_id, column_id, color):
+        """Update a column color."""
+        data = {"color": color}
+        response = self.patch(f'buckets/{project_id}/card_tables/columns/{column_id}/color.json', data)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to update column color: {response.status_code} - {response.text}")
+
+    def put_column_on_hold(self, project_id, column_id):
+        """Put a column on hold."""
+        response = self.post(f'buckets/{project_id}/card_tables/columns/{column_id}/on_hold.json')
+        if response.status_code == 204:
+            return True
+        else:
+            raise Exception(f"Failed to put column on hold: {response.status_code} - {response.text}")
+
+    def remove_column_hold(self, project_id, column_id):
+        """Remove hold from a column."""
+        response = self.delete(f'buckets/{project_id}/card_tables/columns/{column_id}/on_hold.json')
+        if response.status_code == 204:
+            return True
+        else:
+            raise Exception(f"Failed to remove column hold: {response.status_code} - {response.text}")
+
+    def watch_column(self, project_id, column_id):
+        """Subscribe to column notifications."""
+        response = self.post(f'buckets/{project_id}/card_tables/lists/{column_id}/subscription.json')
+        if response.status_code == 204:
+            return True
+        else:
+            raise Exception(f"Failed to watch column: {response.status_code} - {response.text}")
+
+    def unwatch_column(self, project_id, column_id):
+        """Unsubscribe from column notifications."""
+        response = self.delete(f'buckets/{project_id}/card_tables/lists/{column_id}/subscription.json')
+        if response.status_code == 204:
+            return True
+        else:
+            raise Exception(f"Failed to unwatch column: {response.status_code} - {response.text}")
+
+    # Card Table Card methods
+    def get_cards(self, project_id, column_id):
+        """Get all cards in a column."""
+        response = self.get(f'buckets/{project_id}/card_tables/lists/{column_id}/cards.json')
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to get cards: {response.status_code} - {response.text}")
+
+    def get_card(self, project_id, card_id):
+        """Get a specific card."""
+        response = self.get(f'buckets/{project_id}/card_tables/cards/{card_id}.json')
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to get card: {response.status_code} - {response.text}")
+
+    def create_card(self, project_id, column_id, title, content=None):
+        """Create a new card in a column."""
+        data = {"title": title}
+        if content:
+            data["content"] = content
+        response = self.post(f'buckets/{project_id}/card_tables/lists/{column_id}/cards.json', data)
+        if response.status_code == 201:
+            return response.json()
+        else:
+            raise Exception(f"Failed to create card: {response.status_code} - {response.text}")
+
+    def update_card(self, project_id, card_id, title=None, content=None):
+        """Update a card."""
+        data = {}
+        if title:
+            data["title"] = title
+        if content:
+            data["content"] = content
+        response = self.put(f'buckets/{project_id}/card_tables/cards/{card_id}.json', data)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to update card: {response.status_code} - {response.text}")
+
+    def move_card(self, project_id, card_id, column_id=None, position=None):
+        """Move a card to a new column and/or position."""
+        data = {}
+        if column_id:
+            data["column_id"] = column_id
+        if position:
+            data["position"] = position
+        response = self.post(f'buckets/{project_id}/card_tables/cards/{card_id}/moves.json', data)
+        if response.status_code == 204:
+            return True
+        else:
+            raise Exception(f"Failed to move card: {response.status_code} - {response.text}")

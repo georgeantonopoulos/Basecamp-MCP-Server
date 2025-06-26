@@ -77,6 +77,28 @@ Once configured, you can use these tools in Cursor:
 - `get_todos` - Get todos from a todo list
 - `search_basecamp` - Search across projects, todos, and messages
 - `get_comments` - Get comments for a Basecamp item
+- `get_campfire_lines` - Get recent messages from a Basecamp campfire
+- `get_daily_check_ins` - Get project's daily check-in questions
+- `get_question_answers` - Get answers to daily check-in questions
+
+### Card Table Tools
+
+- `get_card_table` - Get the card table details for a project
+- `get_columns` - Get all columns in a card table
+- `get_column` - Get details for a specific column
+- `create_column` - Create a new column in a card table
+- `update_column` - Update a column title
+- `move_column` - Move a column to a new position
+- `update_column_color` - Update a column color
+- `put_column_on_hold` - Put a column on hold (freeze work)
+- `remove_column_hold` - Remove hold from a column (unfreeze work)
+- `watch_column` - Subscribe to notifications for changes in a column
+- `unwatch_column` - Unsubscribe from notifications for a column
+- `get_cards` - Get all cards in a column
+- `get_card` - Get details for a specific card
+- `create_card` - Create a new card in a column
+- `update_card` - Update a card
+- `move_card` - Move a card to a new column and/or position
 
 ### Example Cursor Usage
 
@@ -85,6 +107,10 @@ Ask Cursor things like:
 - "What todos are in project X?"
 - "Search for messages containing 'deadline'"
 - "Get details for the Technology project"
+- "Show me the card table for project X"
+- "Create a new card in the 'In Progress' column"
+- "Move this card to the 'Done' column"
+- "Update the color of the 'Urgent' column to red"
 
 ## Architecture
 

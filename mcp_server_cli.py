@@ -159,6 +159,208 @@ class MCPServer:
                     }
                 },
                 "required": ["project_id", "question_id"]
+            },
+            # Card Table tools
+            {
+                "name": "get_card_table",
+                "description": "Get the card table details for a project",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"}
+                    },
+                    "required": ["project_id"]
+                }
+            },
+            {
+                "name": "get_columns",
+                "description": "Get all columns in a card table",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "card_table_id": {"type": "string", "description": "The card table ID"}
+                    },
+                    "required": ["project_id", "card_table_id"]
+                }
+            },
+            {
+                "name": "get_column",
+                "description": "Get details for a specific column",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "column_id": {"type": "string", "description": "The column ID"}
+                    },
+                    "required": ["project_id", "column_id"]
+                }
+            },
+            {
+                "name": "create_column",
+                "description": "Create a new column in a card table",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "card_table_id": {"type": "string", "description": "The card table ID"},
+                        "title": {"type": "string", "description": "The column title"}
+                    },
+                    "required": ["project_id", "card_table_id", "title"]
+                }
+            },
+            {
+                "name": "update_column",
+                "description": "Update a column title",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "column_id": {"type": "string", "description": "The column ID"},
+                        "title": {"type": "string", "description": "The new column title"}
+                    },
+                    "required": ["project_id", "column_id", "title"]
+                }
+            },
+            {
+                "name": "move_column",
+                "description": "Move a column to a new position",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "column_id": {"type": "string", "description": "The column ID"},
+                        "position": {"type": "integer", "description": "The new 1-based position"}
+                    },
+                    "required": ["project_id", "column_id", "position"]
+                }
+            },
+            {
+                "name": "update_column_color",
+                "description": "Update a column color",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "column_id": {"type": "string", "description": "The column ID"},
+                        "color": {"type": "string", "description": "The hex color code (e.g., #FF0000)"}
+                    },
+                    "required": ["project_id", "column_id", "color"]
+                }
+            },
+            {
+                "name": "put_column_on_hold",
+                "description": "Put a column on hold (freeze work)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "column_id": {"type": "string", "description": "The column ID"}
+                    },
+                    "required": ["project_id", "column_id"]
+                }
+            },
+            {
+                "name": "remove_column_hold",
+                "description": "Remove hold from a column (unfreeze work)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "column_id": {"type": "string", "description": "The column ID"}
+                    },
+                    "required": ["project_id", "column_id"]
+                }
+            },
+            {
+                "name": "watch_column",
+                "description": "Subscribe to notifications for changes in a column",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "column_id": {"type": "string", "description": "The column ID"}
+                    },
+                    "required": ["project_id", "column_id"]
+                }
+            },
+            {
+                "name": "unwatch_column",
+                "description": "Unsubscribe from notifications for a column",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "column_id": {"type": "string", "description": "The column ID"}
+                    },
+                    "required": ["project_id", "column_id"]
+                }
+            },
+            {
+                "name": "get_cards",
+                "description": "Get all cards in a column",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "column_id": {"type": "string", "description": "The column ID"}
+                    },
+                    "required": ["project_id", "column_id"]
+                }
+            },
+            {
+                "name": "get_card",
+                "description": "Get details for a specific card",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "card_id": {"type": "string", "description": "The card ID"}
+                    },
+                    "required": ["project_id", "card_id"]
+                }
+            },
+            {
+                "name": "create_card",
+                "description": "Create a new card in a column",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "column_id": {"type": "string", "description": "The column ID"},
+                        "title": {"type": "string", "description": "The card title"},
+                        "content": {"type": "string", "description": "Optional card content/description"}
+                    },
+                    "required": ["project_id", "column_id", "title"]
+                }
+            },
+            {
+                "name": "update_card",
+                "description": "Update a card",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "card_id": {"type": "string", "description": "The card ID"},
+                        "title": {"type": "string", "description": "The new card title"},
+                        "content": {"type": "string", "description": "The new card content/description"}
+                    },
+                    "required": ["project_id", "card_id"]
+                }
+            },
+            {
+                "name": "move_card",
+                "description": "Move a card to a new column and/or position",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "card_id": {"type": "string", "description": "The card ID"},
+                        "column_id": {"type": "string", "description": "The destination column ID (optional)"},
+                        "position": {"type": "integer", "description": "The new 1-based position (optional)"}
+                    },
+                    "required": ["project_id", "card_id"]
+                }
             }
         ]
 
@@ -427,6 +629,184 @@ class MCPServer:
                     "status": "success",
                     "campfire_lines": answers,
                     "count": len(answers)
+                }
+            
+            # Card Table tools implementation
+            elif tool_name == "get_card_table":
+                project_id = arguments.get("project_id")
+                try:
+                    card_table = client.get_card_table(project_id)
+                    # Also get the full details
+                    card_table_details = client.get_card_table_details(project_id, card_table['id'])
+                    return {
+                        "status": "success",
+                        "card_table": card_table_details
+                    }
+                except Exception as e:
+                    if "Failed to get card table" in str(e):
+                        return {
+                            "status": "error",
+                            "message": "No card table found for this project. Make sure the Card Table tool is enabled in the project settings."
+                        }
+                    raise
+
+            elif tool_name == "get_columns":
+                project_id = arguments.get("project_id")
+                card_table_id = arguments.get("card_table_id")
+                columns = client.get_columns(project_id, card_table_id)
+                return {
+                    "status": "success",
+                    "columns": columns,
+                    "count": len(columns)
+                }
+
+            elif tool_name == "get_column":
+                project_id = arguments.get("project_id")
+                column_id = arguments.get("column_id")
+                column = client.get_column(project_id, column_id)
+                return {
+                    "status": "success",
+                    "column": column
+                }
+
+            elif tool_name == "create_column":
+                project_id = arguments.get("project_id")
+                card_table_id = arguments.get("card_table_id")
+                title = arguments.get("title")
+                column = client.create_column(project_id, card_table_id, title)
+                return {
+                    "status": "success",
+                    "column": column,
+                    "message": f"Column '{title}' created successfully"
+                }
+
+            elif tool_name == "update_column":
+                project_id = arguments.get("project_id")
+                column_id = arguments.get("column_id")
+                title = arguments.get("title")
+                column = client.update_column(project_id, column_id, title)
+                return {
+                    "status": "success",
+                    "column": column,
+                    "message": f"Column updated successfully"
+                }
+
+            elif tool_name == "move_column":
+                project_id = arguments.get("project_id")
+                column_id = arguments.get("column_id")
+                position = arguments.get("position")
+                client.move_column(project_id, column_id, position)
+                return {
+                    "status": "success",
+                    "message": f"Column moved to position {position}"
+                }
+
+            elif tool_name == "update_column_color":
+                project_id = arguments.get("project_id")
+                column_id = arguments.get("column_id")
+                color = arguments.get("color")
+                column = client.update_column_color(project_id, column_id, color)
+                return {
+                    "status": "success",
+                    "column": column,
+                    "message": f"Column color updated to {color}"
+                }
+
+            elif tool_name == "put_column_on_hold":
+                project_id = arguments.get("project_id")
+                column_id = arguments.get("column_id")
+                client.put_column_on_hold(project_id, column_id)
+                return {
+                    "status": "success",
+                    "message": "Column put on hold"
+                }
+
+            elif tool_name == "remove_column_hold":
+                project_id = arguments.get("project_id")
+                column_id = arguments.get("column_id")
+                client.remove_column_hold(project_id, column_id)
+                return {
+                    "status": "success",
+                    "message": "Column hold removed"
+                }
+
+            elif tool_name == "watch_column":
+                project_id = arguments.get("project_id")
+                column_id = arguments.get("column_id")
+                client.watch_column(project_id, column_id)
+                return {
+                    "status": "success",
+                    "message": "Column notifications enabled"
+                }
+
+            elif tool_name == "unwatch_column":
+                project_id = arguments.get("project_id")
+                column_id = arguments.get("column_id")
+                client.unwatch_column(project_id, column_id)
+                return {
+                    "status": "success",
+                    "message": "Column notifications disabled"
+                }
+
+            elif tool_name == "get_cards":
+                project_id = arguments.get("project_id")
+                column_id = arguments.get("column_id")
+                cards = client.get_cards(project_id, column_id)
+                return {
+                    "status": "success",
+                    "cards": cards,
+                    "count": len(cards)
+                }
+
+            elif tool_name == "get_card":
+                project_id = arguments.get("project_id")
+                card_id = arguments.get("card_id")
+                card = client.get_card(project_id, card_id)
+                return {
+                    "status": "success",
+                    "card": card
+                }
+
+            elif tool_name == "create_card":
+                project_id = arguments.get("project_id")
+                column_id = arguments.get("column_id")
+                title = arguments.get("title")
+                content = arguments.get("content")
+                card = client.create_card(project_id, column_id, title, content)
+                return {
+                    "status": "success",
+                    "card": card,
+                    "message": f"Card '{title}' created successfully"
+                }
+
+            elif tool_name == "update_card":
+                project_id = arguments.get("project_id")
+                card_id = arguments.get("card_id")
+                title = arguments.get("title")
+                content = arguments.get("content")
+                card = client.update_card(project_id, card_id, title, content)
+                return {
+                    "status": "success",
+                    "card": card,
+                    "message": "Card updated successfully"
+                }
+
+            elif tool_name == "move_card":
+                project_id = arguments.get("project_id")
+                card_id = arguments.get("card_id")
+                column_id = arguments.get("column_id")
+                position = arguments.get("position")
+                client.move_card(project_id, card_id, column_id, position)
+                message = "Card moved"
+                if column_id and position:
+                    message = f"Card moved to column {column_id} at position {position}"
+                elif column_id:
+                    message = f"Card moved to column {column_id}"
+                elif position:
+                    message = f"Card moved to position {position}"
+                return {
+                    "status": "success",
+                    "message": message
                 }
             
             else:
