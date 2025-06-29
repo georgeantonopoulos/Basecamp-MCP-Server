@@ -25,19 +25,19 @@ def send_mcp_request(method, params=None):
     }
     
     # Run the MCP server with the request
-    process = subprocess.Popen(
+    result = subprocess.run(
         [sys.executable, "mcp_server_cli.py"],
-        stdin=subprocess.PIPE,
+        input=json.dumps(request),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True
     )
     
-    stdout, stderr = process.communicate(input=json.dumps(request))
-    
-    if process.returncode != 0:
-        print(f"Error: {stderr}")
+    if result.returncode != 0:
+        print(f"Error: {result.stderr}")
         return None
+    
+    stdout = result.stdout
     
     try:
         return json.loads(stdout)

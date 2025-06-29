@@ -240,10 +240,11 @@ class MCPServer:
                     "type": "object",
                     "properties": {
                         "project_id": {"type": "string", "description": "The project ID"},
+                        "card_table_id": {"type": "string", "description": "The card table ID"},
                         "column_id": {"type": "string", "description": "The column ID"},
                         "position": {"type": "integer", "description": "The new 1-based position"}
                     },
-                    "required": ["project_id", "column_id", "position"]
+                    "required": ["project_id", "card_table_id", "column_id", "position"]
                 }
             },
             {
@@ -840,16 +841,14 @@ class MCPServer:
                 return {
                     "status": "success",
                     "column": column,
-                    "message": f"Column updated successfully"
+                    "message": "Column updated successfully"
                 }
 
             elif tool_name == "move_column":
                 project_id = arguments.get("project_id")
+                card_table_id = arguments.get("card_table_id")
                 column_id = arguments.get("column_id")
                 position = arguments.get("position")
-                # Get the card table ID from the project
-                card_table = client.get_card_table(project_id)
-                card_table_id = card_table['id']
                 client.move_column(project_id, column_id, position, card_table_id)
                 return {
                     "status": "success",
