@@ -162,6 +162,17 @@ class MCPServer:
             },
             # Card Table tools
             {
+                "name": "get_card_tables",
+                "description": "Get all card tables for a project",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"}
+                    },
+                    "required": ["project_id"]
+                }
+            },
+            {
                 "name": "get_card_table",
                 "description": "Get the card table details for a project",
                 "inputSchema": {
@@ -329,7 +340,9 @@ class MCPServer:
                         "project_id": {"type": "string", "description": "The project ID"},
                         "column_id": {"type": "string", "description": "The column ID"},
                         "title": {"type": "string", "description": "The card title"},
-                        "content": {"type": "string", "description": "Optional card content/description"}
+                        "content": {"type": "string", "description": "Optional card content/description"},
+                        "due_on": {"type": "string", "description": "Optional due date (ISO 8601 format)"},
+                        "notify": {"type": "boolean", "description": "Whether to notify assignees (default: false)"}
                     },
                     "required": ["project_id", "column_id", "title"]
                 }
@@ -343,23 +356,138 @@ class MCPServer:
                         "project_id": {"type": "string", "description": "The project ID"},
                         "card_id": {"type": "string", "description": "The card ID"},
                         "title": {"type": "string", "description": "The new card title"},
-                        "content": {"type": "string", "description": "The new card content/description"}
+                        "content": {"type": "string", "description": "The new card content/description"},
+                        "due_on": {"type": "string", "description": "Due date (ISO 8601 format)"},
+                        "assignee_ids": {"type": "array", "items": {"type": "string"}, "description": "Array of person IDs to assign to the card"}
                     },
                     "required": ["project_id", "card_id"]
                 }
             },
             {
                 "name": "move_card",
-                "description": "Move a card to a new column and/or position",
+                "description": "Move a card to a new column",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "project_id": {"type": "string", "description": "The project ID"},
                         "card_id": {"type": "string", "description": "The card ID"},
-                        "column_id": {"type": "string", "description": "The destination column ID (optional)"},
-                        "position": {"type": "integer", "description": "The new 1-based position (optional)"}
+                        "column_id": {"type": "string", "description": "The destination column ID"}
+                    },
+                    "required": ["project_id", "card_id", "column_id"]
+                }
+            },
+            {
+                "name": "complete_card",
+                "description": "Mark a card as complete",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "card_id": {"type": "string", "description": "The card ID"}
                     },
                     "required": ["project_id", "card_id"]
+                }
+            },
+            {
+                "name": "uncomplete_card",
+                "description": "Mark a card as incomplete",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "card_id": {"type": "string", "description": "The card ID"}
+                    },
+                    "required": ["project_id", "card_id"]
+                }
+            },
+            {
+                "name": "get_card_steps",
+                "description": "Get all steps (sub-tasks) for a card",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "card_id": {"type": "string", "description": "The card ID"}
+                    },
+                    "required": ["project_id", "card_id"]
+                }
+            },
+            {
+                "name": "create_card_step",
+                "description": "Create a new step (sub-task) for a card",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "card_id": {"type": "string", "description": "The card ID"},
+                        "title": {"type": "string", "description": "The step title"},
+                        "due_on": {"type": "string", "description": "Optional due date (ISO 8601 format)"},
+                        "assignee_ids": {"type": "array", "items": {"type": "string"}, "description": "Array of person IDs to assign to the step"}
+                    },
+                    "required": ["project_id", "card_id", "title"]
+                }
+            },
+            {
+                "name": "get_card_step",
+                "description": "Get details for a specific card step",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "step_id": {"type": "string", "description": "The step ID"}
+                    },
+                    "required": ["project_id", "step_id"]
+                }
+            },
+            {
+                "name": "update_card_step",
+                "description": "Update a card step",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "step_id": {"type": "string", "description": "The step ID"},
+                        "title": {"type": "string", "description": "The step title"},
+                        "due_on": {"type": "string", "description": "Due date (ISO 8601 format)"},
+                        "assignee_ids": {"type": "array", "items": {"type": "string"}, "description": "Array of person IDs to assign to the step"}
+                    },
+                    "required": ["project_id", "step_id"]
+                }
+            },
+            {
+                "name": "delete_card_step",
+                "description": "Delete a card step",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "step_id": {"type": "string", "description": "The step ID"}
+                    },
+                    "required": ["project_id", "step_id"]
+                }
+            },
+            {
+                "name": "complete_card_step",
+                "description": "Mark a card step as complete",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "step_id": {"type": "string", "description": "The step ID"}
+                    },
+                    "required": ["project_id", "step_id"]
+                }
+            },
+            {
+                "name": "uncomplete_card_step",
+                "description": "Mark a card step as incomplete",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "step_id": {"type": "string", "description": "The step ID"}
+                    },
+                    "required": ["project_id", "step_id"]
                 }
             }
         ]
@@ -401,7 +529,7 @@ class MCPServer:
             logger.error(f"Error creating Basecamp client: {e}")
             return None
 
-    def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
+    def handle_request(self, request: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Handle an MCP request."""
         method = request.get("method")
         # Normalize method name for cursor compatibility
@@ -613,7 +741,9 @@ class MCPServer:
                 }
             elif tool_name == "get_daily_check_ins":
                 project_id = arguments.get("project_id")
-                page = arguments.get("page")
+                page = arguments.get("page", 1)
+                if page is not None and not isinstance(page, int):
+                    page = 1
                 answers = client.get_daily_check_ins(project_id, page=page)
                 return {
                     "status": "success",
@@ -623,7 +753,9 @@ class MCPServer:
             elif tool_name == "get_question_answers":
                 project_id = arguments.get("project_id")
                 question_id = arguments.get("question_id")
-                page = arguments.get("page")
+                page = arguments.get("page", 1)
+                if page is not None and not isinstance(page, int):
+                    page = 1
                 answers = client.get_question_answers(project_id, question_id, page=page)
                 return {
                     "status": "success",
@@ -632,23 +764,43 @@ class MCPServer:
                 }
             
             # Card Table tools implementation
+            elif tool_name == "get_card_tables":
+                project_id = arguments.get("project_id")
+                card_tables = client.get_card_tables(project_id)
+                return {
+                    "status": "success",
+                    "card_tables": card_tables,
+                    "count": len(card_tables)
+                }
+
             elif tool_name == "get_card_table":
                 project_id = arguments.get("project_id")
                 try:
-                    card_table = client.get_card_table(project_id)
-                    # Also get the full details
+                    # First, let's see what card tables we find
+                    card_tables = client.get_card_tables(project_id)
+                    if not card_tables:
+                        return {
+                            "status": "error",
+                            "message": "No card tables found in project",
+                            "debug": f"Found {len(card_tables)} card tables"
+                        }
+                    
+                    card_table = card_tables[0]  # Get the first card table
+                    
+                    # Get the full details
                     card_table_details = client.get_card_table_details(project_id, card_table['id'])
                     return {
                         "status": "success",
-                        "card_table": card_table_details
+                        "card_table": card_table_details,
+                        "debug": f"Found {len(card_tables)} card tables, using first one with ID {card_table['id']}"
                     }
                 except Exception as e:
-                    if "Failed to get card table" in str(e):
-                        return {
-                            "status": "error",
-                            "message": "No card table found for this project. Make sure the Card Table tool is enabled in the project settings."
-                        }
-                    raise
+                    error_msg = str(e)
+                    return {
+                        "status": "error", 
+                        "message": f"Error getting card table: {error_msg}",
+                        "debug": error_msg
+                    }
 
             elif tool_name == "get_columns":
                 project_id = arguments.get("project_id")
@@ -695,7 +847,10 @@ class MCPServer:
                 project_id = arguments.get("project_id")
                 column_id = arguments.get("column_id")
                 position = arguments.get("position")
-                client.move_column(project_id, column_id, position)
+                # Get the card table ID from the project
+                card_table = client.get_card_table(project_id)
+                card_table_id = card_table['id']
+                client.move_column(project_id, column_id, position, card_table_id)
                 return {
                     "status": "success",
                     "message": f"Column moved to position {position}"
@@ -772,7 +927,9 @@ class MCPServer:
                 column_id = arguments.get("column_id")
                 title = arguments.get("title")
                 content = arguments.get("content")
-                card = client.create_card(project_id, column_id, title, content)
+                due_on = arguments.get("due_on")
+                notify = bool(arguments.get("notify", False))
+                card = client.create_card(project_id, column_id, title, content, due_on, notify)
                 return {
                     "status": "success",
                     "card": card,
@@ -784,7 +941,9 @@ class MCPServer:
                 card_id = arguments.get("card_id")
                 title = arguments.get("title")
                 content = arguments.get("content")
-                card = client.update_card(project_id, card_id, title, content)
+                due_on = arguments.get("due_on")
+                assignee_ids = arguments.get("assignee_ids")
+                card = client.update_card(project_id, card_id, title, content, due_on, assignee_ids)
                 return {
                     "status": "success",
                     "card": card,
@@ -795,20 +954,105 @@ class MCPServer:
                 project_id = arguments.get("project_id")
                 card_id = arguments.get("card_id")
                 column_id = arguments.get("column_id")
-                position = arguments.get("position")
-                client.move_card(project_id, card_id, column_id, position)
+                client.move_card(project_id, card_id, column_id)
                 message = "Card moved"
-                if column_id and position:
-                    message = f"Card moved to column {column_id} at position {position}"
-                elif column_id:
+                if column_id:
                     message = f"Card moved to column {column_id}"
-                elif position:
-                    message = f"Card moved to position {position}"
                 return {
                     "status": "success",
                     "message": message
                 }
             
+            elif tool_name == "complete_card":
+                project_id = arguments.get("project_id")
+                card_id = arguments.get("card_id")
+                client.complete_card(project_id, card_id)
+                return {
+                    "status": "success",
+                    "message": "Card marked as complete"
+                }
+
+            elif tool_name == "uncomplete_card":
+                project_id = arguments.get("project_id")
+                card_id = arguments.get("card_id")
+                client.uncomplete_card(project_id, card_id)
+                return {
+                    "status": "success",
+                    "message": "Card marked as incomplete"
+                }
+
+            elif tool_name == "get_card_steps":
+                project_id = arguments.get("project_id")
+                card_id = arguments.get("card_id")
+                steps = client.get_card_steps(project_id, card_id)
+                return {
+                    "status": "success",
+                    "steps": steps,
+                    "count": len(steps)
+                }
+
+            elif tool_name == "create_card_step":
+                project_id = arguments.get("project_id")
+                card_id = arguments.get("card_id")
+                title = arguments.get("title")
+                due_on = arguments.get("due_on")
+                assignee_ids = arguments.get("assignee_ids")
+                step = client.create_card_step(project_id, card_id, title, due_on, assignee_ids)
+                return {
+                    "status": "success",
+                    "step": step,
+                    "message": f"Step '{title}' created successfully"
+                }
+
+            elif tool_name == "get_card_step":
+                project_id = arguments.get("project_id")
+                step_id = arguments.get("step_id")
+                step = client.get_card_step(project_id, step_id)
+                return {
+                    "status": "success",
+                    "step": step
+                }
+
+            elif tool_name == "update_card_step":
+                project_id = arguments.get("project_id")
+                step_id = arguments.get("step_id")
+                title = arguments.get("title")
+                due_on = arguments.get("due_on")
+                assignee_ids = arguments.get("assignee_ids")
+                step = client.update_card_step(project_id, step_id, title, due_on, assignee_ids)
+                return {
+                    "status": "success",
+                    "step": step,
+                    "message": f"Step '{title}' updated successfully"
+                }
+
+            elif tool_name == "delete_card_step":
+                project_id = arguments.get("project_id")
+                step_id = arguments.get("step_id")
+                client.delete_card_step(project_id, step_id)
+                return {
+                    "status": "success",
+                    "message": "Step deleted successfully"
+                }
+
+            elif tool_name == "complete_card_step":
+                project_id = arguments.get("project_id")
+                step_id = arguments.get("step_id")
+                client.complete_card_step(project_id, step_id)
+                return {
+                    "status": "success",
+                    "message": "Step marked as complete"
+                }
+
+            elif tool_name == "uncomplete_card_step":
+                project_id = arguments.get("project_id")
+                step_id = arguments.get("step_id")
+                client.uncomplete_card_step(project_id, step_id)
+                return {
+                    "status": "success",
+                    "message": "Step marked as incomplete"
+                }
+
             else:
                 return {
                     "error": "Unknown tool",

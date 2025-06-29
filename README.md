@@ -98,7 +98,16 @@ Once configured, you can use these tools in Cursor:
 - `get_card` - Get details for a specific card
 - `create_card` - Create a new card in a column
 - `update_card` - Update a card
-- `move_card` - Move a card to a new column and/or position
+- `move_card` - Move a card to a new column
+- `complete_card` - Mark a card as complete
+- `uncomplete_card` - Mark a card as incomplete
+- `get_card_steps` - Get all steps (sub-tasks) for a card
+- `create_card_step` - Create a new step (sub-task) for a card
+- `get_card_step` - Get details for a specific card step
+- `update_card_step` - Update a card step
+- `delete_card_step` - Delete a card step
+- `complete_card_step` - Mark a card step as complete
+- `uncomplete_card_step` - Mark a card step as incomplete
 
 ### Example Cursor Usage
 
@@ -111,6 +120,10 @@ Ask Cursor things like:
 - "Create a new card in the 'In Progress' column"
 - "Move this card to the 'Done' column"
 - "Update the color of the 'Urgent' column to red"
+- "Mark card as complete"
+- "Show me all steps for this card"
+- "Create a sub-task for this card"
+- "Mark this card step as complete"
 
 ## Architecture
 
