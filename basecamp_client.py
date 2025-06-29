@@ -90,6 +90,11 @@ class BasecampClient:
         url = f"{self.base_url}/{endpoint}"
         return requests.delete(url, auth=self.auth, headers=self.headers)
 
+    def patch(self, endpoint, data=None):
+        """Make a PATCH request to the Basecamp API."""
+        url = f"{self.base_url}/{endpoint}"
+        return requests.patch(url, auth=self.auth, headers=self.headers, json=data)
+
     # Project methods
     def get_projects(self):
         """Get all projects."""
@@ -344,3 +349,257 @@ class BasecampClient:
         if response.status_code != 200:
             raise Exception("Failed to read question answers")
         return response.json()
+
+    # Card Table methods
+    def get_card_tables(self, project_id):
+        """Get all card tables for a project."""
+        project = self.get_project(project_id)
+        try:
+            return [_ for _ in project["dock"] if _["name"] == "kanban_board"]
+        except (IndexError, TypeError):
+            return []
+
+    def get_card_table(self, project_id):
+        """Get the first card table for a project (Basecamp 3 can have multiple card tables per project)."""
+        card_tables = self.get_card_tables(project_id)
+        if not card_tables:
+            raise Exception(f"No card tables found for project: {project_id}")
+        return card_tables[0]  # Return the first card table
+    
+    def get_card_table_details(self, project_id, card_table_id):
+        """Get details for a specific card table."""
+        response = self.get(f'buckets/{project_id}/card_tables/{card_table_id}.json')
+        if response.status_code == 200:
+            return response.json()
+        elif response.status_code == 204:
+            # 204 means "No Content" - return an empty structure
+            return {"lists": [], "id": card_table_id, "status": "empty"}
+        else:
+            raise Exception(f"Failed to get card table: {response.status_code} - {response.text}")
+
+    # Card Table Column methods
+    def get_columns(self, project_id, card_table_id):
+        """Get all columns in a card table."""
+        # Get the card table details which includes the lists (columns)
+        card_table_details = self.get_card_table_details(project_id, card_table_id)
+        return card_table_details.get('lists', [])
+
+    def get_column(self, project_id, column_id):
+        """Get a specific column."""
+        response = self.get(f'buckets/{project_id}/card_tables/columns/{column_id}.json')
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to get column: {response.status_code} - {response.text}")
+
+    def create_column(self, project_id, card_table_id, title):
+        """Create a new column in a card table."""
+        data = {"title": title}
+        response = self.post(f'buckets/{project_id}/card_tables/{card_table_id}/columns.json', data)
+        if response.status_code == 201:
+            return response.json()
+        else:
+            raise Exception(f"Failed to create column: {response.status_code} - {response.text}")
+
+    def update_column(self, project_id, column_id, title):
+        """Update a column title."""
+        data = {"title": title}
+        response = self.put(f'buckets/{project_id}/card_tables/columns/{column_id}.json', data)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to update column: {response.status_code} - {response.text}")
+
+    def move_column(self, project_id, column_id, position, card_table_id):
+        """Move a column to a new position."""
+        data = {
+            "source_id": column_id, 
+            "target_id": card_table_id,
+            "position": position
+        }
+        response = self.post(f'buckets/{project_id}/card_tables/{card_table_id}/moves.json', data)
+        if response.status_code == 204:
+            return True
+        else:
+            raise Exception(f"Failed to move column: {response.status_code} - {response.text}")
+
+    def update_column_color(self, project_id, column_id, color):
+        """Update a column color."""
+        data = {"color": color}
+        response = self.patch(f'buckets/{project_id}/card_tables/columns/{column_id}/color.json', data)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to update column color: {response.status_code} - {response.text}")
+
+    def put_column_on_hold(self, project_id, column_id):
+        """Put a column on hold."""
+        response = self.post(f'buckets/{project_id}/card_tables/columns/{column_id}/on_hold.json')
+        if response.status_code == 204:
+            return True
+        else:
+            raise Exception(f"Failed to put column on hold: {response.status_code} - {response.text}")
+
+    def remove_column_hold(self, project_id, column_id):
+        """Remove hold from a column."""
+        response = self.delete(f'buckets/{project_id}/card_tables/columns/{column_id}/on_hold.json')
+        if response.status_code == 204:
+            return True
+        else:
+            raise Exception(f"Failed to remove column hold: {response.status_code} - {response.text}")
+
+    def watch_column(self, project_id, column_id):
+        """Subscribe to column notifications."""
+        response = self.post(f'buckets/{project_id}/card_tables/lists/{column_id}/subscription.json')
+        if response.status_code == 204:
+            return True
+        else:
+            raise Exception(f"Failed to watch column: {response.status_code} - {response.text}")
+
+    def unwatch_column(self, project_id, column_id):
+        """Unsubscribe from column notifications."""
+        response = self.delete(f'buckets/{project_id}/card_tables/lists/{column_id}/subscription.json')
+        if response.status_code == 204:
+            return True
+        else:
+            raise Exception(f"Failed to unwatch column: {response.status_code} - {response.text}")
+
+    # Card Table Card methods
+    def get_cards(self, project_id, column_id):
+        """Get all cards in a column."""
+        response = self.get(f'buckets/{project_id}/card_tables/lists/{column_id}/cards.json')
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to get cards: {response.status_code} - {response.text}")
+
+    def get_card(self, project_id, card_id):
+        """Get a specific card."""
+        response = self.get(f'buckets/{project_id}/card_tables/cards/{card_id}.json')
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to get card: {response.status_code} - {response.text}")
+
+    def create_card(self, project_id, column_id, title, content=None, due_on=None, notify=False):
+        """Create a new card in a column."""
+        data = {"title": title}
+        if content:
+            data["content"] = content
+        if due_on:
+            data["due_on"] = due_on
+        if notify:
+            data["notify"] = notify
+        response = self.post(f'buckets/{project_id}/card_tables/lists/{column_id}/cards.json', data)
+        if response.status_code == 201:
+            return response.json()
+        else:
+            raise Exception(f"Failed to create card: {response.status_code} - {response.text}")
+
+    def update_card(self, project_id, card_id, title=None, content=None, due_on=None, assignee_ids=None):
+        """Update a card."""
+        data = {}
+        if title:
+            data["title"] = title
+        if content:
+            data["content"] = content
+        if due_on:
+            data["due_on"] = due_on
+        if assignee_ids:
+            data["assignee_ids"] = assignee_ids
+        response = self.put(f'buckets/{project_id}/card_tables/cards/{card_id}.json', data)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to update card: {response.status_code} - {response.text}")
+
+    def move_card(self, project_id, card_id, column_id):
+        """Move a card to a new column."""
+        data = {"column_id": column_id}
+        response = self.post(f'buckets/{project_id}/card_tables/cards/{card_id}/moves.json', data)
+        if response.status_code == 204:
+            return True
+        else:
+            raise Exception(f"Failed to move card: {response.status_code} - {response.text}")
+
+    def complete_card(self, project_id, card_id):
+        """Mark a card as complete."""
+        response = self.post(f'buckets/{project_id}/todos/{card_id}/completion.json')
+        if response.status_code == 201:
+            return response.json()
+        else:
+            raise Exception(f"Failed to complete card: {response.status_code} - {response.text}")
+
+    def uncomplete_card(self, project_id, card_id):
+        """Mark a card as incomplete."""
+        response = self.delete(f'buckets/{project_id}/todos/{card_id}/completion.json')
+        if response.status_code == 204:
+            return True
+        else:
+            raise Exception(f"Failed to uncomplete card: {response.status_code} - {response.text}")
+
+    # Card Steps methods
+    def get_card_steps(self, project_id, card_id):
+        """Get all steps (sub-tasks) for a card."""
+        card = self.get_card(project_id, card_id)
+        return card.get('steps', [])
+
+    def create_card_step(self, project_id, card_id, title, due_on=None, assignee_ids=None):
+        """Create a new step (sub-task) for a card."""
+        data = {"title": title}
+        if due_on:
+            data["due_on"] = due_on
+        if assignee_ids:
+            data["assignee_ids"] = assignee_ids
+        response = self.post(f'buckets/{project_id}/card_tables/cards/{card_id}/steps.json', data)
+        if response.status_code == 201:
+            return response.json()
+        else:
+            raise Exception(f"Failed to create card step: {response.status_code} - {response.text}")
+
+    def get_card_step(self, project_id, step_id):
+        """Get a specific card step."""
+        response = self.get(f'buckets/{project_id}/card_tables/steps/{step_id}.json')
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to get card step: {response.status_code} - {response.text}")
+
+    def update_card_step(self, project_id, step_id, title=None, due_on=None, assignee_ids=None):
+        """Update a card step."""
+        data = {}
+        if title:
+            data["title"] = title
+        if due_on:
+            data["due_on"] = due_on
+        if assignee_ids:
+            data["assignee_ids"] = assignee_ids
+        response = self.put(f'buckets/{project_id}/card_tables/steps/{step_id}.json', data)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to update card step: {response.status_code} - {response.text}")
+
+    def delete_card_step(self, project_id, step_id):
+        """Delete a card step."""
+        response = self.delete(f'buckets/{project_id}/card_tables/steps/{step_id}.json')
+        if response.status_code == 204:
+            return True
+        else:
+            raise Exception(f"Failed to delete card step: {response.status_code} - {response.text}")
+
+    def complete_card_step(self, project_id, step_id):
+        """Mark a card step as complete."""
+        response = self.post(f'buckets/{project_id}/todos/{step_id}/completion.json')
+        if response.status_code == 201:
+            return response.json()
+        else:
+            raise Exception(f"Failed to complete card step: {response.status_code} - {response.text}")
+
+    def uncomplete_card_step(self, project_id, step_id):
+        """Mark a card step as incomplete."""
+        response = self.delete(f'buckets/{project_id}/todos/{step_id}/completion.json')
+        if response.status_code == 204:
+            return True
+        else:
+            raise Exception(f"Failed to uncomplete card step: {response.status_code} - {response.text}")
