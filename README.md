@@ -80,6 +80,16 @@ Once configured, you can use these tools in Cursor:
 - `get_campfire_lines` - Get recent messages from a Basecamp campfire
 - `get_daily_check_ins` - Get project's daily check-in questions
 - `get_question_answers` - Get answers to daily check-in questions
+- `create_attachment` - Upload a file as an attachment
+- `get_events` - Get events for a recording
+- `get_webhooks` - List webhooks for a project
+- `create_webhook` - Create a webhook
+- `delete_webhook` - Delete a webhook
+- `get_documents` - List documents in a vault
+- `get_document` - Get a single document
+- `create_document` - Create a document
+- `update_document` - Update a document
+- `trash_document` - Move a document to trash
 
 ### Card Table Tools
 

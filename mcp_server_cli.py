@@ -490,6 +490,131 @@ class MCPServer:
                     },
                     "required": ["project_id", "step_id"]
                 }
+            },
+            {
+                "name": "create_attachment",
+                "description": "Upload a file as an attachment",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "file_path": {"type": "string", "description": "Local path to file"},
+                        "name": {"type": "string", "description": "Filename for Basecamp"},
+                        "content_type": {"type": "string", "description": "MIME type"}
+                    },
+                    "required": ["file_path", "name"]
+                }
+            },
+            {
+                "name": "get_events",
+                "description": "Get events for a recording",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "Project ID"},
+                        "recording_id": {"type": "string", "description": "Recording ID"}
+                    },
+                    "required": ["project_id", "recording_id"]
+                }
+            },
+            {
+                "name": "get_webhooks",
+                "description": "List webhooks for a project",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "Project ID"}
+                    },
+                    "required": ["project_id"]
+                }
+            },
+            {
+                "name": "create_webhook",
+                "description": "Create a webhook",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "Project ID"},
+                        "payload_url": {"type": "string", "description": "Payload URL"},
+                        "types": {"type": "array", "items": {"type": "string"}, "description": "Event types"}
+                    },
+                    "required": ["project_id", "payload_url"]
+                }
+            },
+            {
+                "name": "delete_webhook",
+                "description": "Delete a webhook",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "Project ID"},
+                        "webhook_id": {"type": "string", "description": "Webhook ID"}
+                    },
+                    "required": ["project_id", "webhook_id"]
+                }
+            },
+            {
+                "name": "get_documents",
+                "description": "List documents in a vault",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "Project ID"},
+                        "vault_id": {"type": "string", "description": "Vault ID"}
+                    },
+                    "required": ["project_id", "vault_id"]
+                }
+            },
+            {
+                "name": "get_document",
+                "description": "Get a single document",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "Project ID"},
+                        "document_id": {"type": "string", "description": "Document ID"}
+                    },
+                    "required": ["project_id", "document_id"]
+                }
+            },
+            {
+                "name": "create_document",
+                "description": "Create a document in a vault",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "Project ID"},
+                        "vault_id": {"type": "string", "description": "Vault ID"},
+                        "title": {"type": "string", "description": "Document title"},
+                        "content": {"type": "string", "description": "Document HTML content"}
+                    },
+                    "required": ["project_id", "vault_id", "title", "content"]
+                }
+            },
+            {
+                "name": "update_document",
+                "description": "Update a document",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "Project ID"},
+                        "document_id": {"type": "string", "description": "Document ID"},
+                        "title": {"type": "string", "description": "New title"},
+                        "content": {"type": "string", "description": "New HTML content"}
+                    },
+                    "required": ["project_id", "document_id"]
+                }
+            },
+            {
+                "name": "trash_document",
+                "description": "Move a document to trash",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "Project ID"},
+                        "document_id": {"type": "string", "description": "Document ID"}
+                    },
+                    "required": ["project_id", "document_id"]
+                }
             }
         ]
 
@@ -777,28 +902,16 @@ class MCPServer:
             elif tool_name == "get_card_table":
                 project_id = arguments.get("project_id")
                 try:
-                    # First, let's see what card tables we find
-                    card_tables = client.get_card_tables(project_id)
-                    if not card_tables:
-                        return {
-                            "status": "error",
-                            "message": "No card tables found in project",
-                            "debug": f"Found {len(card_tables)} card tables"
-                        }
-                    
-                    card_table = card_tables[0]  # Get the first card table
-                    
-                    # Get the full details
+                    card_table = client.get_card_table(project_id)
                     card_table_details = client.get_card_table_details(project_id, card_table['id'])
                     return {
                         "status": "success",
-                        "card_table": card_table_details,
-                        "debug": f"Found {len(card_tables)} card tables, using first one with ID {card_table['id']}"
+                        "card_table": card_table_details
                     }
                 except Exception as e:
                     error_msg = str(e)
                     return {
-                        "status": "error", 
+                        "status": "error",
                         "message": f"Error getting card table: {error_msg}",
                         "debug": error_msg
                     }
@@ -1050,6 +1163,104 @@ class MCPServer:
                 return {
                     "status": "success",
                     "message": "Step marked as incomplete"
+                }
+
+            elif tool_name == "create_attachment":
+                file_path = arguments.get("file_path")
+                name = arguments.get("name")
+                content_type = arguments.get("content_type", "application/octet-stream")
+                result = client.create_attachment(file_path, name, content_type)
+                return {
+                    "status": "success",
+                    "attachment": result
+                }
+
+            elif tool_name == "get_events":
+                project_id = arguments.get("project_id")
+                recording_id = arguments.get("recording_id")
+                events = client.get_events(project_id, recording_id)
+                return {
+                    "status": "success",
+                    "events": events,
+                    "count": len(events)
+                }
+
+            elif tool_name == "get_webhooks":
+                project_id = arguments.get("project_id")
+                hooks = client.get_webhooks(project_id)
+                return {
+                    "status": "success",
+                    "webhooks": hooks,
+                    "count": len(hooks)
+                }
+
+            elif tool_name == "create_webhook":
+                project_id = arguments.get("project_id")
+                payload_url = arguments.get("payload_url")
+                types = arguments.get("types")
+                hook = client.create_webhook(project_id, payload_url, types)
+                return {
+                    "status": "success",
+                    "webhook": hook
+                }
+
+            elif tool_name == "delete_webhook":
+                project_id = arguments.get("project_id")
+                webhook_id = arguments.get("webhook_id")
+                client.delete_webhook(project_id, webhook_id)
+                return {
+                    "status": "success",
+                    "message": "Webhook deleted"
+                }
+
+            elif tool_name == "get_documents":
+                project_id = arguments.get("project_id")
+                vault_id = arguments.get("vault_id")
+                docs = client.get_documents(project_id, vault_id)
+                return {
+                    "status": "success",
+                    "documents": docs,
+                    "count": len(docs)
+                }
+
+            elif tool_name == "get_document":
+                project_id = arguments.get("project_id")
+                document_id = arguments.get("document_id")
+                doc = client.get_document(project_id, document_id)
+                return {
+                    "status": "success",
+                    "document": doc
+                }
+
+            elif tool_name == "create_document":
+                project_id = arguments.get("project_id")
+                vault_id = arguments.get("vault_id")
+                title = arguments.get("title")
+                content = arguments.get("content")
+                doc = client.create_document(project_id, vault_id, title, content)
+                return {
+                    "status": "success",
+                    "document": doc
+                }
+
+            elif tool_name == "update_document":
+                project_id = arguments.get("project_id")
+                document_id = arguments.get("document_id")
+                title = arguments.get("title")
+                content = arguments.get("content")
+                doc = client.update_document(project_id, document_id, title, content)
+                return {
+                    "status": "success",
+                    "document": doc
+                }
+
+            elif tool_name == "trash_document":
+                project_id = arguments.get("project_id")
+                document_id = arguments.get("document_id")
+                client.trash_document(project_id, document_id)
+                return {
+                    "status": "success",
+                    "message": "Document trashed"
                 }
 
             else:

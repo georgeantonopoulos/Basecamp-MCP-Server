@@ -355,7 +355,7 @@ class BasecampClient:
         """Get all card tables for a project."""
         project = self.get_project(project_id)
         try:
-            return [_ for _ in project["dock"] if _["name"] == "kanban_board"]
+            return [item for item in project["dock"] if item.get("name") in ("kanban_board", "card_table")]
         except (IndexError, TypeError):
             return []
 
@@ -603,3 +603,110 @@ class BasecampClient:
             return True
         else:
             raise Exception(f"Failed to uncomplete card step: {response.status_code} - {response.text}")
+
+    # New methods for additional Basecamp API functionality
+    def create_attachment(self, file_path, name, content_type="application/octet-stream"):
+        """Upload an attachment and return the attachable sgid."""
+        with open(file_path, "rb") as f:
+            data = f.read()
+
+        headers = self.headers.copy()
+        headers["Content-Type"] = content_type
+        headers["Content-Length"] = str(len(data))
+
+        endpoint = f"attachments.json?name={name}"
+        response = requests.post(f"{self.base_url}/{endpoint}", headers=headers, data=data)
+        if response.status_code == 201:
+            return response.json()
+        else:
+            raise Exception(f"Failed to create attachment: {response.status_code} - {response.text}")
+
+    def get_events(self, project_id, recording_id):
+        """Get events for a recording."""
+        endpoint = f"buckets/{project_id}/recordings/{recording_id}/events.json"
+        response = self.get(endpoint)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to get events: {response.status_code} - {response.text}")
+
+    def get_webhooks(self, project_id):
+        """List webhooks for a project."""
+        endpoint = f"buckets/{project_id}/webhooks.json"
+        response = self.get(endpoint)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to get webhooks: {response.status_code} - {response.text}")
+
+    def create_webhook(self, project_id, payload_url, types=None):
+        """Create a webhook for a project."""
+        data = {"payload_url": payload_url}
+        if types:
+            data["types"] = types
+        endpoint = f"buckets/{project_id}/webhooks.json"
+        response = self.post(endpoint, data)
+        if response.status_code == 201:
+            return response.json()
+        else:
+            raise Exception(f"Failed to create webhook: {response.status_code} - {response.text}")
+
+    def delete_webhook(self, project_id, webhook_id):
+        """Delete a webhook."""
+        endpoint = f"buckets/{project_id}/webhooks/{webhook_id}.json"
+        response = self.delete(endpoint)
+        if response.status_code == 204:
+            return True
+        else:
+            raise Exception(f"Failed to delete webhook: {response.status_code} - {response.text}")
+
+    def get_documents(self, project_id, vault_id):
+        """List documents in a vault."""
+        endpoint = f"buckets/{project_id}/vaults/{vault_id}/documents.json"
+        response = self.get(endpoint)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to get documents: {response.status_code} - {response.text}")
+
+    def get_document(self, project_id, document_id):
+        """Get a single document."""
+        endpoint = f"buckets/{project_id}/documents/{document_id}.json"
+        response = self.get(endpoint)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to get document: {response.status_code} - {response.text}")
+
+    def create_document(self, project_id, vault_id, title, content, status="active"):
+        """Create a document in a vault."""
+        data = {"title": title, "content": content, "status": status}
+        endpoint = f"buckets/{project_id}/vaults/{vault_id}/documents.json"
+        response = self.post(endpoint, data)
+        if response.status_code == 201:
+            return response.json()
+        else:
+            raise Exception(f"Failed to create document: {response.status_code} - {response.text}")
+
+    def update_document(self, project_id, document_id, title=None, content=None):
+        """Update a document's title or content."""
+        data = {}
+        if title:
+            data["title"] = title
+        if content:
+            data["content"] = content
+        endpoint = f"buckets/{project_id}/documents/{document_id}.json"
+        response = self.put(endpoint, data)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to update document: {response.status_code} - {response.text}")
+
+    def trash_document(self, project_id, document_id):
+        """Trash a document."""
+        endpoint = f"buckets/{project_id}/recordings/{document_id}/status/trashed.json"
+        response = self.put(endpoint)
+        if response.status_code == 204:
+            return True
+        else:
+            raise Exception(f"Failed to trash document: {response.status_code} - {response.text}")
