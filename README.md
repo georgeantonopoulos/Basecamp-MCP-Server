@@ -5,7 +5,9 @@ This project provides a **FastMCP-powered** integration for Basecamp 3, allowing
 ✅ **Migration Complete:** Successfully migrated to official Anthropic FastMCP framework with **100% feature parity** (all 46 tools)  
 🚀 **Ready for Production:** Full protocol compliance with MCP 2025-06-18
 
-## Quick Setup for Cursor
+## Quick Setup
+
+This server works with both **Cursor** and **Claude Desktop**. Choose your preferred client:
 
 ### Prerequisites
 
@@ -13,7 +15,7 @@ This project provides a **FastMCP-powered** integration for Basecamp 3, allowing
 - A Basecamp 3 account  
 - A Basecamp OAuth application (create one at https://launchpad.37signals.com/integrations)
 
-### Step-by-Step Instructions
+## For Cursor Users
 
 ### One-Command Setup
 
@@ -60,7 +62,7 @@ This project provides a **FastMCP-powered** integration for Basecamp 3, allowing
 ### Test Your Setup
 
 ```bash
-# Quick test the FastMCP server
+# Quick test the FastMCP server (works with both clients)
 echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}
 {"jsonrpc":"2.0","method":"notifications/initialized","params":{}}
 {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' | python basecamp_fastmcp.py
@@ -68,6 +70,82 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 # Run automated tests  
 python -m pytest tests/ -v
 ```
+
+## For Claude Desktop Users
+
+Based on the [official MCP quickstart guide](https://modelcontextprotocol.io/quickstart/server), Claude Desktop integration follows these steps:
+
+### Setup Steps
+
+1. **Complete the basic setup** (steps 1-3 from Cursor setup above):
+   ```bash
+   git clone <repository-url>
+   cd basecamp-mcp
+   python setup.py
+   # Configure .env file with OAuth credentials
+   python oauth_app.py
+   ```
+
+2. **Generate Claude Desktop configuration:**
+   ```bash
+   python generate_claude_desktop_config.py
+   ```
+
+3. **Restart Claude Desktop completely** (quit and reopen the application)
+
+4. **Verify in Claude Desktop:**
+   - Look for the "Search and tools" icon (🔍) in the chat interface
+   - You should see "basecamp" listed with all 46 tools available
+   - Toggle the tools on to enable Basecamp integration
+
+### Claude Desktop Configuration
+
+The configuration is automatically created at:
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `~/AppData/Roaming/Claude/claude_desktop_config.json`  
+- **Linux**: `~/.config/claude-desktop/claude_desktop_config.json`
+
+Example configuration generated:
+```json
+{
+  "mcpServers": {
+    "basecamp": {
+      "command": "/path/to/your/project/venv/bin/python",
+      "args": ["/path/to/your/project/basecamp_fastmcp.py"],
+      "env": {
+        "PYTHONPATH": "/path/to/your/project",
+        "VIRTUAL_ENV": "/path/to/your/project/venv",
+        "BASECAMP_ACCOUNT_ID": "your_account_id"
+      }
+    }
+  }
+}
+```
+
+### Usage in Claude Desktop
+
+Ask Claude things like:
+- "What are my current Basecamp projects?"
+- "Show me the latest campfire messages from the Technology project"
+- "Create a new card in the Development column with title 'Fix login bug'"
+- "Get all todo items from the Marketing project"
+- "Search for messages containing 'deadline'"
+
+### Troubleshooting Claude Desktop
+
+**Check Claude Desktop logs** (following [official debugging guide](https://modelcontextprotocol.io/quickstart/server#troubleshooting)):
+```bash
+# macOS/Linux - Monitor logs in real-time
+tail -n 20 -f ~/Library/Logs/Claude/mcp*.log
+
+# Check for specific errors
+ls ~/Library/Logs/Claude/mcp-server-basecamp.log
+```
+
+**Common issues:**
+- **Tools not appearing**: Verify configuration file syntax and restart Claude Desktop
+- **Connection failures**: Check that Python path and script path are absolute paths
+- **Authentication errors**: Ensure OAuth flow completed successfully (`oauth_tokens.json` exists)
 
 ## Available MCP Tools
 
@@ -139,23 +217,26 @@ Ask Cursor things like:
 
 ## Architecture
 
-The project uses the **official Anthropic FastMCP framework** for maximum reliability:
+The project uses the **official Anthropic FastMCP framework** for maximum reliability and compatibility:
 
-1. **FastMCP Server** (`basecamp_fastmcp.py`) - Official MCP SDK with 46 tools
+1. **FastMCP Server** (`basecamp_fastmcp.py`) - Official MCP SDK with 46 tools, compatible with both Cursor and Claude Desktop
 2. **OAuth App** (`oauth_app.py`) - Handles OAuth 2.0 flow with Basecamp  
 3. **Token Storage** (`token_storage.py`) - Securely stores OAuth tokens
 4. **Basecamp Client** (`basecamp_client.py`) - Basecamp API client library
 5. **Search Utilities** (`search_utils.py`) - Search across Basecamp resources
 6. **Setup Automation** (`setup.py`) - One-command installation
+7. **Configuration Generators**: 
+   - `generate_cursor_config.py` - For Cursor IDE integration
+   - `generate_claude_desktop_config.py` - For Claude Desktop integration
 
 ## Troubleshooting
 
-### Common Issues
+### Common Issues (Both Clients)
 
 - 🔴 **Red/Yellow indicator:** Run `python setup.py` to create proper virtual environment
 - 🔴 **"0 tools available":** Virtual environment missing MCP packages - run setup script
-- 🔴 **"Tool not found" errors:** Restart Cursor completely after configuration changes
-- ⚠️ **Missing BASECAMP_ACCOUNT_ID:** Add to `.env` file, then re-run `python generate_cursor_config.py`
+- 🔴 **"Tool not found" errors:** Restart your client (Cursor/Claude Desktop) completely
+- ⚠️ **Missing BASECAMP_ACCOUNT_ID:** Add to `.env` file, then re-run the config generator
 
 ### Quick Fixes
 
@@ -181,7 +262,8 @@ python oauth_app.py
 
 ### Manual Configuration (Last Resort)
 
-**Config location:** `~/.cursor/mcp.json` (macOS/Linux) or `%APPDATA%\Cursor\mcp.json` (Windows)
+**Cursor config location:** `~/.cursor/mcp.json` (macOS/Linux) or `%APPDATA%\Cursor\mcp.json` (Windows)  
+**Claude Desktop config location:** `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 
 ```json
 {
