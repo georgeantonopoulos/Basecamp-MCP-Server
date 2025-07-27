@@ -1,36 +1,42 @@
 # Basecamp MCP Integration
 
-This project provides a MCP (Model Context Protocol) integration for Basecamp 3, allowing Cursor to interact with Basecamp directly through the MCP protocol.
+This project provides a **FastMCP-powered** integration for Basecamp 3, allowing Cursor to interact with Basecamp directly through the MCP protocol. 
+
+✅ **Migration Complete:** Successfully migrated to official Anthropic FastMCP framework with **100% feature parity** (all 46 tools)  
+🚀 **Ready for Production:** Full protocol compliance with MCP 2025-06-18
 
 ## Quick Setup for Cursor
 
 ### Prerequisites
 
-- Python 3.7+
-- A Basecamp 3 account
+- **Python 3.8+** (required for MCP SDK)
+- A Basecamp 3 account  
 - A Basecamp OAuth application (create one at https://launchpad.37signals.com/integrations)
 
 ### Step-by-Step Instructions
 
-1. **Clone and setup the project:**
+### One-Command Setup
+
+1. **Clone and run setup script:**
    ```bash
    git clone <repository-url>
    cd basecamp-mcp
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   pip install --upgrade pip
-   pip install -r requirements.txt
+   python setup.py
    ```
 
-2. **Create your `.env` file with your Basecamp OAuth credentials:**
-   ```
+   The setup script automatically:
+   - ✅ Creates virtual environment
+   - ✅ Installs all dependencies (FastMCP SDK, etc.)
+   - ✅ Creates `.env` template file  
+   - ✅ Tests MCP server functionality
+
+2. **Configure OAuth credentials:**
+   Edit the generated `.env` file:
+   ```bash
    BASECAMP_CLIENT_ID=your_client_id_here
    BASECAMP_CLIENT_SECRET=your_client_secret_here
-   BASECAMP_REDIRECT_URI=http://localhost:8000/auth/callback
    BASECAMP_ACCOUNT_ID=your_account_id_here
    USER_AGENT="Your App Name (your@email.com)"
-   FLASK_SECRET_KEY=any_random_string_here
-   MCP_API_KEY=any_random_string_here
    ```
 
 3. **Authenticate with Basecamp:**
@@ -39,31 +45,27 @@ This project provides a MCP (Model Context Protocol) integration for Basecamp 3,
    ```
    Visit http://localhost:8000 and complete the OAuth flow.
 
-4. **Generate and install Cursor configuration:**
+4. **Generate Cursor configuration:**
    ```bash
    python generate_cursor_config.py
    ```
-
-   This script will:
-   - Generate the correct MCP configuration with full paths
-   - Automatically detect your virtual environment
-   - Include the BASECAMP_ACCOUNT_ID environment variable
-   - Update your Cursor configuration file automatically
 
 5. **Restart Cursor completely** (quit and reopen, not just reload)
 
 6. **Verify in Cursor:**
    - Go to Cursor Settings → MCP
    - You should see "basecamp" with a **green checkmark**
-   - Available tools: "get_projects", "search_basecamp", "get_project", etc.
+   - Available tools: **46 tools** for complete Basecamp control
 
 ### Test Your Setup
 
 ```bash
-# Quick test the MCP server
-echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | python mcp_server_cli.py
+# Quick test the FastMCP server
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}
+{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' | python basecamp_fastmcp.py
 
-# Run automated tests
+# Run automated tests  
 python -m pytest tests/ -v
 ```
 
@@ -137,36 +139,56 @@ Ask Cursor things like:
 
 ## Architecture
 
-The project consists of:
+The project uses the **official Anthropic FastMCP framework** for maximum reliability:
 
-1. **OAuth App** (`oauth_app.py`) - Handles OAuth 2.0 flow with Basecamp
-2. **MCP Server** (`mcp_server_cli.py`) - Implements MCP protocol for Cursor
+1. **FastMCP Server** (`basecamp_fastmcp.py`) - Official MCP SDK with 46 tools
+2. **OAuth App** (`oauth_app.py`) - Handles OAuth 2.0 flow with Basecamp  
 3. **Token Storage** (`token_storage.py`) - Securely stores OAuth tokens
 4. **Basecamp Client** (`basecamp_client.py`) - Basecamp API client library
 5. **Search Utilities** (`search_utils.py`) - Search across Basecamp resources
+6. **Setup Automation** (`setup.py`) - One-command installation
 
 ## Troubleshooting
 
 ### Common Issues
 
-- **Yellow indicator (not green):** Check that paths in Cursor config are correct
-- **"No tools available":** Make sure you completed OAuth authentication first
-- **"Tool not found" errors:** Restart Cursor completely and check `mcp_cli_server.log`
-- **Missing BASECAMP_ACCOUNT_ID:** The config generator automatically includes this from your `.env` file
+- 🔴 **Red/Yellow indicator:** Run `python setup.py` to create proper virtual environment
+- 🔴 **"0 tools available":** Virtual environment missing MCP packages - run setup script
+- 🔴 **"Tool not found" errors:** Restart Cursor completely after configuration changes
+- ⚠️ **Missing BASECAMP_ACCOUNT_ID:** Add to `.env` file, then re-run `python generate_cursor_config.py`
 
-### Configuration Issues
+### Quick Fixes
 
-If automatic configuration doesn't work, manually edit your Cursor MCP configuration:
+**Problem: Server won't start**
+```bash
+# Test if FastMCP server works:
+./venv/bin/python -c "import mcp; print('✅ MCP available')"
+# If this fails, run: python setup.py
+```
 
-**On macOS/Linux:** `~/.cursor/mcp.json`
-**On Windows:** `%APPDATA%\Cursor\mcp.json`
+**Problem: Wrong Python version**
+```bash
+python --version  # Must be 3.8+
+# If too old, install newer Python and re-run setup
+```
+
+**Problem: Authentication fails**
+```bash  
+# Check OAuth flow:
+python oauth_app.py
+# Visit http://localhost:8000 and complete login
+```
+
+### Manual Configuration (Last Resort)
+
+**Config location:** `~/.cursor/mcp.json` (macOS/Linux) or `%APPDATA%\Cursor\mcp.json` (Windows)
 
 ```json
 {
     "mcpServers": {
         "basecamp": {
             "command": "/full/path/to/your/project/venv/bin/python",
-            "args": ["/full/path/to/your/project/mcp_server_cli.py"],
+            "args": ["/full/path/to/your/project/basecamp_fastmcp.py"],
             "cwd": "/full/path/to/your/project",
             "env": {
                 "PYTHONPATH": "/full/path/to/your/project",
@@ -177,15 +199,6 @@ If automatic configuration doesn't work, manually edit your Cursor MCP configura
     }
 }
 ```
-
-### Key Requirements
-
-Based on [Cursor community forums](https://forum.cursor.com/t/mcp-servers-no-tools-found/49094), the following are essential:
-
-1. **Full executable paths** (not just "python")
-2. **Proper environment variables** (PYTHONPATH, VIRTUAL_ENV, BASECAMP_ACCOUNT_ID)
-3. **Correct working directory** (cwd)
-4. **MCP protocol compliance** (our server handles this correctly)
 
 ## Finding Your Account ID
 
