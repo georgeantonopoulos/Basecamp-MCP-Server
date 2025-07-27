@@ -615,7 +615,7 @@ class BasecampClient:
         headers["Content-Length"] = str(len(data))
 
         endpoint = f"attachments.json?name={name}"
-        response = requests.post(f"{self.base_url}/{endpoint}", headers=headers, data=data)
+        response = requests.post(f"{self.base_url}/{endpoint}", auth=self.auth, headers=headers, data=data)
         if response.status_code == 201:
             return response.json()
         else:
