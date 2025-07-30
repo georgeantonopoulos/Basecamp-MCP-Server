@@ -710,3 +710,25 @@ class BasecampClient:
             return True
         else:
             raise Exception(f"Failed to trash document: {response.status_code} - {response.text}")
+
+    # Upload methods
+    def get_uploads(self, project_id, vault_id=None):
+        """List uploads in a project or vault."""
+        if vault_id:
+            endpoint = f"buckets/{project_id}/vaults/{vault_id}/uploads.json"
+        else:
+            endpoint = f"buckets/{project_id}/uploads.json"
+        response = self.get(endpoint)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to get uploads: {response.status_code} - {response.text}")
+
+    def get_upload(self, project_id, upload_id):
+        """Get a single upload."""
+        endpoint = f"buckets/{project_id}/uploads/{upload_id}.json"
+        response = self.get(endpoint)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to get upload: {response.status_code} - {response.text}")

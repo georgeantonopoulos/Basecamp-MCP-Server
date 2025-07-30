@@ -596,10 +596,57 @@ class BasecampSearch:
             logger.error(f"Error searching all campfire lines: {str(e)}")
             return []
 
+    def search_uploads(self, query=None, project_id=None, vault_id=None):
+        """Search uploads by filename or content."""
+        try:
+            all_uploads = []
+            
+            if project_id:
+                # Search within specific project
+                projects = [{"id": project_id}]
+            else:
+                # Search across all projects
+                projects = self.client.get_projects()
+            
+            for project in projects:
+                project_id = project["id"]
+                try:
+                    uploads = self.client.get_uploads(project_id, vault_id)
+                    for upload in uploads:
+                        upload["project"] = {"id": project_id, "name": project.get("name")}
+                        all_uploads.append(upload)
+                except Exception as e:
+                    logger.error(f"Error getting uploads for project {project_id}: {str(e)}")
+            
+            if query and all_uploads:
+                q = query.lower()
+                filtered = []
+                for upload in all_uploads:
+                    filename = upload.get("filename", "") or ""
+                    title = upload.get("title", "") or ""
+                    description = upload.get("description", "") or ""
+                    creator_name = ""
+                    if upload.get("creator"):
+                        creator_name = upload["creator"].get("name", "")
+                    
+                    # Search in filename, title, description, and creator name
+                    if (q in filename.lower() or 
+                        q in title.lower() or 
+                        q in description.lower() or 
+                        (creator_name and q in creator_name.lower())):
+                        filtered.append(upload)
+                return filtered
+            
+            return all_uploads
+        except Exception as e:
+            logger.error(f"Error searching uploads: {str(e)}")
+            return []
+
     def global_search(self, query=None):
-        """Search projects, todos and campfire lines at once."""
+        """Search projects, todos, campfire lines, and uploads at once."""
         return {
             "projects": self.search_projects(query),
             "todos": self.search_todos(query),
             "campfire_lines": self.search_all_campfire_lines(query),
+            "uploads": self.search_uploads(query),
         }

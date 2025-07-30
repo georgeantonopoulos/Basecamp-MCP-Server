@@ -1539,6 +1539,68 @@ async def trash_document(project_id: str, document_id: str) -> Dict[str, Any]:
             "message": str(e)
         }
 
+# Upload Management
+@mcp.tool()
+async def get_uploads(project_id: str, vault_id: Optional[str] = None) -> Dict[str, Any]:
+    """List uploads in a project or vault.
+    
+    Args:
+        project_id: Project ID
+        vault_id: Optional vault ID to limit to specific vault
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+    
+    try:
+        uploads = await _run_sync(client.get_uploads, project_id, vault_id)
+        return {
+            "status": "success",
+            "uploads": uploads,
+            "count": len(uploads)
+        }
+    except Exception as e:
+        logger.error(f"Error getting uploads: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {
+                "error": "OAuth token expired",
+                "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
+            }
+        return {
+            "error": "Execution error",
+            "message": str(e)
+        }
+
+@mcp.tool()
+async def get_upload(project_id: str, upload_id: str) -> Dict[str, Any]:
+    """Get details for a specific upload.
+    
+    Args:
+        project_id: Project ID
+        upload_id: Upload ID
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+    
+    try:
+        upload = await _run_sync(client.get_upload, project_id, upload_id)
+        return {
+            "status": "success",
+            "upload": upload
+        }
+    except Exception as e:
+        logger.error(f"Error getting upload: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {
+                "error": "OAuth token expired",
+                "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
+            }
+        return {
+            "error": "Execution error",
+            "message": str(e)
+        }
+
 # 🎉 COMPLETE FastMCP server with ALL 46 Basecamp tools migrated!
 
 if __name__ == "__main__":
