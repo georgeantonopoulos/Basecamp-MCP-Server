@@ -119,6 +119,7 @@ class MCPServer:
                         "description": {"type": "string", "description": "HTML description of the todo"},
                         "assignee_ids": {"type": "array", "items": {"type": "string"}, "description": "List of person IDs to assign"},
                         "completion_subscriber_ids": {"type": "array", "items": {"type": "string"}, "description": "List of person IDs to notify on completion"},
+                        "notify": {"type": "boolean", "description": "Whether to notify assignees"},
                         "due_on": {"type": "string", "description": "Due date in YYYY-MM-DD format"},
                         "starts_on": {"type": "string", "description": "Start date in YYYY-MM-DD format"}
                     },
