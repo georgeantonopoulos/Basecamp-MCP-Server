@@ -315,6 +315,7 @@ async def update_todo(project_id: str, todo_id: str,
                      description: Optional[str] = None, 
                      assignee_ids: Optional[List[str]] = None,
                      completion_subscriber_ids: Optional[List[str]] = None,
+                     notify: Optional[bool] = None,
                      due_on: Optional[str] = None, 
                      starts_on: Optional[str] = None) -> Dict[str, Any]:
     """Update an existing todo item.
@@ -334,6 +335,14 @@ async def update_todo(project_id: str, todo_id: str,
         return _get_auth_error_response()
     
     try:
+        # Guard against no-op updates
+        if all(v is None for v in [content, description, assignee_ids,
+                                   completion_subscriber_ids, notify,
+                                   due_on, starts_on]):
+            return {
+                "error": "Invalid input",
+                "message": "At least one field to update must be provided"
+            }
         # Use lambda to properly handle keyword arguments
         todo = await _run_sync(
             lambda: client.update_todo(
@@ -342,6 +351,7 @@ async def update_todo(project_id: str, todo_id: str,
                 description=description,
                 assignee_ids=assignee_ids,
                 completion_subscriber_ids=completion_subscriber_ids,
+                notify=notify,
                 due_on=due_on,
                 starts_on=starts_on
             )
@@ -352,6 +362,8 @@ async def update_todo(project_id: str, todo_id: str,
             "message": "Todo updated successfully"
         }
     except Exception as e:
+        # existing exception handling…
+        ...
         logger.error(f"Error updating todo: {e}")
         if "401" in str(e) and "expired" in str(e).lower():
             return {
