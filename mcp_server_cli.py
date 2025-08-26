@@ -921,6 +921,7 @@ class MCPServer:
                 completion_subscriber_ids = arguments.get("completion_subscriber_ids")
                 due_on = arguments.get("due_on")
                 starts_on = arguments.get("starts_on")
+                notify = arguments.get("notify")
                 
                 todo = client.update_todo(
                     project_id, todo_id,
@@ -928,6 +929,7 @@ class MCPServer:
                     description=description,
                     assignee_ids=assignee_ids,
                     completion_subscriber_ids=completion_subscriber_ids,
+                    notify=notify,
                     due_on=due_on,
                     starts_on=starts_on
                 )
