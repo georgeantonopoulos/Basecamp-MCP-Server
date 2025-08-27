@@ -362,8 +362,6 @@ async def update_todo(project_id: str, todo_id: str,
             "message": "Todo updated successfully"
         }
     except Exception as e:
-        # existing exception handling…
-        ...
         logger.error(f"Error updating todo: {e}")
         if "401" in str(e) and "expired" in str(e).lower():
             return {
