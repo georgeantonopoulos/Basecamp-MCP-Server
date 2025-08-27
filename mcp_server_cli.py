@@ -894,7 +894,11 @@ class MCPServer:
                 description = arguments.get("description")
                 assignee_ids = arguments.get("assignee_ids")
                 completion_subscriber_ids = arguments.get("completion_subscriber_ids")
-                notify = bool(arguments.get("notify", False))
+                notify_arg = arguments.get("notify", False)
+                if isinstance(notify_arg, str):
+                    notify = notify_arg.strip().lower() in ("1", "true", "yes", "on")
+                else:
+                    notify = bool(notify_arg)
                 due_on = arguments.get("due_on")
                 starts_on = arguments.get("starts_on")
                 
