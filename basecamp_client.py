@@ -181,17 +181,17 @@ class BasecampClient:
         endpoint = f'buckets/{project_id}/todolists/{todolist_id}/todos.json'
         data = {'content': content}
         
-        if description:
+        if description is not None:
             data['description'] = description
-        if assignee_ids:
+        if assignee_ids is not None:
             data['assignee_ids'] = assignee_ids
-        if completion_subscriber_ids:
+        if completion_subscriber_ids is not None:
             data['completion_subscriber_ids'] = completion_subscriber_ids
-        if notify:
+        if notify is not None:
             data['notify'] = notify
-        if due_on:
+        if due_on is not None:
             data['due_on'] = due_on
-        if starts_on:
+        if starts_on is not None:
             data['starts_on'] = starts_on
             
         response = self.post(endpoint, data)
