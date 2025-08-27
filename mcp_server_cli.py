@@ -89,6 +89,80 @@ class MCPServer:
                 }
             },
             {
+                "name": "create_todo",
+                "description": "Create a new todo item in a todo list",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "Project ID"},
+                        "todolist_id": {"type": "string", "description": "The todo list ID"},
+                        "content": {"type": "string", "description": "The todo item's text (required)"},
+                        "description": {"type": "string", "description": "HTML description of the todo"},
+                        "assignee_ids": {"type": "array", "items": {"type": "string"}, "description": "List of person IDs to assign"},
+                        "completion_subscriber_ids": {"type": "array", "items": {"type": "string"}, "description": "List of person IDs to notify on completion"},
+                        "notify": {"type": "boolean", "description": "Whether to notify assignees"},
+                        "due_on": {"type": "string", "description": "Due date in YYYY-MM-DD format"},
+                        "starts_on": {"type": "string", "description": "Start date in YYYY-MM-DD format"}
+                    },
+                    "required": ["project_id", "todolist_id", "content"]
+                }
+            },
+            {
+                "name": "update_todo",
+                "description": "Update an existing todo item",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "Project ID"},
+                        "todo_id": {"type": "string", "description": "The todo ID"},
+                        "content": {"type": "string", "description": "The todo item's text"},
+                        "description": {"type": "string", "description": "HTML description of the todo"},
+                        "assignee_ids": {"type": "array", "items": {"type": "string"}, "description": "List of person IDs to assign"},
+                        "completion_subscriber_ids": {"type": "array", "items": {"type": "string"}, "description": "List of person IDs to notify on completion"},
+                        "notify": {"type": "boolean", "description": "Whether to notify assignees"},
+                        "due_on": {"type": "string", "description": "Due date in YYYY-MM-DD format"},
+                        "starts_on": {"type": "string", "description": "Start date in YYYY-MM-DD format"}
+                    },
+                    "required": ["project_id", "todo_id"]
+                }
+            },
+            {
+                "name": "delete_todo",
+                "description": "Delete a todo item",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "Project ID"},
+                        "todo_id": {"type": "string", "description": "The todo ID"}
+                    },
+                    "required": ["project_id", "todo_id"]
+                }
+            },
+            {
+                "name": "complete_todo",
+                "description": "Mark a todo item as complete",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "Project ID"},
+                        "todo_id": {"type": "string", "description": "The todo ID"}
+                    },
+                    "required": ["project_id", "todo_id"]
+                }
+            },
+            {
+                "name": "uncomplete_todo",
+                "description": "Mark a todo item as incomplete",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "Project ID"},
+                        "todo_id": {"type": "string", "description": "The todo ID"}
+                    },
+                    "required": ["project_id", "todo_id"]
+                }
+            },
+            {
                 "name": "search_basecamp",
                 "description": "Search across Basecamp projects, todos, and messages",
                 "inputSchema": {
@@ -811,6 +885,91 @@ class MCPServer:
                     "status": "success",
                     "todos": todos,
                     "count": len(todos)
+                }
+
+            elif tool_name == "create_todo":
+                project_id = arguments.get("project_id")
+                todolist_id = arguments.get("todolist_id")
+                content = arguments.get("content")
+                description = arguments.get("description")
+                assignee_ids = arguments.get("assignee_ids")
+                completion_subscriber_ids = arguments.get("completion_subscriber_ids")
+                notify_arg = arguments.get("notify", False)
+                if isinstance(notify_arg, str):
+                    notify = notify_arg.strip().lower() in ("1", "true", "yes", "on")
+                else:
+                    notify = bool(notify_arg)
+                due_on = arguments.get("due_on")
+                starts_on = arguments.get("starts_on")
+                
+                todo = client.create_todo(
+                    project_id, todolist_id, content,
+                    description=description,
+                    assignee_ids=assignee_ids,
+                    completion_subscriber_ids=completion_subscriber_ids,
+                    notify=notify,
+                    due_on=due_on,
+                    starts_on=starts_on
+                )
+                return {
+                    "status": "success",
+                    "todo": todo,
+                    "message": f"Todo '{content}' created successfully"
+                }
+
+            elif tool_name == "update_todo":
+                project_id = arguments.get("project_id")
+                todo_id = arguments.get("todo_id")
+                content = arguments.get("content")
+                description = arguments.get("description")
+                assignee_ids = arguments.get("assignee_ids")
+                completion_subscriber_ids = arguments.get("completion_subscriber_ids")
+                due_on = arguments.get("due_on")
+                starts_on = arguments.get("starts_on")
+                notify = arguments.get("notify")
+                
+                todo = client.update_todo(
+                    project_id, todo_id,
+                    content=content,
+                    description=description,
+                    assignee_ids=assignee_ids,
+                    completion_subscriber_ids=completion_subscriber_ids,
+                    notify=notify,
+                    due_on=due_on,
+                    starts_on=starts_on
+                )
+                return {
+                    "status": "success",
+                    "todo": todo,
+                    "message": "Todo updated successfully"
+                }
+
+            elif tool_name == "delete_todo":
+                project_id = arguments.get("project_id")
+                todo_id = arguments.get("todo_id")
+                client.delete_todo(project_id, todo_id)
+                return {
+                    "status": "success",
+                    "message": "Todo deleted successfully"
+                }
+
+            elif tool_name == "complete_todo":
+                project_id = arguments.get("project_id")
+                todo_id = arguments.get("todo_id")
+                completion = client.complete_todo(project_id, todo_id)
+                return {
+                    "status": "success",
+                    "completion": completion,
+                    "message": "Todo marked as complete"
+                }
+
+            elif tool_name == "uncomplete_todo":
+                project_id = arguments.get("project_id")
+                todo_id = arguments.get("todo_id")
+                client.uncomplete_todo(project_id, todo_id)
+                return {
+                    "status": "success",
+                    "message": "Todo marked as incomplete"
                 }
 
             elif tool_name == "search_basecamp":

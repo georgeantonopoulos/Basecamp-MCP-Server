@@ -159,6 +159,147 @@ class BasecampClient:
         else:
             raise Exception(f"Failed to get todo: {response.status_code} - {response.text}")
 
+    def create_todo(self, project_id, todolist_id, content, description=None, assignee_ids=None,
+                    completion_subscriber_ids=None, notify=False, due_on=None, starts_on=None):
+        """
+        Create a new todo item in a todolist.
+        
+        Args:
+            project_id (str): Project ID
+            todolist_id (str): Todolist ID
+            content (str): The todo item's text (required)
+            description (str, optional): HTML description
+            assignee_ids (list, optional): List of person IDs to assign
+            completion_subscriber_ids (list, optional): List of person IDs to notify on completion
+            notify (bool, optional): Whether to notify assignees
+            due_on (str, optional): Due date in YYYY-MM-DD format
+            starts_on (str, optional): Start date in YYYY-MM-DD format
+            
+        Returns:
+            dict: The created todo
+        """
+        endpoint = f'buckets/{project_id}/todolists/{todolist_id}/todos.json'
+        data = {'content': content}
+        
+        if description is not None:
+            data['description'] = description
+        if assignee_ids is not None:
+            data['assignee_ids'] = assignee_ids
+        if completion_subscriber_ids is not None:
+            data['completion_subscriber_ids'] = completion_subscriber_ids
+        if notify is not None:
+            data['notify'] = notify
+        if due_on is not None:
+            data['due_on'] = due_on
+        if starts_on is not None:
+            data['starts_on'] = starts_on
+            
+        response = self.post(endpoint, data)
+        if response.status_code == 201:
+            return response.json()
+        else:
+            raise Exception(f"Failed to create todo: {response.status_code} - {response.text}")
+
+    def update_todo(self, project_id, todo_id, content=None, description=None, assignee_ids=None,
+                    completion_subscriber_ids=None, notify=None, due_on=None, starts_on=None):
+        """
+        Update an existing todo item.
+        
+        Args:
+            project_id (str): Project ID
+            todo_id (str): Todo ID
+            content (str, optional): The todo item's text
+            description (str, optional): HTML description
+            assignee_ids (list, optional): List of person IDs to assign
+            completion_subscriber_ids (list, optional): List of person IDs to notify on completion
+            notify (bool, optional): Whether to notify assignees
+            due_on (str, optional): Due date in YYYY-MM-DD format
+            starts_on (str, optional): Start date in YYYY-MM-DD format
+            
+        Returns:
+            dict: The updated todo
+        """
+        endpoint = f'buckets/{project_id}/todos/{todo_id}.json'
+        data = {}
+        
+        if content is not None:
+            data['content'] = content
+        if description is not None:
+            data['description'] = description
+        if assignee_ids is not None:
+            data['assignee_ids'] = assignee_ids
+        if completion_subscriber_ids is not None:
+            data['completion_subscriber_ids'] = completion_subscriber_ids
+        if notify is not None:
+            data['notify'] = notify
+        if due_on is not None:
+            data['due_on'] = due_on
+        if starts_on is not None:
+            data['starts_on'] = starts_on
+
+        if not data:
+            raise ValueError("No fields provided to update")
+            
+        response = self.put(endpoint, data)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to update todo: {response.status_code} - {response.text}")
+
+    def delete_todo(self, project_id, todo_id):
+        """
+        Delete a todo item.
+        
+        Args:
+            project_id (str): Project ID
+            todo_id (str): Todo ID
+            
+        Returns:
+            bool: True if successful
+        """
+        endpoint = f'buckets/{project_id}/todos/{todo_id}.json'
+        response = self.delete(endpoint)
+        if response.status_code == 204:
+            return True
+        else:
+            raise Exception(f"Failed to delete todo: {response.status_code} - {response.text}")
+
+    def complete_todo(self, project_id, todo_id):
+        """
+        Mark a todo as complete.
+        
+        Args:
+            project_id (str): Project ID
+            todo_id (str): Todo ID
+            
+        Returns:
+            dict: Completion details
+        """
+        endpoint = f'buckets/{project_id}/todos/{todo_id}/completion.json'
+        response = self.post(endpoint)
+        if response.status_code == 201:
+            return response.json()
+        else:
+            raise Exception(f"Failed to complete todo: {response.status_code} - {response.text}")
+
+    def uncomplete_todo(self, project_id, todo_id):
+        """
+        Mark a todo as incomplete.
+        
+        Args:
+            project_id (str): Project ID
+            todo_id (str): Todo ID
+            
+        Returns:
+            bool: True if successful
+        """
+        endpoint = f'buckets/{project_id}/todos/{todo_id}/completion.json'
+        response = self.delete(endpoint)
+        if response.status_code == 204:
+            return True
+        else:
+            raise Exception(f"Failed to uncomplete todo: {response.status_code} - {response.text}")
+
     # People methods
     def get_people(self):
         """Get all people in the account."""
