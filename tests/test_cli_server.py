@@ -102,7 +102,7 @@ def test_cli_server_tools_list():
 
         # Check that expected tools are present
         tool_names = [tool["name"] for tool in tools]
-        expected_tools = ["get_projects", "search_basecamp", "get_todos", "global_search"]
+        expected_tools = ["get_projects", "search_basecamp", "get_todos", "global_search", "create_comment"]
         for expected_tool in expected_tools:
             assert expected_tool in tool_names
 

@@ -198,6 +198,19 @@ class MCPServer:
                 }
             },
             {
+                "name": "create_comment",
+                "description": "Create a comment on a Basecamp item",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "recording_id": {"type": "string", "description": "The item ID"},
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "content": {"type": "string", "description": "The comment content in HTML format"}
+                    },
+                    "required": ["recording_id", "project_id", "content"]
+                }
+            },
+            {
                 "name": "get_campfire_lines",
                 "description": "Get recent messages from a Basecamp campfire (chat room)",
                 "inputSchema": {
@@ -1013,6 +1026,17 @@ class MCPServer:
                     "status": "success",
                     "comments": comments,
                     "count": len(comments)
+                }
+
+            elif tool_name == "create_comment":
+                recording_id = arguments.get("recording_id")
+                project_id = arguments.get("project_id")
+                content = arguments.get("content")
+                comment = client.create_comment(recording_id, project_id, content)
+                return {
+                    "status": "success",
+                    "comment": comment,
+                    "message": "Comment created successfully"
                 }
 
             elif tool_name == "get_campfire_lines":

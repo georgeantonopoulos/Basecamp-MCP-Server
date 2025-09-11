@@ -157,6 +157,7 @@ Once configured, you can use these tools in Cursor:
 - `get_todos` - Get todos from a todo list (returns all pages; handles Basecamp pagination transparently)
 - `search_basecamp` - Search across projects, todos, and messages
 - `get_comments` - Get comments for a Basecamp item
+- `create_comment` - Create a comment on a Basecamp item
 - `get_campfire_lines` - Get recent messages from a Basecamp campfire
 - `get_daily_check_ins` - Get project's daily check-in questions
 - `get_question_answers` - Get answers to daily check-in questions
