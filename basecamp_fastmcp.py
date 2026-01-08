@@ -18,6 +18,7 @@ from mcp.server.fastmcp import FastMCP
 from basecamp_client import BasecampClient
 from search_utils import BasecampSearch
 import token_storage
+import auth_manager
 from dotenv import load_dotenv
 
 # Determine project root (directory containing this script)
@@ -51,10 +52,13 @@ def _get_basecamp_client() -> Optional[BasecampClient]:
             logger.error("No OAuth token available")
             return None
 
-        # Check if token is expired
-        if token_storage.is_token_expired():
-            logger.error("OAuth token has expired")
+        # Check and automatically refresh if token is expired
+        if not auth_manager.ensure_authenticated():
+            logger.error("OAuth token has expired and automatic refresh failed")
             return None
+
+        # Get fresh token data after potential refresh
+        token_data = token_storage.get_token()
 
         # Get account_id from token data first, then fall back to env var
         account_id = token_data.get('account_id') or os.getenv('BASECAMP_ACCOUNT_ID')
