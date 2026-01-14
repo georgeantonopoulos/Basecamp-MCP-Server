@@ -193,7 +193,8 @@ class MCPServer:
                     "type": "object",
                     "properties": {
                         "recording_id": {"type": "string", "description": "The item ID"},
-                        "project_id": {"type": "string", "description": "The project ID"}
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "page": {"type": "integer", "description": "Page number for pagination (default: 1). Basecamp uses geared pagination: page 1 has 15 results, page 2 has 30, page 3 has 50, page 4+ has 100.", "default": 1}
                     },
                     "required": ["recording_id", "project_id"]
                 }
@@ -1025,11 +1026,15 @@ class MCPServer:
             elif tool_name == "get_comments":
                 recording_id = arguments.get("recording_id")
                 project_id = arguments.get("project_id")
-                comments = client.get_comments(project_id, recording_id)
+                page = arguments.get("page", 1)
+                result = client.get_comments(project_id, recording_id, page)
                 return {
                     "status": "success",
-                    "comments": comments,
-                    "count": len(comments)
+                    "comments": result["comments"],
+                    "count": len(result["comments"]),
+                    "page": page,
+                    "total_count": result["total_count"],
+                    "next_page": result["next_page"]
                 }
 
             elif tool_name == "create_comment":

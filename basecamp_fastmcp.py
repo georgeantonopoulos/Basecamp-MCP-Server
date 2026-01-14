@@ -500,23 +500,28 @@ async def global_search(query: str) -> Dict[str, Any]:
         }
 
 @mcp.tool()
-async def get_comments(recording_id: str, project_id: str) -> Dict[str, Any]:
+async def get_comments(recording_id: str, project_id: str, page: int = 1) -> Dict[str, Any]:
     """Get comments for a Basecamp item.
-    
+
     Args:
         recording_id: The item ID
         project_id: The project ID
+        page: Page number for pagination (default: 1). Basecamp uses geared pagination:
+              page 1 has 15 results, page 2 has 30, page 3 has 50, page 4+ has 100.
     """
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
-    
+
     try:
-        comments = await _run_sync(client.get_comments, project_id, recording_id)
+        result = await _run_sync(client.get_comments, project_id, recording_id, page)
         return {
             "status": "success",
-            "comments": comments,
-            "count": len(comments)
+            "comments": result["comments"],
+            "count": len(result["comments"]),
+            "page": page,
+            "total_count": result["total_count"],
+            "next_page": result["next_page"]
         }
     except Exception as e:
         logger.error(f"Error getting comments: {e}")

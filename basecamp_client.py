@@ -1,4 +1,5 @@
 import os
+import re
 
 import requests
 from dotenv import load_dotenv
@@ -405,21 +406,48 @@ class BasecampClient:
             raise Exception(f"Failed to get schedule: {str(e)}")
 
     # Comments methods
-    def get_comments(self, project_id, recording_id):
+    def get_comments(self, project_id, recording_id, page=1):
         """
-        Get all comments for a recording (todos, message, etc.).
-        
+        Get comments for a recording (todos, message, etc.).
+
         Args:
+            project_id (int): Project/bucket ID.
             recording_id (int): ID of the recording (todos, message, etc.)
-            project_id (int): Project/bucket ID. If not provided, it will be extracted from the recording ID.
-            
+            page (int): Page number for pagination (default: 1).
+                        Basecamp uses geared pagination: page 1 has 15 results,
+                        page 2 has 30, page 3 has 50, page 4+ has 100.
+
         Returns:
-            list: Comments for the recording
+            dict: Contains 'comments' list and pagination metadata:
+                  - comments: list of comments
+                  - total_count: total number of comments (from X-Total-Count header)
+                  - next_page: next page number if available, None otherwise
         """
+        if page < 1:
+            raise ValueError("page must be >= 1")
         endpoint = f"buckets/{project_id}/recordings/{recording_id}/comments.json"
-        response = self.get(endpoint)
+        response = self.get(endpoint, params={"page": page})
         if response.status_code == 200:
-            return response.json()
+            # Parse pagination headers
+            total_count = response.headers.get('X-Total-Count')
+            total_count = int(total_count) if total_count else None
+
+            # Parse Link header for next page
+            next_page = None
+            link_header = response.headers.get('Link', '')
+            # Split by comma to handle multiple links (e.g., rel="prev", rel="next")
+            for link in link_header.split(','):
+                if 'rel="next"' in link:
+                    match = re.search(r'page=(\d+)', link)
+                    if match:
+                        next_page = int(match.group(1))
+                    break
+
+            return {
+                "comments": response.json(),
+                "total_count": total_count,
+                "next_page": next_page
+            }
         else:
             raise Exception(f"Failed to get comments: {response.status_code} - {response.text}")
 
