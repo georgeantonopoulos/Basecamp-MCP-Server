@@ -41,6 +41,12 @@ oauth_tokens.json
 Icon
 ._*
 
+# Testing
+.pytest_cache/
+
+# Claude Code
+.claude/
+
 # Project specific
 unused/
 icons/
