@@ -467,7 +467,7 @@ class BasecampSearch:
         try:
             # If both recording_id and bucket_id are provided, get comments for that specific recording
             if recording_id and bucket_id:
-                result = self.client.get_comments(recording_id, bucket_id)
+                result = self.client.get_comments(bucket_id, recording_id)
                 comments = result["comments"]
             # Otherwise we can't search across all comments as there's no endpoint for that
             else:

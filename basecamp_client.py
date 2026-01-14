@@ -1,4 +1,5 @@
 import os
+import re
 
 import requests
 from dotenv import load_dotenv
@@ -422,6 +423,8 @@ class BasecampClient:
                   - total_count: total number of comments (from X-Total-Count header)
                   - next_page: next page number if available, None otherwise
         """
+        if page < 1:
+            raise ValueError("page must be >= 1")
         endpoint = f"buckets/{project_id}/recordings/{recording_id}/comments.json"
         response = self.get(endpoint, params={"page": page})
         if response.status_code == 200:
@@ -435,7 +438,6 @@ class BasecampClient:
             if 'rel="next"' in link_header:
                 # Extract page number from Link header
                 # Format: <https://3.basecampapi.com/.../comments.json?page=2>; rel="next"
-                import re
                 match = re.search(r'page=(\d+).*rel="next"', link_header)
                 if match:
                     next_page = int(match.group(1))
