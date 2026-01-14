@@ -452,7 +452,7 @@ class BasecampSearch:
             logger.error(f"Error searching schedule entries: {str(e)}")
             return []
 
-    def search_comments(self, query=None, recording_id=None, bucket_id=None):
+    def search_comments(self, query=None, recording_id=None, bucket_id=None, page=1):
         """
         Search for comments across resources or for a specific resource.
 
@@ -460,23 +460,35 @@ class BasecampSearch:
             query (str, optional): Search term to filter comments
             recording_id (int, optional): ID of the recording (todo, message, etc.) to search in
             bucket_id (int, optional): Project/bucket ID
+            page (int, optional): Page number for pagination (default: 1)
 
         Returns:
-            list: Matching comments
+            dict: Contains 'comments' list (filtered if query provided) and pagination metadata:
+                  - comments: list of matching comments
+                  - total_count: total number of comments (from API)
+                  - next_page: next page number if available, None otherwise
         """
         try:
             # If both recording_id and bucket_id are provided, get comments for that specific recording
             if recording_id and bucket_id:
-                result = self.client.get_comments(bucket_id, recording_id)
+                result = self.client.get_comments(bucket_id, recording_id, page)
                 comments = result["comments"]
+                pagination = {
+                    "total_count": result["total_count"],
+                    "next_page": result["next_page"]
+                }
             # Otherwise we can't search across all comments as there's no endpoint for that
             else:
                 logger.warning("Cannot search all comments across Basecamp - both recording_id and bucket_id are required")
-                return [{
-                    "content": "To search comments, you need to specify both a recording ID (todo, message, etc.) and a bucket ID. Comments cannot be searched globally in Basecamp.",
-                    "api_limitation": True,
-                    "title": "Comment Search Limitation"
-                }]
+                return {
+                    "comments": [{
+                        "content": "To search comments, you need to specify both a recording ID (todo, message, etc.) and a bucket ID. Comments cannot be searched globally in Basecamp.",
+                        "api_limitation": True,
+                        "title": "Comment Search Limitation"
+                    }],
+                    "total_count": None,
+                    "next_page": None
+                }
 
             # Filter by query if provided
             if query and comments:
@@ -500,12 +512,18 @@ class BasecampSearch:
                     if content_matched:
                         filtered_comments.append(comment)
 
-                return filtered_comments
+                return {
+                    "comments": filtered_comments,
+                    **pagination
+                }
 
-            return comments
+            return {
+                "comments": comments,
+                **pagination
+            }
         except Exception as e:
             logger.error(f"Error searching comments: {str(e)}")
-            return []
+            return {"comments": [], "total_count": None, "next_page": None}
 
     def search_campfire_lines(self, query=None, project_id=None, campfire_id=None):
         """
