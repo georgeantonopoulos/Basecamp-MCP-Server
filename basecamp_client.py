@@ -435,12 +435,13 @@ class BasecampClient:
             # Parse Link header for next page
             next_page = None
             link_header = response.headers.get('Link', '')
-            if 'rel="next"' in link_header:
-                # Extract page number from Link header
-                # Format: <https://3.basecampapi.com/.../comments.json?page=2>; rel="next"
-                match = re.search(r'page=(\d+).*rel="next"', link_header)
-                if match:
-                    next_page = int(match.group(1))
+            # Split by comma to handle multiple links (e.g., rel="prev", rel="next")
+            for link in link_header.split(','):
+                if 'rel="next"' in link:
+                    match = re.search(r'page=(\d+)', link)
+                    if match:
+                        next_page = int(match.group(1))
+                    break
 
             return {
                 "comments": response.json(),
