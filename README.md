@@ -1,6 +1,6 @@
 # Basecamp MCP Integration
 
-This project provides a **FastMCP-powered** integration for Basecamp 3, allowing Cursor to interact with Basecamp directly through the MCP protocol. 
+This project provides a **FastMCP-powered** integration for Basecamp 3, allowing Cursor to interact with Basecamp directly through the MCP protocol.
 
 ✅ **Migration Complete:** Successfully migrated to official Anthropic FastMCP framework with **100% feature parity** (all 46 tools)  
 🚀 **Ready for Production:** Full protocol compliance with MCP 2025-06-18
@@ -11,29 +11,42 @@ This server works with both **Cursor** and **Claude Desktop**. Choose your prefe
 
 ### Prerequisites
 
-- **Python 3.8+** (required for MCP SDK)
-- A Basecamp 3 account  
-- A Basecamp OAuth application (create one at https://launchpad.37signals.com/integrations)
+- **Python 3.10+** (required for MCP SDK) — or use `uv` which auto-downloads the correct version
+- A Basecamp 3 account
+- A Basecamp OAuth application (create one at <https://launchpad.37signals.com/integrations>)
 
 ## For Cursor Users
 
 ### One-Command Setup
 
-1. **Clone and run setup script:**
+1. **Clone and set up with uv (recommended):**
+
    ```bash
    git clone <repository-url>
    cd basecamp-mcp
+
+   # Using uv (recommended - auto-downloads Python 3.12)
+   uv venv --python 3.12 venv
+   source venv/bin/activate  # or venv\Scripts\activate on Windows
+   uv pip install -r requirements.txt
+   uv pip install mcp
+   ```
+
+   **Alternative: Using pip** (requires Python 3.10+ already installed):
+
+   ```bash
    python setup.py
    ```
 
-   The setup script automatically:
+   The setup automatically:
    - ✅ Creates virtual environment
    - ✅ Installs all dependencies (FastMCP SDK, etc.)
-   - ✅ Creates `.env` template file  
+   - ✅ Creates `.env` template file
    - ✅ Tests MCP server functionality
 
 2. **Configure OAuth credentials:**
    Edit the generated `.env` file:
+
    ```bash
    BASECAMP_CLIENT_ID=your_client_id_here
    BASECAMP_CLIENT_SECRET=your_client_secret_here
@@ -42,12 +55,15 @@ This server works with both **Cursor** and **Claude Desktop**. Choose your prefe
    ```
 
 3. **Authenticate with Basecamp:**
+
    ```bash
    python oauth_app.py
    ```
-   Visit http://localhost:8000 and complete the OAuth flow.
+
+   Visit <http://localhost:8000> and complete the OAuth flow.
 
 4. **Generate Cursor configuration:**
+
    ```bash
    python generate_cursor_config.py
    ```
@@ -78,6 +94,7 @@ Based on the [official MCP quickstart guide](https://modelcontextprotocol.io/qui
 ### Setup Steps
 
 1. **Complete the basic setup** (steps 1-3 from Cursor setup above):
+
    ```bash
    git clone <repository-url>
    cd basecamp-mcp
@@ -87,6 +104,7 @@ Based on the [official MCP quickstart guide](https://modelcontextprotocol.io/qui
    ```
 
 2. **Generate Claude Desktop configuration:**
+
    ```bash
    python generate_claude_desktop_config.py
    ```
@@ -101,11 +119,13 @@ Based on the [official MCP quickstart guide](https://modelcontextprotocol.io/qui
 ### Claude Desktop Configuration
 
 The configuration is automatically created at:
+
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows**: `~/AppData/Roaming/Claude/claude_desktop_config.json`  
 - **Linux**: `~/.config/claude-desktop/claude_desktop_config.json`
 
 Example configuration generated:
+
 ```json
 {
   "mcpServers": {
@@ -125,6 +145,7 @@ Example configuration generated:
 ### Usage in Claude Desktop
 
 Ask Claude things like:
+
 - "What are my current Basecamp projects?"
 - "Show me the latest campfire messages from the Technology project"
 - "Create a new card in the Development column with title 'Fix login bug'"
@@ -134,6 +155,7 @@ Ask Claude things like:
 ### Troubleshooting Claude Desktop
 
 **Check Claude Desktop logs** (following [official debugging guide](https://modelcontextprotocol.io/quickstart/server#troubleshooting)):
+
 ```bash
 # macOS/Linux - Monitor logs in real-time
 tail -n 20 -f ~/Library/Logs/Claude/mcp*.log
@@ -143,6 +165,7 @@ ls ~/Library/Logs/Claude/mcp-server-basecamp.log
 ```
 
 **Common issues:**
+
 - **Tools not appearing**: Verify configuration file syntax and restart Claude Desktop
 - **Connection failures**: Check that Python path and script path are absolute paths
 - **Authentication errors**: Ensure OAuth flow completed successfully (`oauth_tokens.json` exists)
@@ -203,6 +226,7 @@ Once configured, you can use these tools in Cursor:
 ### Example Cursor Usage
 
 Ask Cursor things like:
+
 - "Show me all my Basecamp projects"
 - "What todos are in project X?"
 - "Search for messages containing 'deadline'"
@@ -226,7 +250,7 @@ The project uses the **official Anthropic FastMCP framework** for maximum reliab
 4. **Basecamp Client** (`basecamp_client.py`) - Basecamp API client library
 5. **Search Utilities** (`search_utils.py`) - Search across Basecamp resources
 6. **Setup Automation** (`setup.py`) - One-command installation
-7. **Configuration Generators**: 
+7. **Configuration Generators**:
    - `generate_cursor_config.py` - For Cursor IDE integration
    - `generate_claude_desktop_config.py` - For Claude Desktop integration
 
@@ -242,6 +266,7 @@ The project uses the **official Anthropic FastMCP framework** for maximum reliab
 ### Quick Fixes
 
 **Problem: Server won't start**
+
 ```bash
 # Test if FastMCP server works:
 ./venv/bin/python -c "import mcp; print('✅ MCP available')"
@@ -249,12 +274,15 @@ The project uses the **official Anthropic FastMCP framework** for maximum reliab
 ```
 
 **Problem: Wrong Python version**
+
 ```bash
-python --version  # Must be 3.8+
-# If too old, install newer Python and re-run setup
+python --version  # Must be 3.10+
+# If too old, use uv which auto-downloads the correct Python:
+uv venv --python 3.12 venv && source venv/bin/activate && uv pip install -r requirements.txt && uv pip install mcp
 ```
 
 **Problem: Authentication fails**
+
 ```bash  
 # Check OAuth flow:
 python oauth_app.py
@@ -286,6 +314,7 @@ python oauth_app.py
 ## Finding Your Account ID
 
 If you don't know your Basecamp account ID:
+
 1. Log into Basecamp in your browser
 2. Look at the URL - it will be like `https://3.basecamp.com/4389629/projects`
 3. The number (4389629 in this example) is your account ID

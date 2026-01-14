@@ -24,10 +24,14 @@ def run_command(cmd, cwd=None):
         return False
 
 def check_python_version():
-    """Check if Python version is 3.8+"""
-    if sys.version_info < (3, 8):
-        print("❌ Python 3.8 or higher is required (for MCP SDK compatibility)")
+    """Check if Python version is 3.10+"""
+    if sys.version_info < (3, 10):
+        print("❌ Python 3.10 or higher is required (for MCP SDK compatibility)")
         print(f"Current version: {sys.version}")
+        print("\n💡 Tip: Use 'uv' to auto-download the correct Python version:")
+        print("   uv venv --python 3.12 venv")
+        print("   source venv/bin/activate")
+        print("   uv pip install -r requirements.txt && uv pip install mcp")
         return False
     print(f"✅ Python version: {sys.version.split()[0]}")
     return True

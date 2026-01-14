@@ -9,7 +9,11 @@ This is a **Basecamp 3 MCP (Model Context Protocol) Server** that allows AI assi
 ## Development Commands
 
 ```bash
-# Setup (one-time)
+# Setup (one-time) - requires Python 3.10+
+# Option 1: Using uv (recommended - auto-downloads Python 3.12)
+uv venv --python 3.12 venv && source venv/bin/activate && uv pip install -r requirements.txt && uv pip install mcp
+
+# Option 2: Using pip (if Python 3.10+ already installed)
 python setup.py                      # Creates venv, installs deps, tests server
 
 # OAuth Authentication
