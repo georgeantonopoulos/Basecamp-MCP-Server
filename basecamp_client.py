@@ -353,25 +353,241 @@ class BasecampClient:
 
     # Message board methods
     def get_message_board(self, project_id):
-        """Get the message board for a project."""
-        response = self.get(f'projects/{project_id}/message_board.json')
+        """Get the message board for a project.
+
+        The message board ID is discovered from the project's dock array,
+        following the same pattern as get_todoset().
+
+        Args:
+            project_id: Project/bucket ID
+
+        Returns:
+            dict: Message board details including id, title, messages_count, etc.
+        """
+        project = self.get_project(project_id)
+        try:
+            dock_item = next(_ for _ in project["dock"] if _["name"] == "message_board")
+            board_id = dock_item['id']
+            response = self.get(f'buckets/{project_id}/message_boards/{board_id}.json')
+            if response.status_code == 200:
+                return response.json()
+            else:
+                raise Exception(f"Failed to get message board: {response.status_code} - {response.text}")
+        except (IndexError, TypeError, StopIteration):
+            raise Exception(f"No message board found for project: {project_id}")
+
+    def get_messages(self, project_id, message_board_id=None):
+        """Get all messages from a message board, handling pagination.
+
+        Basecamp paginates list endpoints (commonly 15 items per page). This
+        implementation follows pagination via the `page` query parameter and
+        the HTTP `Link` header if present, aggregating all pages before
+        returning the combined list.
+
+        Args:
+            project_id: Project/bucket ID
+            message_board_id: Optional message board ID. If not provided,
+                will be discovered from the project's dock.
+
+        Returns:
+            list: All messages from the message board
+        """
+        if not message_board_id:
+            message_board = self.get_message_board(project_id)
+            message_board_id = message_board['id']
+
+        endpoint = f'buckets/{project_id}/message_boards/{message_board_id}/messages.json'
+
+        all_messages = []
+        page = 1
+
+        while True:
+            response = self.get(endpoint, params={"page": page})
+            if response.status_code != 200:
+                raise Exception(f"Failed to get messages: {response.status_code} - {response.text}")
+
+            page_items = response.json() or []
+            all_messages.extend(page_items)
+
+            # Check for next page using Link header
+            link_header = response.headers.get("Link", "")
+            has_next = 'rel="next"' in link_header if link_header else False
+
+            if not page_items or not has_next:
+                break
+
+            page += 1
+
+        return all_messages
+
+    def get_message(self, project_id, message_id):
+        """Get a specific message.
+
+        Args:
+            project_id: Project/bucket ID
+            message_id: Message ID
+
+        Returns:
+            dict: Message details including title, content, creator, etc.
+        """
+        endpoint = f'buckets/{project_id}/messages/{message_id}.json'
+        response = self.get(endpoint)
         if response.status_code == 200:
             return response.json()
         else:
-            raise Exception(f"Failed to get message board: {response.status_code} - {response.text}")
+            raise Exception(f"Failed to get message: {response.status_code} - {response.text}")
 
-    def get_messages(self, project_id):
-        """Get all messages for a project."""
-        # First get the message board ID
-        message_board = self.get_message_board(project_id)
-        message_board_id = message_board['id']
+    # Inbox methods (Email Forwards)
+    def get_inbox(self, project_id):
+        """Get the inbox for a project (email forwards container).
 
-        # Then get all messages
-        response = self.get('messages.json', {'message_board_id': message_board_id})
+        The inbox ID is discovered from the project's dock array,
+        following the same pattern as get_message_board().
+
+        Args:
+            project_id: Project/bucket ID
+
+        Returns:
+            dict: Inbox details including forwards_count, forwards_url, etc.
+        """
+        project = self.get_project(project_id)
+        try:
+            dock_item = next(_ for _ in project["dock"] if _["name"] == "inbox")
+            inbox_id = dock_item['id']
+            response = self.get(f'buckets/{project_id}/inboxes/{inbox_id}.json')
+            if response.status_code == 200:
+                return response.json()
+            else:
+                raise Exception(f"Failed to get inbox: {response.status_code} - {response.text}")
+        except (IndexError, TypeError, StopIteration):
+            raise Exception(f"No inbox found for project: {project_id}")
+
+    def get_forwards(self, project_id, inbox_id=None):
+        """Get all forwards from an inbox, handling pagination.
+
+        Args:
+            project_id: Project/bucket ID
+            inbox_id: Optional inbox ID. If not provided,
+                will be discovered from the project's dock.
+
+        Returns:
+            list: All forwards from the inbox
+        """
+        if not inbox_id:
+            inbox = self.get_inbox(project_id)
+            inbox_id = inbox['id']
+
+        endpoint = f'buckets/{project_id}/inboxes/{inbox_id}/forwards.json'
+
+        all_forwards = []
+        page = 1
+
+        while True:
+            response = self.get(endpoint, params={"page": page})
+            if response.status_code != 200:
+                raise Exception(f"Failed to get forwards: {response.status_code} - {response.text}")
+
+            page_items = response.json() or []
+            all_forwards.extend(page_items)
+
+            # Check for next page using Link header
+            link_header = response.headers.get("Link", "")
+            has_next = 'rel="next"' in link_header if link_header else False
+
+            if not page_items or not has_next:
+                break
+
+            page += 1
+
+        return all_forwards
+
+    def get_forward(self, project_id, forward_id):
+        """Get a specific forward.
+
+        Args:
+            project_id: Project/bucket ID
+            forward_id: Forward ID
+
+        Returns:
+            dict: Forward details including content, subject, from, replies_count, etc.
+        """
+        endpoint = f'buckets/{project_id}/inbox_forwards/{forward_id}.json'
+        response = self.get(endpoint)
         if response.status_code == 200:
             return response.json()
         else:
-            raise Exception(f"Failed to get messages: {response.status_code} - {response.text}")
+            raise Exception(f"Failed to get forward: {response.status_code} - {response.text}")
+
+    def get_inbox_replies(self, project_id, forward_id):
+        """Get all replies to a forward, handling pagination.
+
+        Args:
+            project_id: Project/bucket ID
+            forward_id: Forward ID
+
+        Returns:
+            list: All replies to the forward
+        """
+        endpoint = f'buckets/{project_id}/inbox_forwards/{forward_id}/replies.json'
+
+        all_replies = []
+        page = 1
+
+        while True:
+            response = self.get(endpoint, params={"page": page})
+            if response.status_code != 200:
+                raise Exception(f"Failed to get inbox replies: {response.status_code} - {response.text}")
+
+            page_items = response.json() or []
+            all_replies.extend(page_items)
+
+            # Check for next page using Link header
+            link_header = response.headers.get("Link", "")
+            has_next = 'rel="next"' in link_header if link_header else False
+
+            if not page_items or not has_next:
+                break
+
+            page += 1
+
+        return all_replies
+
+    def get_inbox_reply(self, project_id, forward_id, reply_id):
+        """Get a specific inbox reply.
+
+        Args:
+            project_id: Project/bucket ID
+            forward_id: Forward ID
+            reply_id: Reply ID
+
+        Returns:
+            dict: Reply details including content, creator, etc.
+        """
+        endpoint = f'buckets/{project_id}/inbox_forwards/{forward_id}/replies/{reply_id}.json'
+        response = self.get(endpoint)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to get inbox reply: {response.status_code} - {response.text}")
+
+    def trash_forward(self, project_id, forward_id):
+        """Trash a forward.
+
+        Uses the generic recordings trash endpoint, same pattern as trash_document.
+
+        Args:
+            project_id: Project/bucket ID
+            forward_id: Forward ID
+
+        Returns:
+            bool: True if successful
+        """
+        endpoint = f"buckets/{project_id}/recordings/{forward_id}/status/trashed.json"
+        response = self.put(endpoint)
+        if response.status_code == 204:
+            return True
+        else:
+            raise Exception(f"Failed to trash forward: {response.status_code} - {response.text}")
 
     # Schedule methods
     def get_schedule(self, project_id):

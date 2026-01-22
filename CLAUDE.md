@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-This is a **Basecamp 3 MCP (Model Context Protocol) Server** that allows AI assistants (Cursor, Claude Desktop) to interact with Basecamp directly. It uses OAuth 2.0 for authentication and provides 46+ tools for Basecamp operations.
+This is a **Basecamp 3 MCP (Model Context Protocol) Server** that allows AI assistants (Cursor, Claude Desktop) to interact with Basecamp directly. It uses OAuth 2.0 for authentication and provides 63 tools for Basecamp operations.
 
 ## Development Commands
 
@@ -42,7 +42,7 @@ python generate_claude_desktop_config.py   # For Claude Desktop
 
 | File | Purpose |
 | ------ | --------- |
-| `basecamp_fastmcp.py` | **Main MCP server** using official Anthropic FastMCP framework (46 tools) |
+| `basecamp_fastmcp.py` | **Main MCP server** using official Anthropic FastMCP framework (63 tools) |
 | `mcp_server_cli.py` | Legacy JSON-RPC server (same tools, custom implementation) |
 | `basecamp_client.py` | Basecamp 3 API client - all HTTP methods and endpoints |
 | `basecamp_oauth.py` | OAuth 2.0 client for 37signals Launchpad |
@@ -72,15 +72,17 @@ Basecamp 3 API (https://3.basecampapi.com/{account_id})
 3. Callback stores tokens in `oauth_tokens.json` (600 permissions)
 4. MCP server uses `auth_manager.ensure_authenticated()` to auto-refresh expired tokens
 
-### Tool Categories (46 total)
+### Tool Categories (63 total)
 
 - **Projects**: `get_projects`, `get_project`
 - **Todos**: `get_todolists`, `get_todos`, `create_todo`, `update_todo`, `delete_todo`, `complete_todo`, `uncomplete_todo`
 - **Card Tables (Kanban)**: `get_card_table`, `get_columns`, `get_cards`, `create_card`, `move_card`, `complete_card`, etc.
 - **Card Steps**: `get_card_steps`, `create_card_step`, `complete_card_step`, etc.
 - **Comments**: `get_comments`, `create_comment`
+- **Messages**: `get_message_board`, `get_messages`, `get_message`
 - **Campfire (Chat)**: `get_campfire_lines`
 - **Documents**: `get_documents`, `create_document`, `update_document`, `trash_document`
+- **Inbox (Email Forwards)**: `get_inbox`, `get_forwards`, `get_forward`, `get_inbox_replies`, `get_inbox_reply`, `trash_forward`
 - **Search**: `search_basecamp`, `global_search`
 - **Webhooks**: `get_webhooks`, `create_webhook`, `delete_webhook`
 - **Other**: `get_daily_check_ins`, `get_question_answers`, `get_events`, `create_attachment`, `get_uploads`

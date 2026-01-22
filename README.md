@@ -2,7 +2,7 @@
 
 This project provides a **FastMCP-powered** integration for Basecamp 3, allowing Cursor to interact with Basecamp directly through the MCP protocol.
 
-✅ **Migration Complete:** Successfully migrated to official Anthropic FastMCP framework with **100% feature parity** (all 46 tools)  
+✅ **Migration Complete:** Successfully migrated to official Anthropic FastMCP framework with **100% feature parity** (all 63 tools)  
 🚀 **Ready for Production:** Full protocol compliance with MCP 2025-06-18
 
 ## Quick Setup
@@ -73,7 +73,7 @@ This server works with both **Cursor** and **Claude Desktop**. Choose your prefe
 6. **Verify in Cursor:**
    - Go to Cursor Settings → MCP
    - You should see "basecamp" with a **green checkmark**
-   - Available tools: **46 tools** for complete Basecamp control
+   - Available tools: **63 tools** for complete Basecamp control
 
 ### Test Your Setup
 
@@ -113,7 +113,7 @@ Based on the [official MCP quickstart guide](https://modelcontextprotocol.io/qui
 
 4. **Verify in Claude Desktop:**
    - Look for the "Search and tools" icon (🔍) in the chat interface
-   - You should see "basecamp" listed with all 46 tools available
+   - You should see "basecamp" listed with all 63 tools available
    - Toggle the tools on to enable Basecamp integration
 
 ### Claude Desktop Configuration
@@ -182,6 +182,9 @@ Once configured, you can use these tools in Cursor:
 - `get_comments` - Get comments for a Basecamp item
 - `create_comment` - Create a comment on a Basecamp item
 - `get_campfire_lines` - Get recent messages from a Basecamp campfire
+- `get_message_board` - Get the message board for a project
+- `get_messages` - Get all messages from a project's message board
+- `get_message` - Get a specific message by ID
 - `get_daily_check_ins` - Get project's daily check-in questions
 - `get_question_answers` - Get answers to daily check-in questions
 - `create_attachment` - Upload a file as an attachment
@@ -194,6 +197,15 @@ Once configured, you can use these tools in Cursor:
 - `create_document` - Create a document
 - `update_document` - Update a document
 - `trash_document` - Move a document to trash
+
+### Inbox Tools (Email Forwards)
+
+- `get_inbox` - Get the inbox for a project (email forwards container)
+- `get_forwards` - Get all forwarded emails from a project's inbox
+- `get_forward` - Get a specific forwarded email by ID
+- `get_inbox_replies` - Get all replies to a forwarded email
+- `get_inbox_reply` - Get a specific reply to a forwarded email
+- `trash_forward` - Move a forwarded email to trash
 
 ### Card Table Tools
 
@@ -229,6 +241,7 @@ Ask Cursor things like:
 
 - "Show me all my Basecamp projects"
 - "What todos are in project X?"
+- "Show me the messages from the message board in project X"
 - "Search for messages containing 'deadline'"
 - "Get details for the Technology project"
 - "Show me the card table for project X"
@@ -244,7 +257,7 @@ Ask Cursor things like:
 
 The project uses the **official Anthropic FastMCP framework** for maximum reliability and compatibility:
 
-1. **FastMCP Server** (`basecamp_fastmcp.py`) - Official MCP SDK with 46 tools, compatible with both Cursor and Claude Desktop
+1. **FastMCP Server** (`basecamp_fastmcp.py`) - Official MCP SDK with 63 tools, compatible with both Cursor and Claude Desktop
 2. **OAuth App** (`oauth_app.py`) - Handles OAuth 2.0 flow with Basecamp  
 3. **Token Storage** (`token_storage.py`) - Securely stores OAuth tokens
 4. **Basecamp Client** (`basecamp_client.py`) - Basecamp API client library
