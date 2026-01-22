@@ -599,6 +599,96 @@ async def get_campfire_lines(project_id: str, campfire_id: str) -> Dict[str, Any
         }
 
 @mcp.tool()
+async def get_message_board(project_id: str) -> Dict[str, Any]:
+    """Get the message board for a project.
+
+    Args:
+        project_id: The project ID
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        message_board = await _run_sync(client.get_message_board, project_id)
+        return {
+            "status": "success",
+            "message_board": message_board
+        }
+    except Exception as e:
+        logger.error(f"Error getting message board: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {
+                "error": "OAuth token expired",
+                "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
+            }
+        return {
+            "error": "Execution error",
+            "message": str(e)
+        }
+
+@mcp.tool()
+async def get_messages(project_id: str, message_board_id: Optional[str] = None) -> Dict[str, Any]:
+    """Get all messages from a project's message board.
+
+    Args:
+        project_id: The project ID
+        message_board_id: Optional message board ID. If not provided, will be auto-discovered from the project.
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        messages = await _run_sync(client.get_messages, project_id, message_board_id)
+        return {
+            "status": "success",
+            "messages": messages,
+            "count": len(messages)
+        }
+    except Exception as e:
+        logger.error(f"Error getting messages: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {
+                "error": "OAuth token expired",
+                "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
+            }
+        return {
+            "error": "Execution error",
+            "message": str(e)
+        }
+
+@mcp.tool()
+async def get_message(project_id: str, message_id: str) -> Dict[str, Any]:
+    """Get a specific message by ID.
+
+    Args:
+        project_id: The project ID
+        message_id: The message ID
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        message = await _run_sync(client.get_message, project_id, message_id)
+        return {
+            "status": "success",
+            "message": message
+        }
+    except Exception as e:
+        logger.error(f"Error getting message: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {
+                "error": "OAuth token expired",
+                "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
+            }
+        return {
+            "error": "Execution error",
+            "message": str(e)
+        }
+
+@mcp.tool()
 async def get_card_tables(project_id: str) -> Dict[str, Any]:
     """Get all card tables for a project.
     
