@@ -688,6 +688,196 @@ async def get_message(project_id: str, message_id: str) -> Dict[str, Any]:
             "message": str(e)
         }
 
+
+# Inbox Tools (Email Forwards)
+@mcp.tool()
+async def get_inbox(project_id: str) -> Dict[str, Any]:
+    """Get the inbox for a project (for email forwards).
+
+    Args:
+        project_id: The project ID
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        inbox = await _run_sync(client.get_inbox, project_id)
+        return {
+            "status": "success",
+            "inbox": inbox
+        }
+    except Exception as e:
+        logger.error(f"Error getting inbox: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {
+                "error": "OAuth token expired",
+                "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
+            }
+        return {
+            "error": "Execution error",
+            "message": str(e)
+        }
+
+
+@mcp.tool()
+async def get_forwards(project_id: str, inbox_id: Optional[str] = None) -> Dict[str, Any]:
+    """Get all forwarded emails from a project's inbox.
+
+    Args:
+        project_id: The project ID
+        inbox_id: Optional inbox ID. If not provided, will be auto-discovered from the project.
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        forwards = await _run_sync(client.get_forwards, project_id, inbox_id)
+        return {
+            "status": "success",
+            "forwards": forwards,
+            "count": len(forwards)
+        }
+    except Exception as e:
+        logger.error(f"Error getting forwards: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {
+                "error": "OAuth token expired",
+                "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
+            }
+        return {
+            "error": "Execution error",
+            "message": str(e)
+        }
+
+
+@mcp.tool()
+async def get_forward(project_id: str, forward_id: str) -> Dict[str, Any]:
+    """Get a specific forwarded email by ID.
+
+    Args:
+        project_id: The project ID
+        forward_id: The forward ID
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        forward = await _run_sync(client.get_forward, project_id, forward_id)
+        return {
+            "status": "success",
+            "forward": forward
+        }
+    except Exception as e:
+        logger.error(f"Error getting forward: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {
+                "error": "OAuth token expired",
+                "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
+            }
+        return {
+            "error": "Execution error",
+            "message": str(e)
+        }
+
+
+@mcp.tool()
+async def get_inbox_replies(project_id: str, forward_id: str) -> Dict[str, Any]:
+    """Get all replies to a forwarded email.
+
+    Args:
+        project_id: The project ID
+        forward_id: The forward ID
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        replies = await _run_sync(client.get_inbox_replies, project_id, forward_id)
+        return {
+            "status": "success",
+            "replies": replies,
+            "count": len(replies)
+        }
+    except Exception as e:
+        logger.error(f"Error getting inbox replies: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {
+                "error": "OAuth token expired",
+                "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
+            }
+        return {
+            "error": "Execution error",
+            "message": str(e)
+        }
+
+
+@mcp.tool()
+async def get_inbox_reply(project_id: str, forward_id: str, reply_id: str) -> Dict[str, Any]:
+    """Get a specific reply to a forwarded email.
+
+    Args:
+        project_id: The project ID
+        forward_id: The forward ID
+        reply_id: The reply ID
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        reply = await _run_sync(client.get_inbox_reply, project_id, forward_id, reply_id)
+        return {
+            "status": "success",
+            "reply": reply
+        }
+    except Exception as e:
+        logger.error(f"Error getting inbox reply: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {
+                "error": "OAuth token expired",
+                "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
+            }
+        return {
+            "error": "Execution error",
+            "message": str(e)
+        }
+
+
+@mcp.tool()
+async def trash_forward(project_id: str, forward_id: str) -> Dict[str, Any]:
+    """Move a forwarded email to trash.
+
+    Args:
+        project_id: The project ID
+        forward_id: The forward ID
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        await _run_sync(client.trash_forward, project_id, forward_id)
+        return {
+            "status": "success",
+            "message": "Forward trashed"
+        }
+    except Exception as e:
+        logger.error(f"Error trashing forward: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {
+                "error": "OAuth token expired",
+                "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
+            }
+        return {
+            "error": "Execution error",
+            "message": str(e)
+        }
+
+
 @mcp.tool()
 async def get_card_tables(project_id: str) -> Dict[str, Any]:
     """Get all card tables for a project.
