@@ -2132,7 +2132,7 @@ async def get_upload(project_id: str, upload_id: str) -> Dict[str, Any]:
             "message": str(e)
         }
 
-# 🎉 COMPLETE FastMCP server with ALL 46 Basecamp tools migrated!
+# 🎉 COMPLETE FastMCP server with ALL tools migrated!
 
 if __name__ == "__main__":
     logger.info("Starting Basecamp FastMCP server")
