@@ -259,6 +259,36 @@ async def get_todos(project_id: str, todolist_id: str) -> Dict[str, Any]:
         }
 
 @mcp.tool()
+async def get_todo(project_id: str, todo_id: str) -> Dict[str, Any]:
+    """Get a single todo item by its ID.
+
+    Args:
+        project_id: Project ID
+        todo_id: The todo ID
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        todo = await _run_sync(client.get_todo, project_id, todo_id)
+        return {
+            "status": "success",
+            "todo": todo
+        }
+    except Exception as e:
+        logger.error(f"Error getting todo {todo_id}: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {
+                "error": "OAuth token expired",
+                "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
+            }
+        return {
+            "error": "Execution error",
+            "message": str(e)
+        }
+
+@mcp.tool()
 async def create_todo(project_id: str, todolist_id: str, content: str, 
                      description: Optional[str] = None, 
                      assignee_ids: Optional[List[str]] = None,

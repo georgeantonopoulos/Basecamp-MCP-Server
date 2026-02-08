@@ -2,7 +2,7 @@
 
 This project provides a **FastMCP-powered** integration for Basecamp 3, allowing Cursor to interact with Basecamp directly through the MCP protocol.
 
-✅ **Migration Complete:** Successfully migrated to official Anthropic FastMCP framework with **100% feature parity** (all 63 tools)  
+✅ **Migration Complete:** Successfully migrated to official Anthropic FastMCP framework with **100% feature parity** (all 64 tools)  
 🚀 **Ready for Production:** Full protocol compliance with MCP 2025-06-18
 
 ## Quick Setup
@@ -73,7 +73,7 @@ This server works with both **Cursor** and **Claude Desktop**. Choose your prefe
 6. **Verify in Cursor:**
    - Go to Cursor Settings → MCP
    - You should see "basecamp" with a **green checkmark**
-   - Available tools: **63 tools** for complete Basecamp control
+   - Available tools: **64 tools** for complete Basecamp control
 
 ### Test Your Setup
 
@@ -113,7 +113,7 @@ Based on the [official MCP quickstart guide](https://modelcontextprotocol.io/qui
 
 4. **Verify in Claude Desktop:**
    - Look for the "Search and tools" icon (🔍) in the chat interface
-   - You should see "basecamp" listed with all 63 tools available
+   - You should see "basecamp" listed with all 64 tools available
    - Toggle the tools on to enable Basecamp integration
 
 ### Claude Desktop Configuration
@@ -178,6 +178,7 @@ Once configured, you can use these tools in Cursor:
 - `get_project` - Get details for a specific project
 - `get_todolists` - Get todo lists for a project
 - `get_todos` - Get todos from a todo list (returns all pages; handles Basecamp pagination transparently)
+- `get_todo` - Get a single todo item by its ID
 - `search_basecamp` - Search across projects, todos, and messages
 - `get_comments` - Get comments for a Basecamp item
 - `create_comment` - Create a comment on a Basecamp item
@@ -257,7 +258,7 @@ Ask Cursor things like:
 
 The project uses the **official Anthropic FastMCP framework** for maximum reliability and compatibility:
 
-1. **FastMCP Server** (`basecamp_fastmcp.py`) - Official MCP SDK with 63 tools, compatible with both Cursor and Claude Desktop
+1. **FastMCP Server** (`basecamp_fastmcp.py`) - Official MCP SDK with 64 tools, compatible with both Cursor and Claude Desktop
 2. **OAuth App** (`oauth_app.py`) - Handles OAuth 2.0 flow with Basecamp  
 3. **Token Storage** (`token_storage.py`) - Securely stores OAuth tokens
 4. **Basecamp Client** (`basecamp_client.py`) - Basecamp API client library

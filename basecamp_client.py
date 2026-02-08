@@ -176,9 +176,18 @@ class BasecampClient:
 
         return all_todos
 
-    def get_todo(self, todo_id):
-        """Get a specific todo."""
-        response = self.get(f'todos/{todo_id}.json')
+    def get_todo(self, project_id, todo_id):
+        """Get a specific todo.
+
+        Args:
+            project_id (str): Project ID (bucket)
+            todo_id (str): Todo ID
+
+        Returns:
+            dict: The todo object
+        """
+        endpoint = f'buckets/{project_id}/todos/{todo_id}.json'
+        response = self.get(endpoint)
         if response.status_code == 200:
             return response.json()
         else:
