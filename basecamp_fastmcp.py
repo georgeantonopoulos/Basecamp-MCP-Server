@@ -43,8 +43,28 @@ mcp = FastMCP("basecamp")
 
 # Auth helper functions (reused from original server)
 def _get_basecamp_client() -> Optional[BasecampClient]:
-    """Get authenticated Basecamp client (sync version from original server)."""
+    """Get authenticated Basecamp client. Prefers basic auth when credentials are set."""
     try:
+        username = os.getenv('BASECAMP_USERNAME')
+        password = os.getenv('BASECAMP_PASSWORD')
+        account_id = os.getenv('BASECAMP_ACCOUNT_ID')
+        user_agent = os.getenv('USER_AGENT') or "Basecamp MCP Server (basecamp-mcp@example.com)"
+
+        # Use basic auth when username/password are provided
+        if username and password:
+            if not account_id:
+                logger.error("BASECAMP_ACCOUNT_ID is required for basic auth")
+                return None
+            logger.debug(f"Creating Basecamp client with basic auth for {username}")
+            return BasecampClient(
+                username=username,
+                password=password,
+                account_id=account_id,
+                user_agent=user_agent,
+                auth_mode='basic'
+            )
+
+        # Fall back to OAuth
         token_data = token_storage.get_token()
         logger.debug(f"Token data retrieved: {token_data}")
 
@@ -61,9 +81,7 @@ def _get_basecamp_client() -> Optional[BasecampClient]:
         token_data = token_storage.get_token()
 
         # Get account_id from token data first, then fall back to env var
-        account_id = token_data.get('account_id') or os.getenv('BASECAMP_ACCOUNT_ID')
-        user_agent = os.getenv('USER_AGENT') or "Basecamp MCP Server (cursor@example.com)"
-
+        account_id = token_data.get('account_id') or account_id
         if not account_id:
             logger.error(f"Missing account_id. Token data: {token_data}, Env BASECAMP_ACCOUNT_ID: {os.getenv('BASECAMP_ACCOUNT_ID')}")
             return None
