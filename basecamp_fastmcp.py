@@ -545,6 +545,9 @@ async def reposition_todo(
     if not client:
         return _get_auth_error_response()
 
+    if position < 1:
+        return {"error": "Invalid input", "message": "position must be >= 1"}
+
     try:
         await _run_sync(
             lambda: client.reposition_todo(project_id, todo_id, position, parent_id)
@@ -2423,6 +2426,9 @@ async def reposition_todolist_group(
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
+
+    if position < 1:
+        return {"error": "Invalid input", "message": "position must be >= 1"}
 
     try:
         await _run_sync(
