@@ -409,8 +409,10 @@ async def update_todo(project_id: str, todo_id: str,
 
 @mcp.tool()
 async def delete_todo(project_id: str, todo_id: str) -> Dict[str, Any]:
-    """Delete a todo item.
-    
+    """Move a todo item to the trash.
+
+    Trashed todos can be recovered from the Basecamp web UI within 30 days.
+
     Args:
         project_id: Project ID
         todo_id: The todo ID
@@ -418,15 +420,15 @@ async def delete_todo(project_id: str, todo_id: str) -> Dict[str, Any]:
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
-    
+
     try:
         await _run_sync(client.delete_todo, project_id, todo_id)
         return {
             "status": "success",
-            "message": "Todo deleted successfully"
+            "message": "Todo moved to trash"
         }
     except Exception as e:
-        logger.error(f"Error deleting todo: {e}")
+        logger.error(f"Error trashing todo: {e}")
         if "401" in str(e) and "expired" in str(e).lower():
             return {
                 "error": "OAuth token expired",
@@ -497,6 +499,59 @@ async def uncomplete_todo(project_id: str, todo_id: str) -> Dict[str, Any]:
             "error": "Execution error",
             "message": str(e)
         }
+
+@mcp.tool()
+async def archive_todo(project_id: str, todo_id: str) -> Dict[str, Any]:
+    """Archive a todo item.
+
+    Archived todos are hidden from the active list but remain accessible
+    via the Basecamp web UI.
+
+    Args:
+        project_id: Project ID
+        todo_id: The todo ID
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        await _run_sync(client.archive_todo, project_id, todo_id)
+        return {"status": "success", "message": f"Todo {todo_id} archived"}
+    except Exception as e:
+        logger.error(f"Error archiving todo {todo_id}: {e}")
+        return {"error": "Execution error", "message": str(e)}
+
+
+@mcp.tool()
+async def reposition_todo(
+    project_id: str,
+    todo_id: str,
+    position: int,
+    parent_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Reposition a todo within its list, or move it to another list or group.
+
+    Args:
+        project_id: The project ID
+        todo_id: The todo ID
+        position: New 1-based position within the target list
+        parent_id: ID of the target todolist or group to move the todo into.
+                   Omit to keep the todo in its current list and only change position.
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        await _run_sync(
+            lambda: client.reposition_todo(project_id, todo_id, position, parent_id)
+        )
+        return {"status": "success", "message": f"Todo {todo_id} moved to position {position}"}
+    except Exception as e:
+        logger.error(f"Error repositioning todo {todo_id}: {e}")
+        return {"error": "Execution error", "message": str(e)}
+
 
 @mcp.tool()
 async def global_search(query: str) -> Dict[str, Any]:
@@ -2161,6 +2216,205 @@ async def get_upload(project_id: str, upload_id: str) -> Dict[str, Any]:
             "error": "Execution error",
             "message": str(e)
         }
+
+@mcp.tool()
+async def get_todolist(project_id: str, todolist_id: str) -> Dict[str, Any]:
+    """Get a specific todo list by ID.
+
+    Args:
+        project_id: The project ID
+        todolist_id: The todo list ID
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        todolist = await _run_sync(client.get_todolist, project_id, todolist_id)
+        return {"status": "success", "todolist": todolist}
+    except Exception as e:
+        logger.error(f"Error getting todolist {todolist_id}: {e}")
+        return {"error": "Execution error", "message": str(e)}
+
+
+@mcp.tool()
+async def create_todolist(
+    project_id: str,
+    name: str,
+    description: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Create a new todo list in a project.
+
+    Args:
+        project_id: The project ID
+        name: Todo list name
+        description: Optional HTML description
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        todolist = await _run_sync(
+            lambda: client.create_todolist(project_id, name, description)
+        )
+        return {"status": "success", "todolist": todolist}
+    except Exception as e:
+        logger.error(f"Error creating todolist: {e}")
+        return {"error": "Execution error", "message": str(e)}
+
+
+@mcp.tool()
+async def update_todolist(
+    project_id: str,
+    todolist_id: str,
+    name: str,
+    description: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Update an existing todo list.
+
+    The Basecamp API requires the name even when only updating the description.
+
+    Args:
+        project_id: The project ID
+        todolist_id: The todo list ID
+        name: Todo list name (required)
+        description: Optional HTML description
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        todolist = await _run_sync(
+            lambda: client.update_todolist(project_id, todolist_id, name, description)
+        )
+        return {"status": "success", "todolist": todolist}
+    except Exception as e:
+        logger.error(f"Error updating todolist {todolist_id}: {e}")
+        return {"error": "Execution error", "message": str(e)}
+
+
+@mcp.tool()
+async def trash_todolist(project_id: str, todolist_id: str) -> Dict[str, Any]:
+    """Move a todo list to the trash.
+
+    Trashed lists can be recovered from the Basecamp web UI within 30 days.
+
+    Args:
+        project_id: The project ID
+        todolist_id: The todo list ID
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        await _run_sync(client.trash_todolist, project_id, todolist_id)
+        return {"status": "success", "message": f"Todolist {todolist_id} moved to trash"}
+    except Exception as e:
+        logger.error(f"Error trashing todolist {todolist_id}: {e}")
+        return {"error": "Execution error", "message": str(e)}
+
+
+@mcp.tool()
+async def get_todolist_groups(project_id: str, todolist_id: str) -> Dict[str, Any]:
+    """Get all groups in a todo list.
+
+    Groups are named sections within a todo list (e.g. "Phase 1", "Backlog").
+
+    Args:
+        project_id: The project ID
+        todolist_id: The todo list ID
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        groups = await _run_sync(client.get_todolist_groups, project_id, todolist_id)
+        return {"status": "success", "groups": groups, "count": len(groups)}
+    except Exception as e:
+        logger.error(f"Error getting todolist groups: {e}")
+        return {"error": "Execution error", "message": str(e)}
+
+
+@mcp.tool()
+async def get_todolist_group(project_id: str, group_id: str) -> Dict[str, Any]:
+    """Get a specific todo list group by ID.
+
+    Args:
+        project_id: The project ID
+        group_id: The group ID
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        group = await _run_sync(client.get_todolist_group, project_id, group_id)
+        return {"status": "success", "group": group}
+    except Exception as e:
+        logger.error(f"Error getting todolist group {group_id}: {e}")
+        return {"error": "Execution error", "message": str(e)}
+
+
+@mcp.tool()
+async def create_todolist_group(
+    project_id: str,
+    todolist_id: str,
+    name: str,
+    color: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Create a new group inside a todo list.
+
+    Groups act as named sections to organise todos within a list.
+
+    Args:
+        project_id: The project ID
+        todolist_id: The todo list ID
+        name: Group name
+        color: Optional color – one of: white, red, orange, yellow, green,
+               blue, aqua, purple, gray, pink, brown
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        group = await _run_sync(
+            lambda: client.create_todolist_group(project_id, todolist_id, name, color)
+        )
+        return {"status": "success", "group": group}
+    except Exception as e:
+        logger.error(f"Error creating todolist group: {e}")
+        return {"error": "Execution error", "message": str(e)}
+
+
+@mcp.tool()
+async def reposition_todolist_group(
+    project_id: str, group_id: str, position: int
+) -> Dict[str, Any]:
+    """Reposition a todo list group to a new location within its list.
+
+    Args:
+        project_id: The project ID
+        group_id: The group ID
+        position: New 1-based position
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        await _run_sync(
+            lambda: client.reposition_todolist_group(project_id, group_id, position)
+        )
+        return {"status": "success", "message": f"Group {group_id} repositioned to position {position}"}
+    except Exception as e:
+        logger.error(f"Error repositioning todolist group {group_id}: {e}")
+        return {"error": "Execution error", "message": str(e)}
+
 
 # 🎉 COMPLETE FastMCP server with ALL tools migrated!
 

@@ -135,13 +135,75 @@ class BasecampClient:
         else:
             raise Exception(f"Failed to get todolists: {response.status_code} - {response.text}")
 
-    def get_todolist(self, todolist_id):
+    def get_todolist(self, project_id, todolist_id):
         """Get a specific todolist."""
-        response = self.get(f'todolists/{todolist_id}.json')
+        response = self.get(f'buckets/{project_id}/todolists/{todolist_id}.json')
         if response.status_code == 200:
             return response.json()
         else:
             raise Exception(f"Failed to get todolist: {response.status_code} - {response.text}")
+
+    def create_todolist(self, project_id, name, description=None):
+        """Create a new todolist in a project.
+
+        Args:
+            project_id (str): Project ID
+            name (str): Todolist name (required)
+            description (str, optional): HTML description
+
+        Returns:
+            dict: The created todolist object
+        """
+        todoset = self.get_todoset(project_id)
+        todoset_id = todoset['id']
+        endpoint = f'buckets/{project_id}/todosets/{todoset_id}/todolists.json'
+        data = {'name': name}
+        if description is not None:
+            data['description'] = description
+        response = self.post(endpoint, data)
+        if response.status_code == 201:
+            return response.json()
+        else:
+            raise Exception(f"Failed to create todolist: {response.status_code} - {response.text}")
+
+    def update_todolist(self, project_id, todolist_id, name, description=None):
+        """Update an existing todolist.
+
+        Args:
+            project_id (str): Project ID
+            todolist_id (str): Todolist ID
+            name (str): New name (required by API)
+            description (str, optional): New HTML description
+
+        Returns:
+            dict: The updated todolist object
+        """
+        endpoint = f'buckets/{project_id}/todolists/{todolist_id}.json'
+        data = {'name': name}
+        if description is not None:
+            data['description'] = description
+        response = self.put(endpoint, data)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to update todolist: {response.status_code} - {response.text}")
+
+    def trash_todolist(self, project_id, todolist_id):
+        """Move a todolist to the trash.
+
+        Args:
+            project_id (str): Project ID
+            todolist_id (str): Todolist ID
+
+        Returns:
+            bool: True if successful
+        """
+        endpoint = f'buckets/{project_id}/recordings/{todolist_id}/status/trashed.json'
+        response = self.put(endpoint)
+        if response.status_code == 204:
+            return True
+        else:
+            raise Exception(f"Failed to trash todolist: {response.status_code} - {response.text}")
 
     # To-do methods
     def get_todos(self, project_id, todolist_id):
@@ -282,21 +344,63 @@ class BasecampClient:
 
     def delete_todo(self, project_id, todo_id):
         """
-        Delete a todo item.
-        
+        Move a todo item to the trash.
+
         Args:
             project_id (str): Project ID
             todo_id (str): Todo ID
-            
+
         Returns:
             bool: True if successful
         """
-        endpoint = f'buckets/{project_id}/todos/{todo_id}.json'
-        response = self.delete(endpoint)
+        endpoint = f'buckets/{project_id}/recordings/{todo_id}/status/trashed.json'
+        response = self.put(endpoint)
         if response.status_code == 204:
             return True
         else:
-            raise Exception(f"Failed to delete todo: {response.status_code} - {response.text}")
+            raise Exception(f"Failed to trash todo: {response.status_code} - {response.text}")
+
+    def archive_todo(self, project_id, todo_id):
+        """
+        Archive a todo item.
+
+        Args:
+            project_id (str): Project ID
+            todo_id (str): Todo ID
+
+        Returns:
+            bool: True if successful
+        """
+        endpoint = f'buckets/{project_id}/recordings/{todo_id}/status/archived.json'
+        response = self.put(endpoint)
+        if response.status_code == 204:
+            return True
+        else:
+            raise Exception(f"Failed to archive todo: {response.status_code} - {response.text}")
+
+    def reposition_todo(self, project_id, todo_id, position, parent_id=None):
+        """
+        Reposition a todo within its list, or move it to another list/group.
+
+        Args:
+            project_id (str): Project ID
+            todo_id (str): Todo ID
+            position (int): New 1-based position
+            parent_id (str, optional): ID of the target todolist or group to
+                move the todo into. Omit to keep the todo in its current list.
+
+        Returns:
+            bool: True if successful
+        """
+        endpoint = f'buckets/{project_id}/todos/{todo_id}/position.json'
+        data = {'position': position}
+        if parent_id is not None:
+            data['parent_id'] = parent_id
+        response = self.put(endpoint, data)
+        if response.status_code == 204:
+            return True
+        else:
+            raise Exception(f"Failed to reposition todo: {response.status_code} - {response.text}")
 
     def complete_todo(self, project_id, todo_id):
         """
@@ -333,6 +437,90 @@ class BasecampClient:
             return True
         else:
             raise Exception(f"Failed to uncomplete todo: {response.status_code} - {response.text}")
+
+    # Todolist group methods
+    def get_todolist_groups(self, project_id, todolist_id):
+        """Get all groups in a todolist.
+
+        Args:
+            project_id (str): Project ID
+            todolist_id (str): Todolist ID
+
+        Returns:
+            list: List of group objects
+        """
+        endpoint = f'buckets/{project_id}/todolists/{todolist_id}/groups.json'
+        all_groups = []
+        page = 1
+        while True:
+            response = self.get(endpoint, params={"page": page})
+            if response.status_code != 200:
+                raise Exception(f"Failed to get todolist groups: {response.status_code} - {response.text}")
+            page_items = response.json() or []
+            all_groups.extend(page_items)
+            link_header = response.headers.get("Link", "")
+            if not page_items or 'rel="next"' not in link_header:
+                break
+            page += 1
+        return all_groups
+
+    def get_todolist_group(self, project_id, group_id):
+        """Get a specific todolist group.
+
+        Args:
+            project_id (str): Project ID
+            group_id (str): Group ID
+
+        Returns:
+            dict: The group object
+        """
+        endpoint = f'buckets/{project_id}/todolists/{group_id}.json'
+        response = self.get(endpoint)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to get todolist group: {response.status_code} - {response.text}")
+
+    def create_todolist_group(self, project_id, todolist_id, name, color=None):
+        """Create a new group inside a todolist.
+
+        Args:
+            project_id (str): Project ID
+            todolist_id (str): Todolist ID
+            name (str): Group name (required)
+            color (str, optional): One of: white, red, orange, yellow, green,
+                blue, aqua, purple, gray, pink, brown
+
+        Returns:
+            dict: The created group object
+        """
+        endpoint = f'buckets/{project_id}/todolists/{todolist_id}/groups.json'
+        data = {'name': name}
+        if color is not None:
+            data['color'] = color
+        response = self.post(endpoint, data)
+        if response.status_code == 201:
+            return response.json()
+        else:
+            raise Exception(f"Failed to create todolist group: {response.status_code} - {response.text}")
+
+    def reposition_todolist_group(self, project_id, group_id, position):
+        """Reposition a todolist group.
+
+        Args:
+            project_id (str): Project ID
+            group_id (str): Group ID
+            position (int): New 1-based position
+
+        Returns:
+            bool: True if successful
+        """
+        endpoint = f'buckets/{project_id}/todolists/groups/{group_id}/position.json'
+        response = self.put(endpoint, {'position': position})
+        if response.status_code == 204:
+            return True
+        else:
+            raise Exception(f"Failed to reposition todolist group: {response.status_code} - {response.text}")
 
     # People methods
     def get_people(self):
