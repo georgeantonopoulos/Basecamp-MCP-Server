@@ -1,13 +1,13 @@
 # Basecamp MCP Integration
 
-This project provides a **FastMCP-powered** integration for Basecamp 3, allowing Cursor to interact with Basecamp directly through the MCP protocol.
+This project provides a **FastMCP-powered** integration for Basecamp 3, allowing AI clients to interact with Basecamp directly through the MCP protocol.
 
 ✅ **Migration Complete:** Successfully migrated to official Anthropic FastMCP framework with **100% feature parity** (all 64 tools)  
 🚀 **Ready for Production:** Full protocol compliance with MCP 2025-06-18
 
 ## Quick Setup
 
-This server works with both **Cursor** and **Claude Desktop**. Choose your preferred client:
+This server works with **Cursor**, **Codex**, and **Claude Desktop**. Choose your preferred client:
 
 ### Prerequisites
 
@@ -85,6 +85,65 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 
 # Run automated tests  
 python -m pytest tests/ -v
+```
+
+## For Codex Users
+
+Codex integration is fully automated with a local path-agnostic script.
+The script computes all paths from this repository root, so it works no matter where the repo is installed.
+
+### Setup Steps
+
+1. **Complete the basic setup** (same as Cursor steps 1-3 above):
+
+   ```bash
+   git clone <repository-url>
+   cd basecamp-mcp
+   python setup.py
+   # Configure .env file with OAuth credentials
+   python oauth_app.py
+   ```
+
+2. **Generate Codex configuration automatically:**
+
+   ```bash
+   python generate_codex_config.py
+   ```
+
+   Optional flags:
+
+   ```bash
+   # Preview commands only (no changes):
+   python generate_codex_config.py --dry-run
+
+   # Use legacy server instead of FastMCP:
+   python generate_codex_config.py --legacy
+   ```
+
+3. **Verify in Codex:**
+
+   ```bash
+   codex mcp get basecamp
+   codex mcp list
+   ```
+
+### Codex Configuration
+
+The script writes to Codex global config:
+
+- `~/.codex/config.toml`
+
+It creates this MCP server entry shape:
+
+```toml
+[mcp_servers.basecamp]
+command = "/path/to/your/project/venv/bin/python"
+args = ["/path/to/your/project/basecamp_fastmcp.py"]
+
+[mcp_servers.basecamp.env]
+PYTHONPATH = "/path/to/your/project"
+VIRTUAL_ENV = "/path/to/your/project/venv"
+BASECAMP_ACCOUNT_ID = "your_account_id"
 ```
 
 ## For Claude Desktop Users
@@ -258,7 +317,7 @@ Ask Cursor things like:
 
 The project uses the **official Anthropic FastMCP framework** for maximum reliability and compatibility:
 
-1. **FastMCP Server** (`basecamp_fastmcp.py`) - Official MCP SDK with 64 tools, compatible with both Cursor and Claude Desktop
+1. **FastMCP Server** (`basecamp_fastmcp.py`) - Official MCP SDK with 64 tools, compatible with Cursor, Codex, and Claude Desktop
 2. **OAuth App** (`oauth_app.py`) - Handles OAuth 2.0 flow with Basecamp  
 3. **Token Storage** (`token_storage.py`) - Securely stores OAuth tokens
 4. **Basecamp Client** (`basecamp_client.py`) - Basecamp API client library
@@ -266,6 +325,7 @@ The project uses the **official Anthropic FastMCP framework** for maximum reliab
 6. **Setup Automation** (`setup.py`) - One-command installation
 7. **Configuration Generators**:
    - `generate_cursor_config.py` - For Cursor IDE integration
+   - `generate_codex_config.py` - For Codex CLI integration
    - `generate_claude_desktop_config.py` - For Claude Desktop integration
 
 ## Troubleshooting
@@ -274,7 +334,7 @@ The project uses the **official Anthropic FastMCP framework** for maximum reliab
 
 - 🔴 **Red/Yellow indicator:** Run `python setup.py` to create proper virtual environment
 - 🔴 **"0 tools available":** Virtual environment missing MCP packages - run setup script
-- 🔴 **"Tool not found" errors:** Restart your client (Cursor/Claude Desktop) completely
+- 🔴 **"Tool not found" errors:** Restart your client (Cursor/Codex/Claude Desktop) completely
 - ⚠️ **Missing BASECAMP_ACCOUNT_ID:** Add to `.env` file, then re-run the config generator
 
 ### Quick Fixes
@@ -306,6 +366,7 @@ python oauth_app.py
 ### Manual Configuration (Last Resort)
 
 **Cursor config location:** `~/.cursor/mcp.json` (macOS/Linux) or `%APPDATA%\Cursor\mcp.json` (Windows)  
+**Codex config location:** `~/.codex/config.toml`  
 **Claude Desktop config location:** `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 
 ```json
@@ -323,6 +384,19 @@ python oauth_app.py
         }
     }
 }
+```
+
+Codex equivalent:
+
+```toml
+[mcp_servers.basecamp]
+command = "/full/path/to/your/project/venv/bin/python"
+args = ["/full/path/to/your/project/basecamp_fastmcp.py"]
+
+[mcp_servers.basecamp.env]
+PYTHONPATH = "/full/path/to/your/project"
+VIRTUAL_ENV = "/full/path/to/your/project/venv"
+BASECAMP_ACCOUNT_ID = "your_account_id"
 ```
 
 ## Finding Your Account ID
