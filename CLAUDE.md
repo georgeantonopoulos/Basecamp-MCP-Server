@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-This is a **Basecamp 3 MCP (Model Context Protocol) Server** that allows AI assistants (Cursor, Claude Desktop) to interact with Basecamp directly. It uses OAuth 2.0 for authentication and provides 64 tools for Basecamp operations.
+This is a **Basecamp 3 MCP (Model Context Protocol) Server** that allows AI assistants (Cursor, Claude Desktop) to interact with Basecamp directly. It uses OAuth 2.0 for authentication and provides 74 tools for Basecamp operations.
 
 ## Development Commands
 
@@ -42,7 +42,7 @@ python generate_claude_desktop_config.py   # For Claude Desktop
 
 | File | Purpose |
 | ------ | --------- |
-| `basecamp_fastmcp.py` | **Main MCP server** using official Anthropic FastMCP framework (64 tools) |
+| `basecamp_fastmcp.py` | **Main MCP server** using official Anthropic FastMCP framework (74 tools) |
 | `mcp_server_cli.py` | Legacy JSON-RPC server (same tools, custom implementation) |
 | `basecamp_client.py` | Basecamp 3 API client - all HTTP methods and endpoints |
 | `basecamp_oauth.py` | OAuth 2.0 client for 37signals Launchpad |

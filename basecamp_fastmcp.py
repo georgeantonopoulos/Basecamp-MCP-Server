@@ -520,6 +520,8 @@ async def archive_todo(project_id: str, todo_id: str) -> Dict[str, Any]:
         return {"status": "success", "message": f"Todo {todo_id} archived"}
     except Exception as e:
         logger.error(f"Error archiving todo {todo_id}: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {"error": "OAuth token expired", "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."}
         return {"error": "Execution error", "message": str(e)}
 
 
@@ -550,6 +552,8 @@ async def reposition_todo(
         return {"status": "success", "message": f"Todo {todo_id} moved to position {position}"}
     except Exception as e:
         logger.error(f"Error repositioning todo {todo_id}: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {"error": "OAuth token expired", "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."}
         return {"error": "Execution error", "message": str(e)}
 
 
@@ -2234,6 +2238,8 @@ async def get_todolist(project_id: str, todolist_id: str) -> Dict[str, Any]:
         return {"status": "success", "todolist": todolist}
     except Exception as e:
         logger.error(f"Error getting todolist {todolist_id}: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {"error": "OAuth token expired", "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."}
         return {"error": "Execution error", "message": str(e)}
 
 
@@ -2261,6 +2267,8 @@ async def create_todolist(
         return {"status": "success", "todolist": todolist}
     except Exception as e:
         logger.error(f"Error creating todolist: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {"error": "OAuth token expired", "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."}
         return {"error": "Execution error", "message": str(e)}
 
 
@@ -2292,6 +2300,8 @@ async def update_todolist(
         return {"status": "success", "todolist": todolist}
     except Exception as e:
         logger.error(f"Error updating todolist {todolist_id}: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {"error": "OAuth token expired", "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."}
         return {"error": "Execution error", "message": str(e)}
 
 
@@ -2314,6 +2324,8 @@ async def trash_todolist(project_id: str, todolist_id: str) -> Dict[str, Any]:
         return {"status": "success", "message": f"Todolist {todolist_id} moved to trash"}
     except Exception as e:
         logger.error(f"Error trashing todolist {todolist_id}: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {"error": "OAuth token expired", "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."}
         return {"error": "Execution error", "message": str(e)}
 
 
@@ -2336,6 +2348,8 @@ async def get_todolist_groups(project_id: str, todolist_id: str) -> Dict[str, An
         return {"status": "success", "groups": groups, "count": len(groups)}
     except Exception as e:
         logger.error(f"Error getting todolist groups: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {"error": "OAuth token expired", "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."}
         return {"error": "Execution error", "message": str(e)}
 
 
@@ -2356,6 +2370,8 @@ async def get_todolist_group(project_id: str, group_id: str) -> Dict[str, Any]:
         return {"status": "success", "group": group}
     except Exception as e:
         logger.error(f"Error getting todolist group {group_id}: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {"error": "OAuth token expired", "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."}
         return {"error": "Execution error", "message": str(e)}
 
 
@@ -2388,6 +2404,8 @@ async def create_todolist_group(
         return {"status": "success", "group": group}
     except Exception as e:
         logger.error(f"Error creating todolist group: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {"error": "OAuth token expired", "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."}
         return {"error": "Execution error", "message": str(e)}
 
 
@@ -2413,6 +2431,8 @@ async def reposition_todolist_group(
         return {"status": "success", "message": f"Group {group_id} repositioned to position {position}"}
     except Exception as e:
         logger.error(f"Error repositioning todolist group {group_id}: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {"error": "OAuth token expired", "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."}
         return {"error": "Execution error", "message": str(e)}
 
 
