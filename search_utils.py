@@ -121,31 +121,24 @@ class BasecampSearch:
         all_todos = []
 
         try:
-            # Case 1: Specific todolist (regardless of project)
+            # Case 1: Specific todolist
             if todolist_id:
                 try:
-                    todolist = self.client.get_todolist(todolist_id)
-                    todos = self.client.get_todos(todolist_id)
+                    # Resolve project_id if not provided by scanning all projects
+                    if not project_id:
+                        for tl in self.get_all_todolists():
+                            if str(tl['id']) == str(todolist_id):
+                                project_id = tl['project']['id']
+                                break
 
-                    # In Basecamp 3, we need to add project info to the todolist
-                    # Get project ID from the URL
-                    project_links = [link for link in todolist.get('bucket', {}).get('links', [])
-                                   if link.get('type') == 'project']
-                    if project_links:
-                        project_url = project_links[0].get('href', '')
-                        # Extract project ID from URL
-                        parts = project_url.split('/')
-                        if len(parts) > 0:
-                            project_id = parts[-1]
-                            try:
-                                project = self.client.get_project(project_id)
-                                project_name = project.get('name', 'Unknown Project')
-                            except:
-                                project_name = 'Unknown Project'
-                        else:
-                            project_name = 'Unknown Project'
-                    else:
-                        project_name = 'Unknown Project'
+                    if not project_id:
+                        logger.error(f"Could not find project for todolist {todolist_id}")
+                        return all_todos
+
+                    todolist = self.client.get_todolist(project_id, todolist_id)
+                    todos = self.client.get_todos(project_id, todolist_id)
+
+                    project_name = todolist.get('bucket', {}).get('name', 'Unknown Project')
 
                     for todo in todos:
                         if not include_completed and todo.get('completed'):
@@ -164,7 +157,7 @@ class BasecampSearch:
 
                 for todolist in todolists:
                     try:
-                        todos = self.client.get_todos(todolist['id'])
+                        todos = self.client.get_todos(project_id, todolist['id'])
                         for todo in todos:
                             if not include_completed and todo.get('completed'):
                                 continue
@@ -181,7 +174,7 @@ class BasecampSearch:
 
                 for todolist in todolists:
                     try:
-                        todos = self.client.get_todos(todolist['id'])
+                        todos = self.client.get_todos(todolist['project']['id'], todolist['id'])
                         for todo in todos:
                             if not include_completed and todo.get('completed'):
                                 continue
