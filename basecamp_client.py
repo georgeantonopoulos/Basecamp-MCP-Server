@@ -464,23 +464,6 @@ class BasecampClient:
             page += 1
         return all_groups
 
-    def get_todolist_group(self, project_id, group_id):
-        """Get a specific todolist group.
-
-        Args:
-            project_id (str): Project ID
-            group_id (str): Group ID
-
-        Returns:
-            dict: The group object
-        """
-        endpoint = f'buckets/{project_id}/todolists/{group_id}.json'
-        response = self.get(endpoint)
-        if response.status_code == 200:
-            return response.json()
-        else:
-            raise Exception(f"Failed to get todolist group: {response.status_code} - {response.text}")
-
     def create_todolist_group(self, project_id, todolist_id, name, color=None):
         """Create a new group inside a todolist.
 

@@ -2357,28 +2357,6 @@ async def get_todolist_groups(project_id: str, todolist_id: str) -> Dict[str, An
 
 
 @mcp.tool()
-async def get_todolist_group(project_id: str, group_id: str) -> Dict[str, Any]:
-    """Get a specific todo list group by ID.
-
-    Args:
-        project_id: The project ID
-        group_id: The group ID
-    """
-    client = _get_basecamp_client()
-    if not client:
-        return _get_auth_error_response()
-
-    try:
-        group = await _run_sync(client.get_todolist_group, project_id, group_id)
-        return {"status": "success", "group": group}
-    except Exception as e:
-        logger.error(f"Error getting todolist group {group_id}: {e}")
-        if "401" in str(e) and "expired" in str(e).lower():
-            return {"error": "OAuth token expired", "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."}
-        return {"error": "Execution error", "message": str(e)}
-
-
-@mcp.tool()
 async def create_todolist_group(
     project_id: str,
     todolist_id: str,
