@@ -23,7 +23,7 @@ This server works with **Cursor**, **Codex**, and **Claude Desktop**. Choose you
 
    ```bash
    git clone <repository-url>
-   cd basecamp-mcp
+   cd Basecamp-MCP-Server
 
    # Using uv (recommended - auto-downloads Python 3.12)
    uv venv --python 3.12 venv
