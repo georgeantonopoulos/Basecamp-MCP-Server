@@ -72,7 +72,7 @@ Basecamp 3 API (https://3.basecampapi.com/{account_id})
 3. Callback stores tokens in `oauth_tokens.json` (600 permissions)
 4. MCP server uses `auth_manager.ensure_authenticated()` to auto-refresh expired tokens
 
-### Tool Categories (74 total)
+### Tool Categories (76 total)
 
 - **Projects**: `get_projects`, `get_project`
 - **Todos**: `get_todolists`, `get_todolist`, `create_todolist`, `update_todolist`, `trash_todolist`, `get_todos`, `get_todo`, `create_todo`, `update_todo`, `delete_todo`, `complete_todo`, `uncomplete_todo`, `reposition_todo`, `archive_todo`
@@ -80,7 +80,7 @@ Basecamp 3 API (https://3.basecampapi.com/{account_id})
 - **Card Tables (Kanban)**: `get_card_table`, `get_columns`, `get_cards`, `create_card`, `move_card`, `complete_card`, etc.
 - **Card Steps**: `get_card_steps`, `create_card_step`, `complete_card_step`, etc.
 - **Comments**: `get_comments`, `create_comment`
-- **Messages**: `get_message_board`, `get_messages`, `get_message`
+- **Messages**: `get_message_board`, `get_messages`, `get_message`, `get_message_categories`, `create_message`
 - **Campfire (Chat)**: `get_campfire_lines`
 - **Documents**: `get_documents`, `create_document`, `update_document`, `trash_document`
 - **Inbox (Email Forwards)**: `get_inbox`, `get_forwards`, `get_forward`, `get_inbox_replies`, `get_inbox_reply`, `trash_forward`

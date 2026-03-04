@@ -2,7 +2,7 @@
 
 This project provides a **FastMCP-powered** integration for Basecamp 3, allowing AI clients to interact with Basecamp directly through the MCP protocol.
 
-✅ **Migration Complete:** Successfully migrated to official Anthropic FastMCP framework with **100% feature parity** (all 73 tools)
+✅ **Migration Complete:** Successfully migrated to official Anthropic FastMCP framework with **100% feature parity** (all 75 tools)
 🚀 **Ready for Production:** Full protocol compliance with MCP 2025-06-18
 
 ## Quick Setup
@@ -73,7 +73,7 @@ This server works with **Cursor**, **Codex**, and **Claude Desktop**. Choose you
 6. **Verify in Cursor:**
    - Go to Cursor Settings → MCP
    - You should see "basecamp" with a **green checkmark**
-   - Available tools: **73 tools** for complete Basecamp control
+   - Available tools: **75 tools** for complete Basecamp control
 
 ### Test Your Setup
 
@@ -172,7 +172,7 @@ Based on the [official MCP quickstart guide](https://modelcontextprotocol.io/qui
 
 4. **Verify in Claude Desktop:**
    - Look for the "Search and tools" icon (🔍) in the chat interface
-   - You should see "basecamp" listed with all 73 tools available
+   - You should see "basecamp" listed with all 75 tools available
    - Toggle the tools on to enable Basecamp integration
 
 ### Claude Desktop Configuration
@@ -251,6 +251,8 @@ Once configured, you can use these tools in Cursor:
 - `get_message_board` - Get the message board for a project
 - `get_messages` - Get all messages from a project's message board
 - `get_message` - Get a specific message by ID
+- `get_message_categories` - Get available message categories (types) for a project (e.g. Announcement, FYI, Heartbeat, Pitch, Question)
+- `create_message` - Create a new message on a project's message board, with optional category
 - `get_daily_check_ins` - Get project's daily check-in questions
 - `get_question_answers` - Get answers to daily check-in questions
 - `create_attachment` - Upload a file as an attachment
@@ -314,6 +316,9 @@ Ask Cursor things like:
 - "Show me all my Basecamp projects"
 - "What todos are in project X?"
 - "Show me the messages from the message board in project X"
+- "What message categories are available in project X?"
+- "Post a new Announcement to the message board in project X: 'We shipped v2.0!'"
+- "Create a Heartbeat message in project X with a weekly progress update"
 - "Search for messages containing 'deadline'"
 - "Get details for the Technology project"
 - "Show me the card table for project X"
@@ -329,7 +334,7 @@ Ask Cursor things like:
 
 The project uses the **official Anthropic FastMCP framework** for maximum reliability and compatibility:
 
-1. **FastMCP Server** (`basecamp_fastmcp.py`) - Official MCP SDK with 73 tools, compatible with Cursor, Codex, and Claude Desktop
+1. **FastMCP Server** (`basecamp_fastmcp.py`) - Official MCP SDK with 75 tools, compatible with Cursor, Codex, and Claude Desktop
 2. **OAuth App** (`oauth_app.py`) - Handles OAuth 2.0 flow with Basecamp  
 3. **Token Storage** (`token_storage.py`) - Securely stores OAuth tokens
 4. **Basecamp Client** (`basecamp_client.py`) - Basecamp API client library
