@@ -781,6 +781,80 @@ async def get_message(project_id: str, message_id: str) -> Dict[str, Any]:
         }
 
 
+@mcp.tool()
+async def get_message_categories(project_id: str) -> Dict[str, Any]:
+    """Get message categories (types) for a project.
+
+    Args:
+        project_id: The project ID
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        categories = await _run_sync(client.get_message_categories, project_id)
+        return {
+            "status": "success",
+            "categories": categories,
+            "count": len(categories)
+        }
+    except Exception as e:
+        logger.error(f"Error getting message categories: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {
+                "error": "OAuth token expired",
+                "message": "Please re-authenticate at http://localhost:8000"
+            }
+        return {
+            "error": "Execution error",
+            "message": str(e)
+        }
+
+
+@mcp.tool()
+async def create_message(project_id: str, subject: str, content: str,
+                         message_board_id: Optional[str] = None,
+                         category_id: Optional[str] = None) -> Dict[str, Any]:
+    """Create a new message on a project's message board.
+
+    Args:
+        project_id: The project ID
+        subject: Message title/subject
+        content: Message body in HTML format
+        message_board_id: Optional message board ID. If not provided, will be auto-discovered from the project.
+        category_id: Optional message type/category ID
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        message = await _run_sync(
+            lambda: client.create_message(
+                project_id, subject, content,
+                message_board_id=message_board_id,
+                category_id=category_id
+            )
+        )
+        return {
+            "status": "success",
+            "message": message,
+            "result": f"Message '{subject}' created successfully"
+        }
+    except Exception as e:
+        logger.error(f"Error creating message: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {
+                "error": "OAuth token expired",
+                "message": "Please re-authenticate at http://localhost:8000"
+            }
+        return {
+            "error": "Execution error",
+            "message": str(e)
+        }
+
+
 # Inbox Tools (Email Forwards)
 @mcp.tool()
 async def get_inbox(project_id: str) -> Dict[str, Any]:
