@@ -98,7 +98,7 @@ The script computes all paths from this repository root, so it works no matter w
 
    ```bash
    git clone <repository-url>
-   cd basecamp-mcp
+   cd Basecamp-MCP-Server
    python setup.py
    # Configure .env file with OAuth credentials
    python oauth_app.py
@@ -156,7 +156,7 @@ Based on the [official MCP quickstart guide](https://modelcontextprotocol.io/qui
 
    ```bash
    git clone <repository-url>
-   cd basecamp-mcp
+   cd Basecamp-MCP-Server
    python setup.py
    # Configure .env file with OAuth credentials
    python oauth_app.py
