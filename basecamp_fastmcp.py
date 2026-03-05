@@ -804,7 +804,7 @@ async def get_message_categories(project_id: str) -> Dict[str, Any]:
         if "401" in str(e) and "expired" in str(e).lower():
             return {
                 "error": "OAuth token expired",
-                "message": "Please re-authenticate at http://localhost:8000"
+                "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
             }
         return {
             "error": "Execution error",
@@ -847,7 +847,7 @@ async def create_message(project_id: str, subject: str, content: str,
         if "401" in str(e) and "expired" in str(e).lower():
             return {
                 "error": "OAuth token expired",
-                "message": "Please re-authenticate at http://localhost:8000"
+                "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
             }
         return {
             "error": "Execution error",
