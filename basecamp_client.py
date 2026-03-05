@@ -617,6 +617,50 @@ class BasecampClient:
         else:
             raise Exception(f"Failed to get message: {response.status_code} - {response.text}")
 
+    def get_message_categories(self, project_id):
+        """Get message categories (types) for a project.
+
+        Args:
+            project_id: Project/bucket ID
+
+        Returns:
+            list: Message categories with id, name, and icon
+        """
+        endpoint = f'buckets/{project_id}/categories.json'
+        response = self.get(endpoint)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to get message categories: {response.status_code} - {response.text}")
+
+    def create_message(self, project_id, subject, content, message_board_id=None, category_id=None):
+        """Create a new message on a project's message board.
+
+        Args:
+            project_id: Project/bucket ID
+            subject: Message title/subject
+            content: Message body in HTML format
+            message_board_id: Optional message board ID (auto-discovered if not provided)
+            category_id: Optional message type/category ID
+
+        Returns:
+            dict: Created message details
+        """
+        if not message_board_id:
+            message_board = self.get_message_board(project_id)
+            message_board_id = message_board['id']
+
+        endpoint = f'buckets/{project_id}/message_boards/{message_board_id}/messages.json'
+        data = {'subject': subject, 'content': content, 'status': 'active'}
+        if category_id is not None:
+            data['category_id'] = category_id
+
+        response = self.post(endpoint, data)
+        if response.status_code == 201:
+            return response.json()
+        else:
+            raise Exception(f"Failed to create message: {response.status_code} - {response.text}")
+
     # Inbox methods (Email Forwards)
     def get_inbox(self, project_id):
         """Get the inbox for a project (email forwards container).
