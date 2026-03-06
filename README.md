@@ -242,9 +242,15 @@ Once configured, you can use these tools in Cursor:
 - `trash_todolist` - Move a todo list to the trash (recoverable within 30 days)
 - `get_todos` - Get todos from a todo list (returns all pages; handles Basecamp pagination transparently)
 - `get_todo` - Get a single todo item by its ID
+- `create_todo` - Create a new todo item in a todo list (with assignees, due dates, descriptions)
+- `update_todo` - Update an existing todo item (content, description, assignees, due date, etc.)
+- `delete_todo` - Move a todo item to the trash (recoverable within 30 days)
+- `complete_todo` - Mark a todo item as complete
+- `uncomplete_todo` - Mark a todo item as incomplete
 - `reposition_todo` - Reposition a todo within its list, or move it to another list or group
 - `archive_todo` - Archive a todo item (hidden from active list, accessible via web UI)
 - `search_basecamp` - Search across projects, todos, and messages
+- `global_search` - Search projects, todos, and campfire messages across all projects
 - `get_comments` - Get comments for a Basecamp item
 - `create_comment` - Create a comment on a Basecamp item
 - `get_campfire_lines` - Get recent messages from a Basecamp campfire
@@ -256,6 +262,8 @@ Once configured, you can use these tools in Cursor:
 - `get_daily_check_ins` - Get project's daily check-in questions
 - `get_question_answers` - Get answers to daily check-in questions
 - `create_attachment` - Upload a file as an attachment
+- `get_uploads` - List uploads in a project or vault
+- `get_upload` - Get details for a specific upload
 - `get_events` - Get events for a recording
 - `get_webhooks` - List webhooks for a project
 - `create_webhook` - Create a webhook
@@ -283,6 +291,7 @@ Once configured, you can use these tools in Cursor:
 
 ### Card Table Tools
 
+- `get_card_tables` - Get all card tables for a project
 - `get_card_table` - Get the card table details for a project
 - `get_columns` - Get all columns in a card table
 - `get_column` - Get details for a specific column
@@ -315,6 +324,8 @@ Ask Cursor things like:
 
 - "Show me all my Basecamp projects"
 - "What todos are in project X?"
+- "Create a new todo 'Review PR' in the Sprint Backlog list"
+- "Mark the 'Deploy v2' todo as complete"
 - "Show me the messages from the message board in project X"
 - "What message categories are available in project X?"
 - "Post a new Announcement to the message board in project X: 'We shipped v2.0!'"
