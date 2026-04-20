@@ -47,7 +47,7 @@ python generate_claude_desktop_config.py   # For Claude Desktop
 | `basecamp_client.py` | Basecamp 3 API client - all HTTP methods and endpoints |
 | `basecamp_oauth.py` | OAuth 2.0 client for 37signals Launchpad |
 | `auth_manager.py` | Automatic token refresh before API calls |
-| `token_storage.py` | Thread-safe OAuth token persistence (`oauth_tokens.json`) |
+| `token_storage.py` | Thread-safe OAuth token persistence. Path defaults to `<project>/oauth_tokens.json`; override with `BASECAMP_MCP_TOKEN_FILE` env var |
 | `search_utils.py` | Cross-project search functionality |
 | `oauth_app.py` | Flask app for OAuth flow (browser-based login) |
 
@@ -69,7 +69,7 @@ Basecamp 3 API (https://3.basecampapi.com/{account_id})
 
 1. User runs `python oauth_app.py` and visits `http://localhost:8000`
 2. Redirected to 37signals for authorization
-3. Callback stores tokens in `oauth_tokens.json` (600 permissions)
+3. Callback stores tokens in `oauth_tokens.json` (600 permissions — location configurable via `BASECAMP_MCP_TOKEN_FILE`)
 4. MCP server uses `auth_manager.ensure_authenticated()` to auto-refresh expired tokens
 
 ### Tool Categories (75 total)

@@ -227,7 +227,7 @@ ls ~/Library/Logs/Claude/mcp-server-basecamp.log
 
 - **Tools not appearing**: Verify configuration file syntax and restart Claude Desktop
 - **Connection failures**: Check that Python path and script path are absolute paths
-- **Authentication errors**: Ensure OAuth flow completed successfully (`oauth_tokens.json` exists)
+- **Authentication errors**: Ensure OAuth flow completed successfully (token file exists — see [Token Storage Location](#token-storage-location))
 
 ## Available MCP Tools
 
@@ -438,8 +438,18 @@ If you don't know your Basecamp account ID:
 ## Security Notes
 
 - Keep your `.env` file secure and never commit it to version control
-- The OAuth tokens are stored locally in `oauth_tokens.json`
+- The OAuth tokens are stored locally in `oauth_tokens.json` (600 permissions, alongside `token_storage.py`)
 - This setup is designed for local development use
+
+## Token Storage Location
+
+By default the OAuth token file lives next to `token_storage.py` (`<project>/oauth_tokens.json`). For containerized or server deployments where the project directory is read-only or ephemeral, set the `BASECAMP_MCP_TOKEN_FILE` environment variable to an absolute path:
+
+```bash
+export BASECAMP_MCP_TOKEN_FILE=/var/lib/basecamp-mcp/oauth_tokens.json
+```
+
+The path is resolved at import time; both the OAuth app and the MCP server honor the same variable, so they stay in sync without symlinks or file copies. When unset, behavior is unchanged.
 
 ## License
 
