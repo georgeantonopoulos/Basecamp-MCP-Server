@@ -444,3 +444,14 @@ If you don't know your Basecamp account ID:
 ## License
 
 This project is licensed under the MIT License.
+
+## Star History
+
+<a href="https://www.star-history.com/#georgeantonopoulos/Basecamp-MCP-Server&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=georgeantonopoulos/Basecamp-MCP-Server&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=georgeantonopoulos/Basecamp-MCP-Server&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=georgeantonopoulos/Basecamp-MCP-Server&type=Date" />
+  </picture>
+</a>
+
