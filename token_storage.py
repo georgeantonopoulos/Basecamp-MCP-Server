@@ -18,9 +18,11 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 # Default: <script_dir>/oauth_tokens.json (matches original behavior).
 # Setting the env var lets deployments point the store at a mounted volume
 # (e.g. Docker/Kubernetes volume) without filesystem symlinks.
-TOKEN_FILE = os.environ.get(
-    'BASECAMP_MCP_TOKEN_FILE',
-    os.path.join(SCRIPT_DIR, 'oauth_tokens.json'),
+_token_file_env = os.environ.get('BASECAMP_MCP_TOKEN_FILE')
+TOKEN_FILE = (
+    os.path.expanduser(os.path.expandvars(_token_file_env))
+    if _token_file_env
+    else os.path.join(SCRIPT_DIR, 'oauth_tokens.json')
 )
 
 # Lock for thread-safe operations
