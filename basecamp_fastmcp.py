@@ -46,7 +46,13 @@ def _get_basecamp_client() -> Optional[BasecampClient]:
     """Get authenticated Basecamp client (sync version from original server)."""
     try:
         token_data = token_storage.get_token()
-        logger.debug(f"Token data retrieved: {token_data}")
+        logger.debug(
+            "Token data retrieved: has_access_token=%s has_refresh_token=%s account_id=%s expires_at=%s",
+            bool(token_data and token_data.get('access_token')),
+            bool(token_data and token_data.get('refresh_token')),
+            token_data.get('account_id') if token_data else None,
+            token_data.get('expires_at') if token_data else None,
+        )
 
         if not token_data or not token_data.get('access_token'):
             logger.error("No OAuth token available")
@@ -65,7 +71,11 @@ def _get_basecamp_client() -> Optional[BasecampClient]:
         user_agent = os.getenv('USER_AGENT') or "Basecamp MCP Server (cursor@example.com)"
 
         if not account_id:
-            logger.error(f"Missing account_id. Token data: {token_data}, Env BASECAMP_ACCOUNT_ID: {os.getenv('BASECAMP_ACCOUNT_ID')}")
+            logger.error(
+                "Missing account_id. token_account_id=%s env_BASECAMP_ACCOUNT_ID=%s",
+                token_data.get('account_id') if token_data else None,
+                os.getenv('BASECAMP_ACCOUNT_ID'),
+            )
             return None
 
         logger.debug(f"Creating Basecamp client with account_id: {account_id}, user_agent: {user_agent}")
