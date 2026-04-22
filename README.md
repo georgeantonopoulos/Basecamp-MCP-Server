@@ -451,6 +451,8 @@ export BASECAMP_MCP_TOKEN_FILE=/var/lib/basecamp-mcp/oauth_tokens.json
 
 The path is resolved at import time; both the OAuth app and the MCP server honor the same variable, so they stay in sync without symlinks or file copies. When unset, behavior is unchanged.
 
+`token_storage.py` also attempts to `chmod` the token file to `0o600` on write (best-effort; skipped on platforms that do not support it, such as Windows). If you point `BASECAMP_MCP_TOKEN_FILE` at a shared or mounted location, make sure the parent directory permissions are appropriate too, since only the token file itself is chmod'd.
+
 ## License
 
 This project is licensed under the MIT License.
@@ -464,4 +466,3 @@ This project is licensed under the MIT License.
     <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=georgeantonopoulos/Basecamp-MCP-Server&type=Date" />
   </picture>
 </a>
-
