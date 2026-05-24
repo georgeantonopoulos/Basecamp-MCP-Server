@@ -1,461 +1,317 @@
-# Basecamp MCP Integration
+# Basecamp MCP Server
 
-This project provides a **FastMCP-powered** integration for Basecamp 3, allowing AI clients to interact with Basecamp directly through the MCP protocol.
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![MCP](https://img.shields.io/badge/MCP-FastMCP-111827.svg)](https://modelcontextprotocol.io/)
+[![Basecamp](https://img.shields.io/badge/Basecamp-3-1f8c4c.svg)](https://basecamp.com/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-✅ **Migration Complete:** Successfully migrated to official Anthropic FastMCP framework with **100% feature parity** (all 75 tools)
-🚀 **Ready for Production:** Full protocol compliance with MCP 2025-06-18
+An MCP server for Basecamp 3. It lets MCP-capable clients such as Codex, Cursor, and Claude Desktop read and manage Basecamp projects through OAuth-authenticated Basecamp API calls.
 
-## Quick Setup
+The main server is [`basecamp_fastmcp.py`](basecamp_fastmcp.py). It uses the official `mcp.server.fastmcp` Python SDK and exposes 75 tools covering projects, todos, message boards, campfires, card tables, inbox forwards, documents, uploads, comments, events, webhooks, and search.
 
-This server works with **Cursor**, **Codex**, and **Claude Desktop**. Choose your preferred client:
+## What It Can Do
 
-### Prerequisites
+- Browse Basecamp projects and project details.
+- Search across projects, todos, messages, campfire lines, comments, uploads, and schedules.
+- Read and manage todolists, todos, todo groups, and completion state.
+- Read and post message board messages, including categories.
+- Read campfire lines.
+- Read and create comments.
+- Work with card tables, columns, cards, and card steps.
+- Read inbox forwards and replies.
+- Read daily check-ins and answers.
+- Upload attachments and inspect uploads.
+- Read and manage documents.
+- List events and manage webhooks.
+- Generate local MCP configuration for Codex, Cursor, and Claude Desktop.
 
-- **Python 3.10+** (required for MCP SDK) — or use `uv` which auto-downloads the correct version
-- A Basecamp 3 account
-- A Basecamp OAuth application (create one at <https://launchpad.37signals.com/integrations>)
+## Requirements
 
-## For Cursor Users
+- Python 3.10 or newer.
+- A Basecamp 3 account.
+- A Basecamp OAuth application from <https://launchpad.37signals.com/integrations>.
+- A client that can run local MCP servers, such as Codex, Cursor, or Claude Desktop.
 
-### One-Command Setup
+If your system Python is older, use `uv`; it can create a virtual environment with a newer Python version.
 
-1. **Clone and set up with uv (recommended):**
+## Quick Start
 
-   ```bash
-   git clone <repository-url>
-   cd Basecamp-MCP-Server
-
-   # Using uv (recommended - auto-downloads Python 3.12)
-   uv venv --python 3.12 venv
-   source venv/bin/activate  # or venv\Scripts\activate on Windows
-   uv pip install -r requirements.txt
-   uv pip install mcp
-   ```
-
-   **Alternative: Using pip** (requires Python 3.10+ already installed):
-
-   ```bash
-   python setup.py
-   ```
-
-   The setup automatically:
-   - ✅ Creates virtual environment
-   - ✅ Installs all dependencies (FastMCP SDK, etc.)
-   - ✅ Creates `.env` template file
-   - ✅ Tests MCP server functionality
-
-2. **Configure OAuth credentials:**
-   Edit the generated `.env` file:
-
-   ```bash
-   BASECAMP_CLIENT_ID=your_client_id_here
-   BASECAMP_CLIENT_SECRET=your_client_secret_here
-   BASECAMP_ACCOUNT_ID=your_account_id_here
-   USER_AGENT="Your App Name (your@email.com)"
-   ```
-
-3. **Authenticate with Basecamp:**
-
-   ```bash
-   python oauth_app.py
-   ```
-
-   Visit <http://localhost:8000> and complete the OAuth flow.
-
-4. **Generate Cursor configuration:**
-
-   ```bash
-   python generate_cursor_config.py
-   ```
-
-5. **Restart Cursor completely** (quit and reopen, not just reload)
-
-6. **Verify in Cursor:**
-   - Go to Cursor Settings → MCP
-   - You should see "basecamp" with a **green checkmark**
-   - Available tools: **75 tools** for complete Basecamp control
-
-### Test Your Setup
+Clone the repository and install dependencies:
 
 ```bash
-# Quick test the FastMCP server (works with both clients)
-echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}
-{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}
-{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' | python basecamp_fastmcp.py
+git clone https://github.com/georgeantonopoulos/Basecamp-MCP-Server.git
+cd Basecamp-MCP-Server
 
-# Run automated tests  
+uv venv --python 3.12 venv
+source venv/bin/activate
+uv pip install -r requirements.txt
+```
+
+Or, if `python` already points to Python 3.10 or newer:
+
+```bash
+python setup.py
+```
+
+Create a `.env` file from the example and fill in your Basecamp OAuth details:
+
+```bash
+cp .env.example .env
+```
+
+Required values:
+
+```bash
+BASECAMP_CLIENT_ID=your-client-id
+BASECAMP_CLIENT_SECRET=your-client-secret
+BASECAMP_ACCOUNT_ID=your-account-id
+USER_AGENT="Your App Name (your@email.com)"
+```
+
+Authenticate with Basecamp:
+
+```bash
+python oauth_app.py
+```
+
+Open <http://localhost:8000> and complete the OAuth flow. The token is stored locally in `oauth_tokens.json` by default.
+
+## Configure Your MCP Client
+
+### Codex
+
+```bash
+python generate_codex_config.py
+codex mcp get basecamp
+```
+
+Useful options:
+
+```bash
+python generate_codex_config.py --dry-run
+python generate_codex_config.py --legacy
+```
+
+The script writes a `basecamp` server entry to `~/.codex/config.toml` and points it at this checkout's virtual environment and [`basecamp_fastmcp.py`](basecamp_fastmcp.py).
+
+### Cursor
+
+```bash
+python generate_cursor_config.py
+```
+
+Then restart Cursor and check Settings -> MCP. The server should appear as `basecamp`.
+
+### Claude Desktop
+
+```bash
+python generate_claude_desktop_config.py
+```
+
+Then fully quit and reopen Claude Desktop. The generated config is written to:
+
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `~/AppData/Roaming/Claude/claude_desktop_config.json`
+- Linux: `~/.config/claude-desktop/claude_desktop_config.json`
+
+## Verify The Server
+
+Run the FastMCP server through stdio and ask for its tool list:
+
+```bash
+printf '%s\n%s\n%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' \
+  '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+  | python basecamp_fastmcp.py
+```
+
+Run the automated tests:
+
+```bash
 python -m pytest tests/ -v
 ```
 
-## For Codex Users
+## Available Tools
 
-Codex integration is fully automated with a local path-agnostic script.
-The script computes all paths from this repository root, so it works no matter where the repo is installed.
+The FastMCP server exposes 75 tools.
 
-### Setup Steps
+### Projects And Search
 
-1. **Complete the basic setup** (same as Cursor steps 1-3 above):
+- `get_projects`
+- `get_project`
+- `search_basecamp`
+- `global_search`
 
-   ```bash
-   git clone <repository-url>
-   cd Basecamp-MCP-Server
-   python setup.py
-   # Configure .env file with OAuth credentials
-   python oauth_app.py
-   ```
+### Todos
 
-2. **Generate Codex configuration automatically:**
+- `get_todolists`
+- `get_todolist`
+- `create_todolist`
+- `update_todolist`
+- `trash_todolist`
+- `get_todos`
+- `get_todo`
+- `create_todo`
+- `update_todo`
+- `delete_todo`
+- `archive_todo`
+- `complete_todo`
+- `uncomplete_todo`
+- `reposition_todo`
+- `get_todolist_groups`
+- `create_todolist_group`
+- `reposition_todolist_group`
 
-   ```bash
-   python generate_codex_config.py
-   ```
+### Messages, Campfires, And Check-Ins
 
-   Optional flags:
+- `get_message_board`
+- `get_messages`
+- `get_message`
+- `get_message_categories`
+- `create_message`
+- `get_campfire_lines`
+- `get_daily_check_ins`
+- `get_question_answers`
 
-   ```bash
-   # Preview commands only (no changes):
-   python generate_codex_config.py --dry-run
+### Comments
 
-   # Use legacy server instead of FastMCP:
-   python generate_codex_config.py --legacy
-   ```
+- `get_comments`
+- `create_comment`
 
-3. **Verify in Codex:**
+### Card Tables
 
-   ```bash
-   codex mcp get basecamp
-   codex mcp list
-   ```
+- `get_card_tables`
+- `get_card_table`
+- `get_columns`
+- `get_column`
+- `create_column`
+- `update_column`
+- `move_column`
+- `update_column_color`
+- `put_column_on_hold`
+- `remove_column_hold`
+- `watch_column`
+- `unwatch_column`
+- `get_cards`
+- `get_card`
+- `create_card`
+- `update_card`
+- `move_card`
+- `complete_card`
+- `uncomplete_card`
+- `get_card_steps`
+- `create_card_step`
+- `get_card_step`
+- `update_card_step`
+- `delete_card_step`
+- `complete_card_step`
+- `uncomplete_card_step`
 
-### Codex Configuration
+### Inbox Forwards
 
-The script writes to Codex global config:
+- `get_inbox`
+- `get_forwards`
+- `get_forward`
+- `get_inbox_replies`
+- `get_inbox_reply`
+- `trash_forward`
 
-- `~/.codex/config.toml`
+### Documents, Uploads, Attachments, Events, And Webhooks
 
-It creates this MCP server entry shape:
+- `create_attachment`
+- `get_uploads`
+- `get_upload`
+- `get_documents`
+- `get_document`
+- `create_document`
+- `update_document`
+- `trash_document`
+- `get_events`
+- `get_webhooks`
+- `create_webhook`
+- `delete_webhook`
 
-```toml
-[mcp_servers.basecamp]
-command = "/path/to/your/project/venv/bin/python"
-args = ["/path/to/your/project/basecamp_fastmcp.py"]
+## Example Prompts
 
-[mcp_servers.basecamp.env]
-PYTHONPATH = "/path/to/your/project"
-VIRTUAL_ENV = "/path/to/your/project/venv"
-BASECAMP_ACCOUNT_ID = "your_account_id"
-```
-
-## For Claude Desktop Users
-
-Based on the [official MCP quickstart guide](https://modelcontextprotocol.io/quickstart/server), Claude Desktop integration follows these steps:
-
-### Setup Steps
-
-1. **Complete the basic setup** (steps 1-3 from Cursor setup above):
-
-   ```bash
-   git clone <repository-url>
-   cd Basecamp-MCP-Server
-   python setup.py
-   # Configure .env file with OAuth credentials
-   python oauth_app.py
-   ```
-
-2. **Generate Claude Desktop configuration:**
-
-   ```bash
-   python generate_claude_desktop_config.py
-   ```
-
-3. **Restart Claude Desktop completely** (quit and reopen the application)
-
-4. **Verify in Claude Desktop:**
-   - Look for the "Search and tools" icon (🔍) in the chat interface
-   - You should see "basecamp" listed with all 75 tools available
-   - Toggle the tools on to enable Basecamp integration
-
-### Claude Desktop Configuration
-
-The configuration is automatically created at:
-
-- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows**: `~/AppData/Roaming/Claude/claude_desktop_config.json`  
-- **Linux**: `~/.config/claude-desktop/claude_desktop_config.json`
-
-Example configuration generated:
-
-```json
-{
-  "mcpServers": {
-    "basecamp": {
-      "command": "/path/to/your/project/venv/bin/python",
-      "args": ["/path/to/your/project/basecamp_fastmcp.py"],
-      "env": {
-        "PYTHONPATH": "/path/to/your/project",
-        "VIRTUAL_ENV": "/path/to/your/project/venv",
-        "BASECAMP_ACCOUNT_ID": "your_account_id"
-      }
-    }
-  }
-}
-```
-
-### Usage in Claude Desktop
-
-Ask Claude things like:
-
-- "What are my current Basecamp projects?"
-- "Show me the latest campfire messages from the Technology project"
-- "Create a new card in the Development column with title 'Fix login bug'"
-- "Get all todo items from the Marketing project"
-- "Search for messages containing 'deadline'"
-
-### Troubleshooting Claude Desktop
-
-**Check Claude Desktop logs** (following [official debugging guide](https://modelcontextprotocol.io/quickstart/server#troubleshooting)):
-
-```bash
-# macOS/Linux - Monitor logs in real-time
-tail -n 20 -f ~/Library/Logs/Claude/mcp*.log
-
-# Check for specific errors
-ls ~/Library/Logs/Claude/mcp-server-basecamp.log
-```
-
-**Common issues:**
-
-- **Tools not appearing**: Verify configuration file syntax and restart Claude Desktop
-- **Connection failures**: Check that Python path and script path are absolute paths
-- **Authentication errors**: Ensure OAuth flow completed successfully (token file exists — see [Token Storage Location](#token-storage-location))
-
-## Available MCP Tools
-
-Once configured, you can use these tools in Cursor:
-
-- `get_projects` - Get all Basecamp projects
-- `get_project` - Get details for a specific project
-- `get_todolists` - Get todo lists for a project
-- `get_todolist` - Get a specific todo list by ID
-- `create_todolist` - Create a new todo list in a project
-- `update_todolist` - Update an existing todo list (name and/or description)
-- `trash_todolist` - Move a todo list to the trash (recoverable within 30 days)
-- `get_todos` - Get todos from a todo list (returns all pages; handles Basecamp pagination transparently)
-- `get_todo` - Get a single todo item by its ID
-- `create_todo` - Create a new todo item in a todo list (with assignees, due dates, descriptions)
-- `update_todo` - Update an existing todo item (content, description, assignees, due date, etc.)
-- `delete_todo` - Move a todo item to the trash (recoverable within 30 days)
-- `complete_todo` - Mark a todo item as complete
-- `uncomplete_todo` - Mark a todo item as incomplete
-- `reposition_todo` - Reposition a todo within its list, or move it to another list or group
-- `archive_todo` - Archive a todo item (hidden from active list, accessible via web UI)
-- `search_basecamp` - Search across projects, todos, and messages
-- `global_search` - Search projects, todos, and campfire messages across all projects
-- `get_comments` - Get comments for a Basecamp item
-- `create_comment` - Create a comment on a Basecamp item
-- `get_campfire_lines` - Get recent messages from a Basecamp campfire
-- `get_message_board` - Get the message board for a project
-- `get_messages` - Get all messages from a project's message board
-- `get_message` - Get a specific message by ID
-- `get_message_categories` - Get available message categories (types) for a project (e.g. Announcement, FYI, Heartbeat, Pitch, Question)
-- `create_message` - Create a new message on a project's message board, with optional category
-- `get_daily_check_ins` - Get project's daily check-in questions
-- `get_question_answers` - Get answers to daily check-in questions
-- `create_attachment` - Upload a file as an attachment
-- `get_uploads` - List uploads in a project or vault
-- `get_upload` - Get details for a specific upload
-- `get_events` - Get events for a recording
-- `get_webhooks` - List webhooks for a project
-- `create_webhook` - Create a webhook
-- `delete_webhook` - Delete a webhook
-- `get_documents` - List documents in a vault
-- `get_document` - Get a single document
-- `create_document` - Create a document
-- `update_document` - Update a document
-- `trash_document` - Move a document to trash
-
-### Todo List Group Tools
-
-- `get_todolist_groups` - Get all groups in a todo list (named sections like "Phase 1", "Backlog")
-- `create_todolist_group` - Create a new group inside a todo list (supports colors: white, red, orange, yellow, green, blue, aqua, purple, gray, pink, brown)
-- `reposition_todolist_group` - Reposition a todo list group to a new location within its list
-
-### Inbox Tools (Email Forwards)
-
-- `get_inbox` - Get the inbox for a project (email forwards container)
-- `get_forwards` - Get all forwarded emails from a project's inbox
-- `get_forward` - Get a specific forwarded email by ID
-- `get_inbox_replies` - Get all replies to a forwarded email
-- `get_inbox_reply` - Get a specific reply to a forwarded email
-- `trash_forward` - Move a forwarded email to trash
-
-### Card Table Tools
-
-- `get_card_tables` - Get all card tables for a project
-- `get_card_table` - Get the card table details for a project
-- `get_columns` - Get all columns in a card table
-- `get_column` - Get details for a specific column
-- `create_column` - Create a new column in a card table
-- `update_column` - Update a column title
-- `move_column` - Move a column to a new position
-- `update_column_color` - Update a column color
-- `put_column_on_hold` - Put a column on hold (freeze work)
-- `remove_column_hold` - Remove hold from a column (unfreeze work)
-- `watch_column` - Subscribe to notifications for changes in a column
-- `unwatch_column` - Unsubscribe from notifications for a column
-- `get_cards` - Get all cards in a column
-- `get_card` - Get details for a specific card
-- `create_card` - Create a new card in a column
-- `update_card` - Update a card
-- `move_card` - Move a card to a new column
-- `complete_card` - Mark a card as complete
-- `uncomplete_card` - Mark a card as incomplete
-- `get_card_steps` - Get all steps (sub-tasks) for a card
-- `create_card_step` - Create a new step (sub-task) for a card
-- `get_card_step` - Get details for a specific card step
-- `update_card_step` - Update a card step
-- `delete_card_step` - Delete a card step
-- `complete_card_step` - Mark a card step as complete
-- `uncomplete_card_step` - Mark a card step as incomplete
-
-### Example Cursor Usage
-
-Ask Cursor things like:
-
-- "Show me all my Basecamp projects"
-- "What todos are in project X?"
-- "Create a new todo 'Review PR' in the Sprint Backlog list"
-- "Mark the 'Deploy v2' todo as complete"
-- "Show me the messages from the message board in project X"
-- "What message categories are available in project X?"
-- "Post a new Announcement to the message board in project X: 'We shipped v2.0!'"
-- "Create a Heartbeat message in project X with a weekly progress update"
-- "Search for messages containing 'deadline'"
-- "Get details for the Technology project"
-- "Show me the card table for project X"
-- "Create a new card in the 'In Progress' column"
-- "Move this card to the 'Done' column"
-- "Update the color of the 'Urgent' column to red"
-- "Mark card as complete"
-- "Show me all steps for this card"
-- "Create a sub-task for this card"
-- "Mark this card step as complete"
+- "Show me all my Basecamp projects."
+- "Search Basecamp for deadline."
+- "Get the todolists for project 123456."
+- "Create a todo called Review PR in todolist 987654."
+- "Show me the message board categories for project 123456."
+- "Post an Announcement to the project message board."
+- "Show me the card table columns for project 123456."
+- "Move this card to the Done column."
+- "List the latest uploads in this project's vault."
 
 ## Architecture
 
-The project uses the **official Anthropic FastMCP framework** for maximum reliability and compatibility:
+- [`basecamp_fastmcp.py`](basecamp_fastmcp.py): FastMCP stdio server used by MCP clients.
+- [`basecamp_client.py`](basecamp_client.py): Synchronous Basecamp 3 API client.
+- [`search_utils.py`](search_utils.py): Higher-level search helpers across Basecamp resources.
+- [`oauth_app.py`](oauth_app.py): Local Flask OAuth flow for Basecamp authentication.
+- [`auth_manager.py`](auth_manager.py): OAuth refresh helper used before API calls.
+- [`token_storage.py`](token_storage.py): Local OAuth token storage.
+- [`generate_codex_config.py`](generate_codex_config.py): Codex MCP configuration generator.
+- [`generate_cursor_config.py`](generate_cursor_config.py): Cursor MCP configuration generator.
+- [`generate_claude_desktop_config.py`](generate_claude_desktop_config.py): Claude Desktop configuration generator.
+- [`mcp_server_cli.py`](mcp_server_cli.py): Legacy JSON-RPC server kept for compatibility and tests.
 
-1. **FastMCP Server** (`basecamp_fastmcp.py`) - Official MCP SDK with 75 tools, compatible with Cursor, Codex, and Claude Desktop
-2. **OAuth App** (`oauth_app.py`) - Handles OAuth 2.0 flow with Basecamp  
-3. **Token Storage** (`token_storage.py`) - Securely stores OAuth tokens
-4. **Basecamp Client** (`basecamp_client.py`) - Basecamp API client library
-5. **Search Utilities** (`search_utils.py`) - Search across Basecamp resources
-6. **Setup Automation** (`setup.py`) - One-command installation
-7. **Configuration Generators**:
-   - `generate_cursor_config.py` - For Cursor IDE integration
-   - `generate_codex_config.py` - For Codex CLI integration
-   - `generate_claude_desktop_config.py` - For Claude Desktop integration
+## Authentication And Token Storage
 
-## Troubleshooting
+The recommended path is OAuth 2.0:
 
-### Common Issues (Both Clients)
+1. Create a Basecamp OAuth app.
+2. Put the client ID, client secret, account ID, redirect URI, and user agent in `.env`.
+3. Run `python oauth_app.py`.
+4. Complete the browser flow at <http://localhost:8000>.
 
-- 🔴 **Red/Yellow indicator:** Run `python setup.py` to create proper virtual environment
-- 🔴 **"0 tools available":** Virtual environment missing MCP packages - run setup script
-- 🔴 **"Tool not found" errors:** Restart your client (Cursor/Codex/Claude Desktop) completely
-- ⚠️ **Missing BASECAMP_ACCOUNT_ID:** Add to `.env` file, then re-run the config generator
-
-### Quick Fixes
-
-**Problem: Server won't start**
-
-```bash
-# Test if FastMCP server works:
-./venv/bin/python -c "import mcp; print('✅ MCP available')"
-# If this fails, run: python setup.py
-```
-
-**Problem: Wrong Python version**
-
-```bash
-python --version  # Must be 3.10+
-# If too old, use uv which auto-downloads the correct Python:
-uv venv --python 3.12 venv && source venv/bin/activate && uv pip install -r requirements.txt && uv pip install mcp
-```
-
-**Problem: Authentication fails**
-
-```bash  
-# Check OAuth flow:
-python oauth_app.py
-# Visit http://localhost:8000 and complete login
-```
-
-### Manual Configuration (Last Resort)
-
-**Cursor config location:** `~/.cursor/mcp.json` (macOS/Linux) or `%APPDATA%\Cursor\mcp.json` (Windows)  
-**Codex config location:** `~/.codex/config.toml`  
-**Claude Desktop config location:** `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
-
-```json
-{
-    "mcpServers": {
-        "basecamp": {
-            "command": "/full/path/to/your/project/venv/bin/python",
-            "args": ["/full/path/to/your/project/basecamp_fastmcp.py"],
-            "cwd": "/full/path/to/your/project",
-            "env": {
-                "PYTHONPATH": "/full/path/to/your/project",
-                "VIRTUAL_ENV": "/full/path/to/your/project/venv",
-                "BASECAMP_ACCOUNT_ID": "your_account_id"
-            }
-        }
-    }
-}
-```
-
-Codex equivalent:
-
-```toml
-[mcp_servers.basecamp]
-command = "/full/path/to/your/project/venv/bin/python"
-args = ["/full/path/to/your/project/basecamp_fastmcp.py"]
-
-[mcp_servers.basecamp.env]
-PYTHONPATH = "/full/path/to/your/project"
-VIRTUAL_ENV = "/full/path/to/your/project/venv"
-BASECAMP_ACCOUNT_ID = "your_account_id"
-```
-
-## Finding Your Account ID
-
-If you don't know your Basecamp account ID:
-
-1. Log into Basecamp in your browser
-2. Look at the URL - it will be like `https://3.basecamp.com/4389629/projects`
-3. The number (4389629 in this example) is your account ID
-
-## Security Notes
-
-- Keep your `.env` file secure and never commit it to version control
-- The OAuth tokens are stored locally in `oauth_tokens.json` (600 permissions, alongside `token_storage.py`)
-- This setup is designed for local development use
-
-## Token Storage Location
-
-By default the OAuth token file lives next to `token_storage.py` (`<project>/oauth_tokens.json`). For containerized or server deployments where the project directory is read-only or ephemeral, set the `BASECAMP_MCP_TOKEN_FILE` environment variable to an absolute path:
+By default, OAuth tokens are stored in `<project>/oauth_tokens.json`. For containers, read-only checkouts, or mounted token volumes, set `BASECAMP_MCP_TOKEN_FILE`:
 
 ```bash
 export BASECAMP_MCP_TOKEN_FILE=/var/lib/basecamp-mcp/oauth_tokens.json
 ```
 
-The path is resolved at import time; both the OAuth app and the MCP server honor the same variable, so they stay in sync without symlinks or file copies. When unset, behavior is unchanged.
+Both the OAuth app and the MCP server read the same variable. `token_storage.py` expands `~` and environment variables in this path, creates the parent directory if needed, and attempts to set the token file permissions to `0o600` when writing. Parent directory permissions are still your responsibility.
 
-`token_storage.py` also attempts to `chmod` the token file to `0o600` on write (best-effort; skipped on platforms that do not support it, such as Windows). If you point `BASECAMP_MCP_TOKEN_FILE` at a shared or mounted location, make sure the parent directory permissions are appropriate too, since only the token file itself is chmod'd.
+## Troubleshooting
+
+If tools do not appear in your MCP client:
+
+1. Confirm the virtual environment exists and has the MCP SDK:
+
+   ```bash
+   ./venv/bin/python -c "import mcp; print('MCP available')"
+   ```
+
+2. Confirm `.env` contains `BASECAMP_ACCOUNT_ID`.
+3. Re-run the relevant config generator.
+4. Fully quit and restart your MCP client.
+
+If authentication fails:
+
+```bash
+python oauth_app.py
+```
+
+Then open <http://localhost:8000> and complete the Basecamp OAuth flow again.
+
+For Claude Desktop on macOS, MCP logs are usually under:
+
+```bash
+~/Library/Logs/Claude/
+```
+
+## Security Notes
+
+- Do not commit `.env` or `oauth_tokens.json`.
+- Use a descriptive `USER_AGENT` that includes contact information, as Basecamp expects API clients to identify themselves.
+- Keep token files on local or appropriately permissioned storage.
+- This server is designed for local MCP client use. Review the code and deployment model before exposing it on a network.
 
 ## License
 
-This project is licensed under the MIT License.
+MIT. See [`LICENSE`](LICENSE).
 
 ## Star History
 
