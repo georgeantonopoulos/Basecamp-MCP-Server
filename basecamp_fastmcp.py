@@ -2386,6 +2386,91 @@ async def download_upload(
     ]
 
 @mcp.tool()
+async def download_attachment(
+    project_id: str,
+    download_url: str,
+    max_bytes: int = 25_000_000,
+    expected_byte_size: Optional[int] = None,
+) -> Any:
+    """Download an inline comment/message attachment as MCP content.
+
+    Use this for files embedded into a comment or message body — the entries
+    found in ``content_attachments[]`` on comments, messages, etc. Pass the
+    entry's ``download_url`` verbatim.
+
+    For files that are their own ``Upload`` recording in a vault ("Docs &
+    Files"), use ``download_upload`` instead. Inline attachments are
+    ``Attachment`` objects with their own IDs and cannot be resolved through
+    the uploads endpoint.
+
+    Returns MCP content blocks: a text summary plus the file itself as
+    ImageContent (for ``image/*`` MIME types) or an EmbeddedResource
+    (BlobResourceContents) for everything else.
+
+    Args:
+        project_id: Project (bucket) ID — used for the resource URI and logs.
+        download_url: ``content_attachments[].download_url`` from the API
+            (must point to ``*.basecampapi.com``).
+        max_bytes: Reject files larger than this (default 25 MB).
+        expected_byte_size: Optional advertised ``byte_size`` from the same
+            ``content_attachments[]`` entry. When provided, lets the server
+            reject oversized files before issuing the download.
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        result = await _run_sync(
+            client.download_attachment,
+            download_url,
+            max_bytes,
+            expected_byte_size,
+        )
+    except Exception as e:
+        logger.error(f"Error downloading attachment: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {
+                "error": "OAuth token expired",
+                "message": (
+                    "Your Basecamp OAuth token expired during the API call. "
+                    "Re-authenticate via this server's OAuth endpoint."
+                ),
+            }
+        return {
+            "error": "Execution error",
+            "message": str(e),
+        }
+
+    data = result["data"]
+    content_type = result["content_type"]
+    filename = result["filename"] or "attachment"
+    b64 = base64.b64encode(data).decode("ascii")
+
+    summary = (
+        f"Downloaded '{filename}' ({content_type}, {len(data)} bytes) "
+        f"from inline attachment in project {project_id}."
+    )
+
+    if content_type.startswith("image/"):
+        return [
+            TextContent(type="text", text=summary),
+            ImageContent(type="image", data=b64, mimeType=content_type),
+        ]
+
+    return [
+        TextContent(type="text", text=summary),
+        EmbeddedResource(
+            type="resource",
+            resource=BlobResourceContents(
+                uri=f"basecamp://buckets/{project_id}/attachments/{filename}",
+                mimeType=content_type,
+                blob=b64,
+            ),
+        ),
+    ]
+
+@mcp.tool()
 async def get_todolist(project_id: str, todolist_id: str) -> Dict[str, Any]:
     """Get a specific todo list by ID.
 
