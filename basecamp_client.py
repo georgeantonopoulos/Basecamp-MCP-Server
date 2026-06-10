@@ -1365,3 +1365,56 @@ class BasecampClient:
             return response.json()
         else:
             raise Exception(f"Failed to get upload: {response.status_code} - {response.text}")
+
+    def download_upload(self, project_id, upload_id, max_bytes=None):
+        """Download the binary content of an upload (e.g. PDF, image, doc).
+
+        Returns dict with keys: data (bytes), filename, content_type, byte_size,
+        title, app_url.
+
+        The Basecamp API returns a `download_url` that 302-redirects to a signed
+        S3 URL. `requests` strips the Authorization header on cross-domain
+        redirects, so passing self.headers here is safe.
+        """
+        meta = self.get_upload(project_id, upload_id)
+        download_url = meta.get("download_url")
+        if not download_url:
+            raise Exception(
+                f"Upload {upload_id} has no download_url; not a downloadable file"
+            )
+
+        byte_size = meta.get("byte_size")
+        if (
+            max_bytes is not None
+            and byte_size is not None
+            and byte_size > max_bytes
+        ):
+            raise Exception(
+                f"Upload size {byte_size} bytes exceeds max_bytes={max_bytes}. "
+                f"Increase max_bytes or fetch the file via the Basecamp UI."
+            )
+
+        response = requests.get(
+            download_url,
+            auth=self.auth,
+            headers=self.headers,
+            allow_redirects=True,
+        )
+        if response.status_code != 200:
+            raise Exception(
+                f"Failed to download upload: {response.status_code} - "
+                f"{response.text[:200]}"
+            )
+
+        return {
+            "data": response.content,
+            "filename": meta.get("filename"),
+            "content_type": (
+                meta.get("content_type")
+                or response.headers.get("Content-Type")
+                or "application/octet-stream"
+            ),
+            "byte_size": meta.get("byte_size") or len(response.content),
+            "title": meta.get("title"),
+            "app_url": meta.get("app_url"),
+        }

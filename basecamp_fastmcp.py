@@ -6,6 +6,7 @@ This server implements the MCP (Model Context Protocol) using the official
 Anthropic FastMCP framework, replacing the custom JSON-RPC implementation.
 """
 
+import base64
 import logging
 import os
 import sys
@@ -13,6 +14,12 @@ from typing import Any, Dict, List, Optional
 import anyio
 import httpx
 from mcp.server.fastmcp import FastMCP
+from mcp.types import (
+    BlobResourceContents,
+    EmbeddedResource,
+    ImageContent,
+    TextContent,
+)
 
 # Import existing business logic
 from basecamp_client import BasecampClient
@@ -2281,7 +2288,7 @@ async def get_uploads(project_id: str, vault_id: Optional[str] = None) -> Dict[s
 @mcp.tool()
 async def get_upload(project_id: str, upload_id: str) -> Dict[str, Any]:
     """Get details for a specific upload.
-    
+
     Args:
         project_id: Project ID
         upload_id: Upload ID
@@ -2289,7 +2296,7 @@ async def get_upload(project_id: str, upload_id: str) -> Dict[str, Any]:
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
-    
+
     try:
         upload = await _run_sync(client.get_upload, project_id, upload_id)
         return {
@@ -2307,6 +2314,76 @@ async def get_upload(project_id: str, upload_id: str) -> Dict[str, Any]:
             "error": "Execution error",
             "message": str(e)
         }
+
+@mcp.tool()
+async def download_upload(
+    project_id: str,
+    upload_id: str,
+    max_bytes: int = 25_000_000,
+) -> Any:
+    """Download the binary content of an upload (PDF, image, document, ...).
+
+    Returns MCP content blocks: a text summary plus the file itself as an
+    embedded resource (or ImageContent for image MIME types). The MCP host
+    forwards the blob to the model, so Claude reads PDFs natively (tables,
+    images, OCR).
+
+    Args:
+        project_id: Project ID
+        upload_id: Upload ID
+        max_bytes: Reject files larger than this (default 25 MB). Very large
+            payloads stress the MCP transport and the model context.
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        result = await _run_sync(
+            client.download_upload, project_id, upload_id, max_bytes
+        )
+    except Exception as e:
+        logger.error(f"Error downloading upload: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {
+                "error": "OAuth token expired",
+                "message": (
+                    "Your Basecamp OAuth token expired during the API call. "
+                    "Re-authenticate via this server's OAuth endpoint."
+                ),
+            }
+        return {
+            "error": "Execution error",
+            "message": str(e),
+        }
+
+    data = result["data"]
+    content_type = result["content_type"]
+    filename = result["filename"] or f"upload-{upload_id}"
+    b64 = base64.b64encode(data).decode("ascii")
+
+    summary = (
+        f"Downloaded '{filename}' ({content_type}, {len(data)} bytes) "
+        f"from upload {upload_id} in project {project_id}."
+    )
+
+    if content_type.startswith("image/"):
+        return [
+            TextContent(type="text", text=summary),
+            ImageContent(type="image", data=b64, mimeType=content_type),
+        ]
+
+    return [
+        TextContent(type="text", text=summary),
+        EmbeddedResource(
+            type="resource",
+            resource=BlobResourceContents(
+                uri=f"basecamp://buckets/{project_id}/uploads/{upload_id}/{filename}",
+                mimeType=content_type,
+                blob=b64,
+            ),
+        ),
+    ]
 
 @mcp.tool()
 async def get_todolist(project_id: str, todolist_id: str) -> Dict[str, Any]:
