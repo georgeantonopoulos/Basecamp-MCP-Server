@@ -114,6 +114,55 @@ async def _run_sync(func, *args, **kwargs):
     """Wrapper to run synchronous functions in thread pool."""
     return await anyio.to_thread.run_sync(func, *args, **kwargs)
 
+
+def _handle_download_error(e: Exception, kind: str) -> Dict[str, Any]:
+    """Map a BasecampClient download exception to an MCP error response."""
+    logger.error(f"Error downloading {kind}: {e}")
+    if "401" in str(e) and "expired" in str(e).lower():
+        return {
+            "error": "OAuth token expired",
+            "message": (
+                "Your Basecamp OAuth token expired during the API call. "
+                "Re-authenticate via this server's OAuth endpoint."
+            ),
+        }
+    return {"error": "Execution error", "message": str(e)}
+
+
+def _serialize_blob_for_mcp(
+    data: bytes,
+    content_type: str,
+    filename: str,
+    summary: str,
+    resource_uri: str,
+) -> List[Any]:
+    """Pack a downloaded file into MCP content blocks.
+
+    ``image/*`` MIME types come back as ``ImageContent`` (the MCP host can
+    render them); everything else as an ``EmbeddedResource`` with
+    ``BlobResourceContents`` so the MCP host forwards the bytes to the model
+    and PDFs/docs are read natively.
+    """
+    b64 = base64.b64encode(data).decode("ascii")
+    blocks: List[Any] = [TextContent(type="text", text=summary)]
+    if content_type.startswith("image/"):
+        blocks.append(
+            ImageContent(type="image", data=b64, mimeType=content_type)
+        )
+    else:
+        blocks.append(
+            EmbeddedResource(
+                type="resource",
+                resource=BlobResourceContents(
+                    uri=resource_uri,
+                    mimeType=content_type,
+                    blob=b64,
+                ),
+            )
+        )
+    return blocks
+
+
 # Core MCP Tools - Starting with essential ones from original server
 
 @mcp.tool()
@@ -2343,47 +2392,23 @@ async def download_upload(
             client.download_upload, project_id, upload_id, max_bytes
         )
     except Exception as e:
-        logger.error(f"Error downloading upload: {e}")
-        if "401" in str(e) and "expired" in str(e).lower():
-            return {
-                "error": "OAuth token expired",
-                "message": (
-                    "Your Basecamp OAuth token expired during the API call. "
-                    "Re-authenticate via this server's OAuth endpoint."
-                ),
-            }
-        return {
-            "error": "Execution error",
-            "message": str(e),
-        }
+        return _handle_download_error(e, "upload")
 
+    filename = result["filename"] or f"upload-{upload_id}"
     data = result["data"]
     content_type = result["content_type"]
-    filename = result["filename"] or f"upload-{upload_id}"
-    b64 = base64.b64encode(data).decode("ascii")
-
-    summary = (
-        f"Downloaded '{filename}' ({content_type}, {len(data)} bytes) "
-        f"from upload {upload_id} in project {project_id}."
-    )
-
-    if content_type.startswith("image/"):
-        return [
-            TextContent(type="text", text=summary),
-            ImageContent(type="image", data=b64, mimeType=content_type),
-        ]
-
-    return [
-        TextContent(type="text", text=summary),
-        EmbeddedResource(
-            type="resource",
-            resource=BlobResourceContents(
-                uri=f"basecamp://buckets/{project_id}/uploads/{upload_id}/{filename}",
-                mimeType=content_type,
-                blob=b64,
-            ),
+    return _serialize_blob_for_mcp(
+        data=data,
+        content_type=content_type,
+        filename=filename,
+        summary=(
+            f"Downloaded '{filename}' ({content_type}, {len(data)} bytes) "
+            f"from upload {upload_id} in project {project_id}."
         ),
-    ]
+        resource_uri=(
+            f"basecamp://buckets/{project_id}/uploads/{upload_id}/{filename}"
+        ),
+    )
 
 @mcp.tool()
 async def download_attachment(
@@ -2428,47 +2453,23 @@ async def download_attachment(
             expected_byte_size,
         )
     except Exception as e:
-        logger.error(f"Error downloading attachment: {e}")
-        if "401" in str(e) and "expired" in str(e).lower():
-            return {
-                "error": "OAuth token expired",
-                "message": (
-                    "Your Basecamp OAuth token expired during the API call. "
-                    "Re-authenticate via this server's OAuth endpoint."
-                ),
-            }
-        return {
-            "error": "Execution error",
-            "message": str(e),
-        }
+        return _handle_download_error(e, "attachment")
 
+    filename = result["filename"] or "attachment"
     data = result["data"]
     content_type = result["content_type"]
-    filename = result["filename"] or "attachment"
-    b64 = base64.b64encode(data).decode("ascii")
-
-    summary = (
-        f"Downloaded '{filename}' ({content_type}, {len(data)} bytes) "
-        f"from inline attachment in project {project_id}."
-    )
-
-    if content_type.startswith("image/"):
-        return [
-            TextContent(type="text", text=summary),
-            ImageContent(type="image", data=b64, mimeType=content_type),
-        ]
-
-    return [
-        TextContent(type="text", text=summary),
-        EmbeddedResource(
-            type="resource",
-            resource=BlobResourceContents(
-                uri=f"basecamp://buckets/{project_id}/attachments/{filename}",
-                mimeType=content_type,
-                blob=b64,
-            ),
+    return _serialize_blob_for_mcp(
+        data=data,
+        content_type=content_type,
+        filename=filename,
+        summary=(
+            f"Downloaded '{filename}' ({content_type}, {len(data)} bytes) "
+            f"from inline attachment in project {project_id}."
         ),
-    ]
+        resource_uri=(
+            f"basecamp://buckets/{project_id}/attachments/{filename}"
+        ),
+    )
 
 @mcp.tool()
 async def get_todolist(project_id: str, todolist_id: str) -> Dict[str, Any]:
