@@ -233,6 +233,19 @@ The FastMCP server exposes 77 tools.
   ``Attachment`` objects with their own IDs and cannot be resolved through
   ``/uploads/{id}`` — that endpoint returns 404. For files that are their own
   Upload recording in a vault, use ``download_upload`` instead.
+
+> **Host compatibility for `download_upload` and `download_attachment`.**
+> Both tools return MCP content blocks. The file is only readable by the
+> model if the MCP host forwards `ImageContent` / `EmbeddedResource`
+> (`BlobResourceContents`) on. Status as of June 2026:
+>
+> - **Claude Code (CLI)** — fully supported, including `application/pdf`
+>   and other binary blob resources.
+> - **Claude Desktop / claude.ai web** — image content blocks work, but
+>   non-image `EmbeddedResource` blocks are rejected with `"Resources of
+>   type 'application/pdf' are not currently supported"`. The bytes reach
+>   the host but never the model. Once the client adds support, these
+>   tools become useful in those frontends without server changes.
 - `get_documents`
 - `get_document`
 - `create_document`

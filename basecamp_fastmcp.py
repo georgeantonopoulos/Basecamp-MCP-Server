@@ -2377,6 +2377,14 @@ async def download_upload(
     forwards the blob to the model, so Claude reads PDFs natively (tables,
     images, OCR).
 
+    Host compatibility: the file is only readable if the MCP host forwards
+    `ImageContent` / `EmbeddedResource` (`BlobResourceContents`) to the
+    model. Claude Code (CLI) supports both, including `application/pdf`.
+    Claude Desktop / claude.ai web currently rejects non-image
+    `EmbeddedResource` blocks ("Resources of type 'application/pdf' are
+    not currently supported"); the bytes arrive at the host but never
+    reach the model.
+
     Args:
         project_id: Project ID
         upload_id: Upload ID
@@ -2431,6 +2439,14 @@ async def download_attachment(
     Returns MCP content blocks: a text summary plus the file itself as
     ImageContent (for ``image/*`` MIME types) or an EmbeddedResource
     (BlobResourceContents) for everything else.
+
+    Host compatibility: the file is only readable if the MCP host forwards
+    ``ImageContent`` / ``EmbeddedResource`` (``BlobResourceContents``) to
+    the model. Claude Code (CLI) supports both, including
+    ``application/pdf``. Claude Desktop / claude.ai web currently rejects
+    non-image ``EmbeddedResource`` blocks ("Resources of type
+    'application/pdf' are not currently supported"); the bytes arrive at
+    the host but never reach the model.
 
     Args:
         project_id: Project (bucket) ID — used for the resource URI and logs.
