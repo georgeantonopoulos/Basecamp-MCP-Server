@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/georgeantonopoulos-basecamp-mcp-server-badge.png)](https://mseep.ai/app/georgeantonopoulos-basecamp-mcp-server)
+
 # Basecamp MCP Server
 
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
