@@ -881,7 +881,8 @@ async def get_message_categories(project_id: str) -> Dict[str, Any]:
 @mcp.tool()
 async def create_message(project_id: str, subject: str, content: str,
                          message_board_id: Optional[str] = None,
-                         category_id: Optional[str] = None) -> Dict[str, Any]:
+                         category_id: Optional[str] = None,
+                         publish: bool = True) -> Dict[str, Any]:
     """Create a new message on a project's message board.
 
     Args:
@@ -890,6 +891,7 @@ async def create_message(project_id: str, subject: str, content: str,
         content: Message body in HTML format
         message_board_id: Optional message board ID. If not provided, will be auto-discovered from the project.
         category_id: Optional message type/category ID
+        publish: When true, publish immediately. When false, create a draft.
     """
     client = _get_basecamp_client()
     if not client:
@@ -900,13 +902,14 @@ async def create_message(project_id: str, subject: str, content: str,
             lambda: client.create_message(
                 project_id, subject, content,
                 message_board_id=message_board_id,
-                category_id=category_id
+                category_id=category_id,
+                status="active" if publish else None
             )
         )
         return {
             "status": "success",
             "message": message,
-            "result": f"Message '{subject}' created successfully"
+            "result": f"Message '{subject}' {'published' if publish else 'drafted'} successfully"
         }
     except Exception as e:
         logger.error(f"Error creating message: {e}")
@@ -2209,7 +2212,8 @@ async def get_document(project_id: str, document_id: str) -> Dict[str, Any]:
         }
 
 @mcp.tool()
-async def create_document(project_id: str, vault_id: str, title: str, content: str) -> Dict[str, Any]:
+async def create_document(project_id: str, vault_id: str, title: str, content: str,
+                          publish: bool = True) -> Dict[str, Any]:
     """Create a document in a vault.
     
     Args:
@@ -2217,16 +2221,25 @@ async def create_document(project_id: str, vault_id: str, title: str, content: s
         vault_id: Vault ID
         title: Document title
         content: Document HTML content
+        publish: When true, publish immediately. When false, create a draft.
     """
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
     
     try:
-        doc = await _run_sync(client.create_document, project_id, vault_id, title, content)
+        doc = await _run_sync(
+            client.create_document,
+            project_id,
+            vault_id,
+            title,
+            content,
+            "active" if publish else None,
+        )
         return {
             "status": "success",
-            "document": doc
+            "document": doc,
+            "result": f"Document '{title}' {'published' if publish else 'drafted'} successfully"
         }
     except Exception as e:
         logger.error(f"Error creating document: {e}")
@@ -2688,4 +2701,4 @@ async def reposition_todolist_group(
 if __name__ == "__main__":
     logger.info("Starting Basecamp FastMCP server")
     # Run using official MCP stdio transport
-    mcp.run(transport='stdio') 
+    mcp.run(transport='stdio')

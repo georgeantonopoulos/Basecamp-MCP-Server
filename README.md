@@ -14,14 +14,14 @@ The main server is [`basecamp_fastmcp.py`](basecamp_fastmcp.py). It uses the off
 - Browse Basecamp projects and project details.
 - Search across projects, todos, messages, campfire lines, comments, uploads, and schedules.
 - Read and manage todolists, todos, todo groups, and completion state.
-- Read and post message board messages, including categories.
+- Read and create message board messages, including drafts and categories.
 - Read campfire lines.
 - Read and create comments.
 - Work with card tables, columns, cards, and card steps.
 - Read inbox forwards and replies.
 - Read daily check-ins and answers.
 - Upload attachments and inspect uploads.
-- Read and manage documents.
+- Read and manage documents, including drafts.
 - List events and manage webhooks.
 - Generate local MCP configuration for Codex, Cursor, and Claude Desktop.
 
@@ -170,6 +170,10 @@ The FastMCP server exposes 77 tools.
 - `get_message`
 - `get_message_categories`
 - `create_message`
+
+Pass `publish: false` to `create_message` to create a draft message instead
+of posting it immediately.
+
 - `get_campfire_lines`
 - `get_daily_check_ins`
 - `get_question_answers`
@@ -249,6 +253,10 @@ The FastMCP server exposes 77 tools.
 - `get_documents`
 - `get_document`
 - `create_document`
+
+Pass `publish: false` to `create_document` to create a draft document instead
+of publishing it immediately.
+
 - `update_document`
 - `trash_document`
 - `get_events`

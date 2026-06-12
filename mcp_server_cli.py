@@ -213,6 +213,22 @@ class MCPServer:
                 }
             },
             {
+                "name": "create_message",
+                "description": "Create a message on a project message board",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "subject": {"type": "string", "description": "Message title/subject"},
+                        "content": {"type": "string", "description": "Message content in HTML format"},
+                        "message_board_id": {"type": "string", "description": "Message board ID. If omitted, it will be auto-discovered from the project."},
+                        "category_id": {"type": "string", "description": "Optional message type/category ID"},
+                        "publish": {"type": "boolean", "description": "Publish immediately when true; create a draft when false", "default": True}
+                    },
+                    "required": ["project_id", "subject", "content"]
+                }
+            },
+            {
                 "name": "get_campfire_lines",
                 "description": "Get recent messages from a Basecamp campfire (chat room)",
                 "inputSchema": {
@@ -674,7 +690,8 @@ class MCPServer:
                         "project_id": {"type": "string", "description": "Project ID"},
                         "vault_id": {"type": "string", "description": "Vault ID"},
                         "title": {"type": "string", "description": "Document title"},
-                        "content": {"type": "string", "description": "Document HTML content"}
+                        "content": {"type": "string", "description": "Document HTML content"},
+                        "publish": {"type": "boolean", "description": "Publish immediately when true; create a draft when false", "default": True}
                     },
                     "required": ["project_id", "vault_id", "title", "content"]
                 }
@@ -1046,6 +1063,27 @@ class MCPServer:
                     "status": "success",
                     "comment": comment,
                     "message": "Comment created successfully"
+                }
+
+            elif tool_name == "create_message":
+                project_id = arguments.get("project_id")
+                subject = arguments.get("subject")
+                content = arguments.get("content")
+                message_board_id = arguments.get("message_board_id")
+                category_id = arguments.get("category_id")
+                publish = arguments.get("publish", True)
+                message = client.create_message(
+                    project_id,
+                    subject,
+                    content,
+                    message_board_id=message_board_id,
+                    category_id=category_id,
+                    status="active" if publish else None,
+                )
+                return {
+                    "status": "success",
+                    "message": message,
+                    "result": f"Message '{subject}' {'published' if publish else 'drafted'} successfully"
                 }
 
             elif tool_name == "get_campfire_lines":
@@ -1429,10 +1467,18 @@ class MCPServer:
                 vault_id = arguments.get("vault_id")
                 title = arguments.get("title")
                 content = arguments.get("content")
-                doc = client.create_document(project_id, vault_id, title, content)
+                publish = arguments.get("publish", True)
+                doc = client.create_document(
+                    project_id,
+                    vault_id,
+                    title,
+                    content,
+                    status="active" if publish else None,
+                )
                 return {
                     "status": "success",
-                    "document": doc
+                    "document": doc,
+                    "result": f"Document '{title}' {'published' if publish else 'drafted'} successfully"
                 }
 
             elif tool_name == "update_document":
