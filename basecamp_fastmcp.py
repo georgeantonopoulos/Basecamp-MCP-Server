@@ -6,6 +6,7 @@ This server implements the MCP (Model Context Protocol) using the official
 Anthropic FastMCP framework, replacing the custom JSON-RPC implementation.
 """
 
+import base64
 import logging
 import os
 import sys
@@ -13,6 +14,12 @@ from typing import Any, Dict, List, Optional
 import anyio
 import httpx
 from mcp.server.fastmcp import FastMCP
+from mcp.types import (
+    BlobResourceContents,
+    EmbeddedResource,
+    ImageContent,
+    TextContent,
+)
 
 # Import existing business logic
 from basecamp_client import BasecampClient
@@ -106,6 +113,55 @@ def _get_auth_error_response() -> Dict[str, Any]:
 async def _run_sync(func, *args, **kwargs):
     """Wrapper to run synchronous functions in thread pool."""
     return await anyio.to_thread.run_sync(func, *args, **kwargs)
+
+
+def _handle_download_error(e: Exception, kind: str) -> Dict[str, Any]:
+    """Map a BasecampClient download exception to an MCP error response."""
+    logger.error(f"Error downloading {kind}: {e}")
+    if "401" in str(e) and "expired" in str(e).lower():
+        return {
+            "error": "OAuth token expired",
+            "message": (
+                "Your Basecamp OAuth token expired during the API call. "
+                "Re-authenticate via this server's OAuth endpoint."
+            ),
+        }
+    return {"error": "Execution error", "message": str(e)}
+
+
+def _serialize_blob_for_mcp(
+    data: bytes,
+    content_type: str,
+    filename: str,
+    summary: str,
+    resource_uri: str,
+) -> List[Any]:
+    """Pack a downloaded file into MCP content blocks.
+
+    ``image/*`` MIME types come back as ``ImageContent`` (the MCP host can
+    render them); everything else as an ``EmbeddedResource`` with
+    ``BlobResourceContents`` so the MCP host forwards the bytes to the model
+    and PDFs/docs are read natively.
+    """
+    b64 = base64.b64encode(data).decode("ascii")
+    blocks: List[Any] = [TextContent(type="text", text=summary)]
+    if content_type.startswith("image/"):
+        blocks.append(
+            ImageContent(type="image", data=b64, mimeType=content_type)
+        )
+    else:
+        blocks.append(
+            EmbeddedResource(
+                type="resource",
+                resource=BlobResourceContents(
+                    uri=resource_uri,
+                    mimeType=content_type,
+                    blob=b64,
+                ),
+            )
+        )
+    return blocks
+
 
 # Core MCP Tools - Starting with essential ones from original server
 
@@ -2281,7 +2337,7 @@ async def get_uploads(project_id: str, vault_id: Optional[str] = None) -> Dict[s
 @mcp.tool()
 async def get_upload(project_id: str, upload_id: str) -> Dict[str, Any]:
     """Get details for a specific upload.
-    
+
     Args:
         project_id: Project ID
         upload_id: Upload ID
@@ -2289,7 +2345,7 @@ async def get_upload(project_id: str, upload_id: str) -> Dict[str, Any]:
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
-    
+
     try:
         upload = await _run_sync(client.get_upload, project_id, upload_id)
         return {
@@ -2307,6 +2363,129 @@ async def get_upload(project_id: str, upload_id: str) -> Dict[str, Any]:
             "error": "Execution error",
             "message": str(e)
         }
+
+@mcp.tool()
+async def download_upload(
+    project_id: str,
+    upload_id: str,
+    max_bytes: int = 25_000_000,
+) -> Any:
+    """Download the binary content of an upload (PDF, image, document, ...).
+
+    Returns MCP content blocks: a text summary plus the file itself as an
+    embedded resource (or ImageContent for image MIME types). The MCP host
+    forwards the blob to the model, so Claude reads PDFs natively (tables,
+    images, OCR).
+
+    Host compatibility: the file is only readable if the MCP host forwards
+    `ImageContent` / `EmbeddedResource` (`BlobResourceContents`) to the
+    model. Claude Code (CLI) supports both, including `application/pdf`.
+    Claude Desktop / claude.ai web currently rejects non-image
+    `EmbeddedResource` blocks ("Resources of type 'application/pdf' are
+    not currently supported"); the bytes arrive at the host but never
+    reach the model.
+
+    Args:
+        project_id: Project ID
+        upload_id: Upload ID
+        max_bytes: Reject files larger than this (default 25 MB). Very large
+            payloads stress the MCP transport and the model context.
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        result = await _run_sync(
+            client.download_upload, project_id, upload_id, max_bytes
+        )
+    except Exception as e:
+        return _handle_download_error(e, "upload")
+
+    filename = result["filename"] or f"upload-{upload_id}"
+    data = result["data"]
+    content_type = result["content_type"]
+    return _serialize_blob_for_mcp(
+        data=data,
+        content_type=content_type,
+        filename=filename,
+        summary=(
+            f"Downloaded '{filename}' ({content_type}, {len(data)} bytes) "
+            f"from upload {upload_id} in project {project_id}."
+        ),
+        resource_uri=(
+            f"basecamp://buckets/{project_id}/uploads/{upload_id}/{filename}"
+        ),
+    )
+
+@mcp.tool()
+async def download_attachment(
+    project_id: str,
+    download_url: str,
+    max_bytes: int = 25_000_000,
+    expected_byte_size: Optional[int] = None,
+) -> Any:
+    """Download an inline comment/message attachment as MCP content.
+
+    Use this for files embedded into a comment or message body — the entries
+    found in ``content_attachments[]`` on comments, messages, etc. Pass the
+    entry's ``download_url`` verbatim.
+
+    For files that are their own ``Upload`` recording in a vault ("Docs &
+    Files"), use ``download_upload`` instead. Inline attachments are
+    ``Attachment`` objects with their own IDs and cannot be resolved through
+    the uploads endpoint.
+
+    Returns MCP content blocks: a text summary plus the file itself as
+    ImageContent (for ``image/*`` MIME types) or an EmbeddedResource
+    (BlobResourceContents) for everything else.
+
+    Host compatibility: the file is only readable if the MCP host forwards
+    ``ImageContent`` / ``EmbeddedResource`` (``BlobResourceContents``) to
+    the model. Claude Code (CLI) supports both, including
+    ``application/pdf``. Claude Desktop / claude.ai web currently rejects
+    non-image ``EmbeddedResource`` blocks ("Resources of type
+    'application/pdf' are not currently supported"); the bytes arrive at
+    the host but never reach the model.
+
+    Args:
+        project_id: Project (bucket) ID — used for the resource URI and logs.
+        download_url: ``content_attachments[].download_url`` from the API
+            (must point to ``*.basecampapi.com``).
+        max_bytes: Reject files larger than this (default 25 MB).
+        expected_byte_size: Optional advertised ``byte_size`` from the same
+            ``content_attachments[]`` entry. When provided, lets the server
+            reject oversized files before issuing the download.
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        result = await _run_sync(
+            client.download_attachment,
+            download_url,
+            max_bytes,
+            expected_byte_size,
+        )
+    except Exception as e:
+        return _handle_download_error(e, "attachment")
+
+    filename = result["filename"] or "attachment"
+    data = result["data"]
+    content_type = result["content_type"]
+    return _serialize_blob_for_mcp(
+        data=data,
+        content_type=content_type,
+        filename=filename,
+        summary=(
+            f"Downloaded '{filename}' ({content_type}, {len(data)} bytes) "
+            f"from inline attachment in project {project_id}."
+        ),
+        resource_uri=(
+            f"basecamp://buckets/{project_id}/attachments/{filename}"
+        ),
+    )
 
 @mcp.tool()
 async def get_todolist(project_id: str, todolist_id: str) -> Dict[str, Any]:

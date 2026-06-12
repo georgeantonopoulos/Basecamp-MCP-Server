@@ -1,8 +1,57 @@
 import os
 import re
+from urllib.parse import unquote, urljoin, urlparse
 
 import requests
 from dotenv import load_dotenv
+
+
+def _is_basecamp_api_host(host):
+    """True only for ``basecampapi.com`` and its subdomains (dot-boundary).
+
+    A bare suffix match would accept attacker-controlled look-alike hosts
+    like ``evilbasecampapi.com``; requiring an exact match or a dot-prefixed
+    subdomain keeps the OAuth Bearer token from leaking off-platform.
+    """
+    return host == "basecampapi.com" or host.endswith(".basecampapi.com")
+
+
+def _read_capped_body(response, max_bytes, kind):
+    """Stream ``response`` into bytes, enforcing ``max_bytes``.
+
+    Checks the ``Content-Length`` header up front and applies a streaming
+    cutoff during the body read, so the cap holds even when upstream metadata
+    is missing or lies. ``kind`` (e.g. ``"Upload"``) is interpolated into the
+    error messages. Closes ``response`` before raising. Returns
+    ``(data_bytes, total_bytes)``.
+    """
+    content_length = response.headers.get("Content-Length")
+    if max_bytes is not None and content_length:
+        try:
+            declared_length = int(content_length)
+        except ValueError:
+            declared_length = None
+        if declared_length is not None and declared_length > max_bytes:
+            response.close()
+            raise Exception(
+                f"{kind} size {declared_length} bytes exceeds "
+                f"max_bytes={max_bytes}."
+            )
+
+    chunks = []
+    total = 0
+    for chunk in response.iter_content(chunk_size=65536):
+        if not chunk:
+            continue
+        total += len(chunk)
+        if max_bytes is not None and total > max_bytes:
+            response.close()
+            raise Exception(
+                f"{kind} exceeds max_bytes={max_bytes} during streaming "
+                f"(downloaded {total} bytes before cutoff)."
+            )
+        chunks.append(chunk)
+    return b"".join(chunks), total
 
 
 class BasecampClient:
@@ -1365,3 +1414,193 @@ class BasecampClient:
             return response.json()
         else:
             raise Exception(f"Failed to get upload: {response.status_code} - {response.text}")
+
+    def download_upload(self, project_id, upload_id, max_bytes=None):
+        """Download the binary content of an upload (e.g. PDF, image, doc).
+
+        Returns dict with keys: data (bytes), filename, content_type, byte_size,
+        title, app_url.
+
+        The Basecamp API returns a `download_url` that 302-redirects to a signed
+        S3 URL. `requests` strips the Authorization header on cross-domain
+        redirects, so passing self.headers here is safe.
+        """
+        meta = self.get_upload(project_id, upload_id)
+        download_url = meta.get("download_url")
+        if not download_url:
+            raise Exception(
+                f"Upload {upload_id} has no download_url; not a downloadable file"
+            )
+
+        byte_size = meta.get("byte_size")
+        if (
+            max_bytes is not None
+            and byte_size is not None
+            and byte_size > max_bytes
+        ):
+            raise Exception(
+                f"Upload size {byte_size} bytes exceeds max_bytes={max_bytes}. "
+                f"Increase max_bytes or fetch the file via the Basecamp UI."
+            )
+
+        # `requests` strips the Authorization header automatically on the
+        # cross-domain redirect to signed storage. We still sanitize the
+        # JSON Content-Type (meaningless for a binary GET) so the storage
+        # host doesn't reject the request, and we stream the body with the
+        # same Content-Length / cutoff enforcement as download_attachment so
+        # max_bytes holds even when meta.byte_size is missing or stale.
+        request_headers = dict(self.headers)
+        request_headers.pop("Content-Type", None)
+
+        response = requests.get(
+            download_url,
+            auth=self.auth,
+            headers=request_headers,
+            allow_redirects=True,
+            stream=True,
+            timeout=(10, 300),
+        )
+        if response.status_code != 200:
+            body_preview = response.text[:200] if response.text else ""
+            response.close()
+            raise Exception(
+                f"Failed to download upload: {response.status_code} - "
+                f"{body_preview}"
+            )
+
+        data, total = _read_capped_body(response, max_bytes, "Upload")
+
+        return {
+            "data": data,
+            "filename": meta.get("filename"),
+            "content_type": (
+                meta.get("content_type")
+                or response.headers.get("Content-Type")
+                or "application/octet-stream"
+            ),
+            "byte_size": meta.get("byte_size") or total,
+            "title": meta.get("title"),
+            "app_url": meta.get("app_url"),
+        }
+
+    # Inline-attachment methods (comment/message attachments, not vault uploads)
+    def download_attachment(
+        self, download_url, max_bytes=None, expected_byte_size=None
+    ):
+        """Download the binary content of an inline comment/message attachment.
+
+        ``download_url`` is the per-blob URL as returned in
+        ``content_attachments[].download_url`` by the comments/messages API,
+        e.g. ``https://3.basecampapi.com/{account}/blobs/{key}/download/{name}``.
+
+        The API responds with a 302 redirect to a pre-signed storage host
+        (``storage.app.basecamp.com``). The OAuth Bearer token must only be
+        sent to ``*.basecampapi.com``; the storage URL is already signed and
+        forwarding the Authorization header there would leak the token.
+        We therefore disable automatic redirects, walk the chain manually, and
+        strip auth credentials on the first cross-host hop.
+
+        Returns dict with keys: data (bytes), filename, content_type, byte_size.
+        """
+        if not download_url:
+            raise Exception("download_url is required")
+
+        parsed_initial = urlparse(download_url)
+        if (
+            parsed_initial.scheme != "https"
+            or not parsed_initial.hostname
+            or not _is_basecamp_api_host(parsed_initial.hostname)
+        ):
+            raise Exception(
+                "Refusing to download from non-basecampapi host: "
+                f"{parsed_initial.hostname!r}"
+            )
+
+        # Early reject when the caller passes the advertised byte_size from
+        # content_attachments[]: avoids burning bandwidth for huge files.
+        if (
+            max_bytes is not None
+            and expected_byte_size is not None
+            and expected_byte_size > max_bytes
+        ):
+            raise Exception(
+                f"Attachment size {expected_byte_size} bytes exceeds "
+                f"max_bytes={max_bytes}. Increase max_bytes or fetch the file "
+                f"via the Basecamp UI."
+            )
+
+        current_url = download_url
+        max_hops = 5
+        for _ in range(max_hops):
+            host = urlparse(current_url).hostname or ""
+            is_basecamp_host = _is_basecamp_api_host(host)
+
+            request_headers = dict(self.headers)
+            request_auth = self.auth
+            # Storage hosts (e.g. storage.app.basecamp.com) accept only
+            # pre-signed URLs and reject — or worse, log — Authorization
+            # headers carrying our OAuth token. Strip on cross-host.
+            if not is_basecamp_host:
+                request_headers.pop("Authorization", None)
+                request_auth = None
+            # JSON content-type is meaningless for a binary GET; drop so the
+            # storage host doesn't reject the request.
+            request_headers.pop("Content-Type", None)
+
+            response = requests.get(
+                current_url,
+                auth=request_auth,
+                headers=request_headers,
+                allow_redirects=False,
+                stream=True,
+                timeout=(10, 300),
+            )
+
+            if response.status_code in (301, 302, 303, 307, 308):
+                location = response.headers.get("Location")
+                response.close()
+                if not location:
+                    raise Exception(
+                        f"Attachment redirect {response.status_code} "
+                        f"without Location header"
+                    )
+                current_url = urljoin(current_url, location)
+                continue
+
+            if response.status_code != 200:
+                body_preview = response.text[:200] if response.text else ""
+                response.close()
+                raise Exception(
+                    f"Failed to download attachment: {response.status_code} "
+                    f"- {body_preview}"
+                )
+
+            data, total = _read_capped_body(response, max_bytes, "Attachment")
+
+            content_type = (
+                response.headers.get("Content-Type")
+                or "application/octet-stream"
+            )
+
+            filename = None
+            cd = response.headers.get("Content-Disposition")
+            if cd:
+                m = re.search(r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', cd)
+                if m:
+                    filename = unquote(m.group(1))
+            if not filename:
+                path = parsed_initial.path
+                if path:
+                    last = path.rsplit("/", 1)[-1]
+                    filename = unquote(last) or None
+
+            return {
+                "data": data,
+                "filename": filename,
+                "content_type": content_type,
+                "byte_size": total,
+            }
+
+        raise Exception(
+            f"Too many redirects (>{max_hops}) while downloading attachment"
+        )
