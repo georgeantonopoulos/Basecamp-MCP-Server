@@ -40,6 +40,79 @@ def _make_response(status_code, headers=None, body=b""):
     return resp
 
 
+def _upload_meta(**overrides):
+    meta = {
+        "download_url": "https://3.basecampapi.com/6164391/uploads/123/download",
+        "filename": "report.pdf",
+        "content_type": "application/pdf",
+        "byte_size": 512,
+        "title": "Report",
+        "app_url": "https://3.basecamp.com/6164391/buckets/1/uploads/123",
+    }
+    meta.update(overrides)
+    return meta
+
+
+def test_download_upload_respects_max_bytes_via_upload_metadata(client):
+    client.get_upload = MagicMock(return_value=_upload_meta(byte_size=2048))
+
+    with patch("basecamp_client.requests.get") as mock_get:
+        with pytest.raises(Exception, match="exceeds max_bytes"):
+            client.download_upload("project-1", "upload-1", max_bytes=1024)
+
+    mock_get.assert_not_called()
+
+
+def test_download_upload_sanitizes_headers_streams_and_sets_timeout(client):
+    body = b"%PDF" + b"\x00" * 32
+    client.get_upload = MagicMock(return_value=_upload_meta(byte_size=len(body)))
+    response = _make_response(
+        200,
+        headers={"Content-Type": "application/pdf", "Content-Length": str(len(body))},
+        body=body,
+    )
+
+    with patch("basecamp_client.requests.get", return_value=response) as mock_get:
+        result = client.download_upload("project-1", "upload-1", max_bytes=1024)
+
+    call = mock_get.call_args
+    assert call.args[0] == "https://3.basecampapi.com/6164391/uploads/123/download"
+    assert call.kwargs["headers"].get("Authorization") == "Bearer dummy-oauth-token"
+    assert "Content-Type" not in call.kwargs["headers"]
+    assert call.kwargs["allow_redirects"] is True
+    assert call.kwargs["stream"] is True
+    assert call.kwargs["timeout"] == (10, 300)
+    assert result["data"] == body
+    assert result["byte_size"] == len(body)
+    assert result["content_type"] == "application/pdf"
+
+
+def test_download_upload_respects_max_bytes_via_content_length(client):
+    client.get_upload = MagicMock(return_value=_upload_meta(byte_size=None))
+    response = _make_response(
+        200,
+        headers={"Content-Type": "application/pdf", "Content-Length": "2048"},
+    )
+
+    with patch("basecamp_client.requests.get", return_value=response):
+        with pytest.raises(Exception, match="exceeds max_bytes"):
+            client.download_upload("project-1", "upload-1", max_bytes=1024)
+
+    response.close.assert_called_once()
+
+
+def test_download_upload_respects_max_bytes_during_streaming(client):
+    client.get_upload = MagicMock(return_value=_upload_meta(byte_size=None))
+    response = _make_response(200, headers={"Content-Type": "application/pdf"})
+    response.iter_content = MagicMock(return_value=[b"a" * 700, b"b" * 700])
+
+    with patch("basecamp_client.requests.get", return_value=response):
+        with pytest.raises(Exception, match="during streaming"):
+            client.download_upload("project-1", "upload-1", max_bytes=1024)
+
+    response.close.assert_called_once()
+
+
 def test_download_attachment_strips_auth_on_cross_host_redirect(client):
     """The Authorization header must NOT travel to storage.app.basecamp.com."""
     initial_url = (
