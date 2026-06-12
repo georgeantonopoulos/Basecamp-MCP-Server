@@ -924,6 +924,29 @@ async def create_message(project_id: str, subject: str, content: str,
         }
 
 
+@mcp.tool()
+async def create_draft_message(project_id: str, subject: str, content: str,
+                               message_board_id: Optional[str] = None,
+                               category_id: Optional[str] = None) -> Dict[str, Any]:
+    """Create a draft message on a project's message board without publishing it.
+
+    Args:
+        project_id: The project ID
+        subject: Message title/subject
+        content: Message body in HTML format
+        message_board_id: Optional message board ID. If not provided, will be auto-discovered from the project.
+        category_id: Optional message type/category ID
+    """
+    return await create_message(
+        project_id,
+        subject,
+        content,
+        message_board_id=message_board_id,
+        category_id=category_id,
+        publish=False,
+    )
+
+
 # Inbox Tools (Email Forwards)
 @mcp.tool()
 async def get_inbox(project_id: str) -> Dict[str, Any]:
@@ -2252,6 +2275,25 @@ async def create_document(project_id: str, vault_id: str, title: str, content: s
             "error": "Execution error",
             "message": str(e)
         }
+
+
+@mcp.tool()
+async def create_draft_document(project_id: str, vault_id: str, title: str, content: str) -> Dict[str, Any]:
+    """Create a draft document in a vault without publishing it.
+
+    Args:
+        project_id: Project ID
+        vault_id: Vault ID
+        title: Document title
+        content: Document HTML content
+    """
+    return await create_document(
+        project_id,
+        vault_id,
+        title,
+        content,
+        publish=False,
+    )
 
 @mcp.tool()
 async def update_document(project_id: str, document_id: str, title: Optional[str] = None, content: Optional[str] = None) -> Dict[str, Any]:

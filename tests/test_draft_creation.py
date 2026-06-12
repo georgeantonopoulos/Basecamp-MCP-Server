@@ -89,6 +89,10 @@ def test_cli_schema_exposes_publish_for_draft_tools():
 
     assert message_schema["publish"]["type"] == "boolean"
     assert document_schema["publish"]["type"] == "boolean"
+    assert "create_draft_message" in tools
+    assert "create_draft_document" in tools
+    assert "publish" not in tools["create_draft_message"]["inputSchema"]["properties"]
+    assert "publish" not in tools["create_draft_document"]["inputSchema"]["properties"]
 
 
 @patch("mcp_server_cli.auth_manager.ensure_authenticated", return_value=True)
@@ -122,6 +126,34 @@ def test_cli_create_message_draft_passes_status_none(mock_get_token, mock_auth):
 
 @patch("mcp_server_cli.auth_manager.ensure_authenticated", return_value=True)
 @patch("mcp_server_cli.token_storage.get_token", return_value={"access_token": "token", "account_id": "12345"})
+def test_cli_create_draft_message_passes_status_none(mock_get_token, mock_auth):
+    server = MCPServer()
+
+    with patch.object(BasecampClient, "create_message", return_value={"id": "msg-1"}) as mock_create:
+        result = server._execute_tool(
+            "create_draft_message",
+            {
+                "project_id": "project-1",
+                "subject": "Kickoff",
+                "content": "<div>Hello</div>",
+                "message_board_id": "board-1",
+            },
+        )
+
+    assert result["status"] == "success"
+    assert result["result"] == "Message 'Kickoff' drafted successfully"
+    mock_create.assert_called_once_with(
+        "project-1",
+        "Kickoff",
+        "<div>Hello</div>",
+        message_board_id="board-1",
+        category_id=None,
+        status=None,
+    )
+
+
+@patch("mcp_server_cli.auth_manager.ensure_authenticated", return_value=True)
+@patch("mcp_server_cli.token_storage.get_token", return_value={"access_token": "token", "account_id": "12345"})
 def test_cli_create_document_draft_passes_status_none(mock_get_token, mock_auth):
     server = MCPServer()
 
@@ -134,6 +166,33 @@ def test_cli_create_document_draft_passes_status_none(mock_get_token, mock_auth)
                 "title": "Plan",
                 "content": "<div>Draft</div>",
                 "publish": False,
+            },
+        )
+
+    assert result["status"] == "success"
+    assert result["result"] == "Document 'Plan' drafted successfully"
+    mock_create.assert_called_once_with(
+        "project-1",
+        "vault-1",
+        "Plan",
+        "<div>Draft</div>",
+        status=None,
+    )
+
+
+@patch("mcp_server_cli.auth_manager.ensure_authenticated", return_value=True)
+@patch("mcp_server_cli.token_storage.get_token", return_value={"access_token": "token", "account_id": "12345"})
+def test_cli_create_draft_document_passes_status_none(mock_get_token, mock_auth):
+    server = MCPServer()
+
+    with patch.object(BasecampClient, "create_document", return_value={"id": "doc-1"}) as mock_create:
+        result = server._execute_tool(
+            "create_draft_document",
+            {
+                "project_id": "project-1",
+                "vault_id": "vault-1",
+                "title": "Plan",
+                "content": "<div>Draft</div>",
             },
         )
 

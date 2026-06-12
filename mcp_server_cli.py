@@ -229,6 +229,21 @@ class MCPServer:
                 }
             },
             {
+                "name": "create_draft_message",
+                "description": "Create a draft message on a project message board without publishing it",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "subject": {"type": "string", "description": "Message title/subject"},
+                        "content": {"type": "string", "description": "Message content in HTML format"},
+                        "message_board_id": {"type": "string", "description": "Message board ID. If omitted, it will be auto-discovered from the project."},
+                        "category_id": {"type": "string", "description": "Optional message type/category ID"}
+                    },
+                    "required": ["project_id", "subject", "content"]
+                }
+            },
+            {
                 "name": "get_campfire_lines",
                 "description": "Get recent messages from a Basecamp campfire (chat room)",
                 "inputSchema": {
@@ -697,6 +712,20 @@ class MCPServer:
                 }
             },
             {
+                "name": "create_draft_document",
+                "description": "Create a draft document in a vault without publishing it",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "project_id": {"type": "string", "description": "Project ID"},
+                        "vault_id": {"type": "string", "description": "Vault ID"},
+                        "title": {"type": "string", "description": "Document title"},
+                        "content": {"type": "string", "description": "Document HTML content"}
+                    },
+                    "required": ["project_id", "vault_id", "title", "content"]
+                }
+            },
+            {
                 "name": "update_document",
                 "description": "Update a document",
                 "inputSchema": {
@@ -1084,6 +1113,26 @@ class MCPServer:
                     "status": "success",
                     "message": message,
                     "result": f"Message '{subject}' {'published' if publish else 'drafted'} successfully"
+                }
+
+            elif tool_name == "create_draft_message":
+                project_id = arguments.get("project_id")
+                subject = arguments.get("subject")
+                content = arguments.get("content")
+                message_board_id = arguments.get("message_board_id")
+                category_id = arguments.get("category_id")
+                message = client.create_message(
+                    project_id,
+                    subject,
+                    content,
+                    message_board_id=message_board_id,
+                    category_id=category_id,
+                    status=None,
+                )
+                return {
+                    "status": "success",
+                    "message": message,
+                    "result": f"Message '{subject}' drafted successfully"
                 }
 
             elif tool_name == "get_campfire_lines":
@@ -1479,6 +1528,24 @@ class MCPServer:
                     "status": "success",
                     "document": doc,
                     "result": f"Document '{title}' {'published' if publish else 'drafted'} successfully"
+                }
+
+            elif tool_name == "create_draft_document":
+                project_id = arguments.get("project_id")
+                vault_id = arguments.get("vault_id")
+                title = arguments.get("title")
+                content = arguments.get("content")
+                doc = client.create_document(
+                    project_id,
+                    vault_id,
+                    title,
+                    content,
+                    status=None,
+                )
+                return {
+                    "status": "success",
+                    "document": doc,
+                    "result": f"Document '{title}' drafted successfully"
                 }
 
             elif tool_name == "update_document":

@@ -7,7 +7,7 @@
 
 An MCP server for Basecamp 3. It lets MCP-capable clients such as Codex, Cursor, and Claude Desktop read and manage Basecamp projects through OAuth-authenticated Basecamp API calls.
 
-The main server is [`basecamp_fastmcp.py`](basecamp_fastmcp.py). It uses the official `mcp.server.fastmcp` Python SDK and exposes 77 tools covering projects, todos, message boards, campfires, card tables, inbox forwards, documents, uploads, comments, events, webhooks, and search.
+The main server is [`basecamp_fastmcp.py`](basecamp_fastmcp.py). It uses the official `mcp.server.fastmcp` Python SDK and exposes 79 tools covering projects, todos, message boards, campfires, card tables, inbox forwards, documents, uploads, comments, events, webhooks, and search.
 
 ## What It Can Do
 
@@ -134,7 +134,7 @@ python -m pytest tests/ -v
 
 ## Available Tools
 
-The FastMCP server exposes 77 tools.
+The FastMCP server exposes 79 tools.
 
 ### Projects And Search
 
@@ -170,9 +170,11 @@ The FastMCP server exposes 77 tools.
 - `get_message`
 - `get_message_categories`
 - `create_message`
+- `create_draft_message`
 
 Pass `publish: false` to `create_message` to create a draft message instead
-of posting it immediately.
+of posting it immediately. Agents can also call `create_draft_message` directly
+when the intended operation is specifically to create a draft.
 
 - `get_campfire_lines`
 - `get_daily_check_ins`
@@ -253,9 +255,11 @@ of posting it immediately.
 - `get_documents`
 - `get_document`
 - `create_document`
+- `create_draft_document`
 
 Pass `publish: false` to `create_document` to create a draft document instead
-of publishing it immediately.
+of publishing it immediately. Agents can also call `create_draft_document`
+directly when the intended operation is specifically to create a draft.
 
 - `update_document`
 - `trash_document`
