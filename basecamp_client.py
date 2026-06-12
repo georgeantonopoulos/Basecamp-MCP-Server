@@ -6,6 +6,54 @@ import requests
 from dotenv import load_dotenv
 
 
+def _is_basecamp_api_host(host):
+    """True only for ``basecampapi.com`` and its subdomains (dot-boundary).
+
+    A bare suffix match would accept attacker-controlled look-alike hosts
+    like ``evilbasecampapi.com``; requiring an exact match or a dot-prefixed
+    subdomain keeps the OAuth Bearer token from leaking off-platform.
+    """
+    return host == "basecampapi.com" or host.endswith(".basecampapi.com")
+
+
+def _read_capped_body(response, max_bytes, kind):
+    """Stream ``response`` into bytes, enforcing ``max_bytes``.
+
+    Checks the ``Content-Length`` header up front and applies a streaming
+    cutoff during the body read, so the cap holds even when upstream metadata
+    is missing or lies. ``kind`` (e.g. ``"Upload"``) is interpolated into the
+    error messages. Closes ``response`` before raising. Returns
+    ``(data_bytes, total_bytes)``.
+    """
+    content_length = response.headers.get("Content-Length")
+    if max_bytes is not None and content_length:
+        try:
+            declared_length = int(content_length)
+        except ValueError:
+            declared_length = None
+        if declared_length is not None and declared_length > max_bytes:
+            response.close()
+            raise Exception(
+                f"{kind} size {declared_length} bytes exceeds "
+                f"max_bytes={max_bytes}."
+            )
+
+    chunks = []
+    total = 0
+    for chunk in response.iter_content(chunk_size=65536):
+        if not chunk:
+            continue
+        total += len(chunk)
+        if max_bytes is not None and total > max_bytes:
+            response.close()
+            raise Exception(
+                f"{kind} exceeds max_bytes={max_bytes} during streaming "
+                f"(downloaded {total} bytes before cutoff)."
+            )
+        chunks.append(chunk)
+    return b"".join(chunks), total
+
+
 class BasecampClient:
     """
     Client for interacting with Basecamp 3 API using Basic Authentication or OAuth 2.0.
@@ -1395,27 +1443,42 @@ class BasecampClient:
                 f"Increase max_bytes or fetch the file via the Basecamp UI."
             )
 
+        # `requests` strips the Authorization header automatically on the
+        # cross-domain redirect to signed storage. We still sanitize the
+        # JSON Content-Type (meaningless for a binary GET) so the storage
+        # host doesn't reject the request, and we stream the body with the
+        # same Content-Length / cutoff enforcement as download_attachment so
+        # max_bytes holds even when meta.byte_size is missing or stale.
+        request_headers = dict(self.headers)
+        request_headers.pop("Content-Type", None)
+
         response = requests.get(
             download_url,
             auth=self.auth,
-            headers=self.headers,
+            headers=request_headers,
             allow_redirects=True,
+            stream=True,
+            timeout=(10, 300),
         )
         if response.status_code != 200:
+            body_preview = response.text[:200] if response.text else ""
+            response.close()
             raise Exception(
                 f"Failed to download upload: {response.status_code} - "
-                f"{response.text[:200]}"
+                f"{body_preview}"
             )
 
+        data, total = _read_capped_body(response, max_bytes, "Upload")
+
         return {
-            "data": response.content,
+            "data": data,
             "filename": meta.get("filename"),
             "content_type": (
                 meta.get("content_type")
                 or response.headers.get("Content-Type")
                 or "application/octet-stream"
             ),
-            "byte_size": meta.get("byte_size") or len(response.content),
+            "byte_size": meta.get("byte_size") or total,
             "title": meta.get("title"),
             "app_url": meta.get("app_url"),
         }
@@ -1446,7 +1509,7 @@ class BasecampClient:
         if (
             parsed_initial.scheme != "https"
             or not parsed_initial.hostname
-            or not parsed_initial.hostname.endswith("basecampapi.com")
+            or not _is_basecamp_api_host(parsed_initial.hostname)
         ):
             raise Exception(
                 "Refusing to download from non-basecampapi host: "
@@ -1470,7 +1533,7 @@ class BasecampClient:
         max_hops = 5
         for _ in range(max_hops):
             host = urlparse(current_url).hostname or ""
-            is_basecamp_host = host.endswith("basecampapi.com")
+            is_basecamp_host = _is_basecamp_api_host(host)
 
             request_headers = dict(self.headers)
             request_auth = self.auth
@@ -1490,6 +1553,7 @@ class BasecampClient:
                 headers=request_headers,
                 allow_redirects=False,
                 stream=True,
+                timeout=(10, 300),
             )
 
             if response.status_code in (301, 302, 303, 307, 308):
@@ -1511,34 +1575,7 @@ class BasecampClient:
                     f"- {body_preview}"
                 )
 
-            # Honour Content-Length pre-check before slurping the body.
-            content_length = response.headers.get("Content-Length")
-            if max_bytes is not None and content_length:
-                try:
-                    declared_length = int(content_length)
-                except ValueError:
-                    declared_length = None
-                if declared_length is not None and declared_length > max_bytes:
-                    response.close()
-                    raise Exception(
-                        f"Attachment size {declared_length} bytes exceeds "
-                        f"max_bytes={max_bytes}."
-                    )
-
-            chunks = []
-            total = 0
-            for chunk in response.iter_content(chunk_size=65536):
-                if not chunk:
-                    continue
-                total += len(chunk)
-                if max_bytes is not None and total > max_bytes:
-                    response.close()
-                    raise Exception(
-                        f"Attachment exceeds max_bytes={max_bytes} during "
-                        f"streaming (downloaded {total} bytes before cutoff)."
-                    )
-                chunks.append(chunk)
-            data = b"".join(chunks)
+            data, total = _read_capped_body(response, max_bytes, "Attachment")
 
             content_type = (
                 response.headers.get("Content-Type")

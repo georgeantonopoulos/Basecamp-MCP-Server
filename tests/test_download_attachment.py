@@ -96,6 +96,13 @@ def test_download_attachment_rejects_non_basecamp_host(client):
         client.download_attachment("https://evil.example.com/blob")
 
 
+def test_download_attachment_rejects_lookalike_host(client):
+    # A suffix match alone would accept attacker-controlled lookalike hosts
+    # and leak the Bearer token; only a dot-boundary subdomain is valid.
+    with pytest.raises(Exception, match="non-basecampapi host"):
+        client.download_attachment("https://evilbasecampapi.com/blob")
+
+
 def test_download_attachment_respects_max_bytes_via_expected_size(client):
     with pytest.raises(Exception, match="exceeds max_bytes"):
         client.download_attachment(
