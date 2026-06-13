@@ -682,7 +682,7 @@ class BasecampClient:
         else:
             raise Exception(f"Failed to get message categories: {response.status_code} - {response.text}")
 
-    def create_message(self, project_id, subject, content, message_board_id=None, category_id=None):
+    def create_message(self, project_id, subject, content, message_board_id=None, category_id=None, status="active"):
         """Create a new message on a project's message board.
 
         Args:
@@ -691,6 +691,8 @@ class BasecampClient:
             content: Message body in HTML format
             message_board_id: Optional message board ID (auto-discovered if not provided)
             category_id: Optional message type/category ID
+            status: Optional message status. Set to "active" to publish immediately;
+                pass None to create a draft.
 
         Returns:
             dict: Created message details
@@ -700,7 +702,9 @@ class BasecampClient:
             message_board_id = message_board['id']
 
         endpoint = f'buckets/{project_id}/message_boards/{message_board_id}/messages.json'
-        data = {'subject': subject, 'content': content, 'status': 'active'}
+        data = {'subject': subject, 'content': content}
+        if status is not None:
+            data['status'] = status
         if category_id is not None:
             data['category_id'] = category_id
 
@@ -1362,7 +1366,9 @@ class BasecampClient:
 
     def create_document(self, project_id, vault_id, title, content, status="active"):
         """Create a document in a vault."""
-        data = {"title": title, "content": content, "status": status}
+        data = {"title": title, "content": content}
+        if status is not None:
+            data["status"] = status
         endpoint = f"buckets/{project_id}/vaults/{vault_id}/documents.json"
         response = self.post(endpoint, data)
         if response.status_code == 201:

@@ -97,18 +97,26 @@ def _get_basecamp_client() -> Optional[BasecampClient]:
         logger.error(f"Error creating Basecamp client: {e}")
         return None
 
+def _error_response(error: str, message: str) -> Dict[str, Any]:
+    """Return a consistent MCP tool error response."""
+    return {
+        "status": "error",
+        "error": error,
+        "message": message,
+    }
+
+
 def _get_auth_error_response() -> Dict[str, Any]:
     """Return consistent auth error response."""
     if token_storage.is_token_expired():
-        return {
-            "error": "OAuth token expired",
-            "message": "Your Basecamp OAuth token has expired. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
-        }
-    else:
-        return {
-            "error": "Authentication required", 
-            "message": "Please authenticate with Basecamp first. Visit http://localhost:8000 to log in."
-        }
+        return _error_response(
+            "OAuth token expired",
+            "Your Basecamp OAuth token has expired. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again.",
+        )
+    return _error_response(
+        "Authentication required",
+        "Please authenticate with Basecamp first. Visit http://localhost:8000 to log in.",
+    )
 
 async def _run_sync(func, *args, **kwargs):
     """Wrapper to run synchronous functions in thread pool."""
@@ -119,14 +127,11 @@ def _handle_download_error(e: Exception, kind: str) -> Dict[str, Any]:
     """Map a BasecampClient download exception to an MCP error response."""
     logger.error(f"Error downloading {kind}: {e}")
     if "401" in str(e) and "expired" in str(e).lower():
-        return {
-            "error": "OAuth token expired",
-            "message": (
-                "Your Basecamp OAuth token expired during the API call. "
-                "Re-authenticate via this server's OAuth endpoint."
-            ),
-        }
-    return {"error": "Execution error", "message": str(e)}
+        return _error_response(
+            "OAuth token expired",
+            "Your Basecamp OAuth token expired during the API call. Re-authenticate via this server's OAuth endpoint.",
+        )
+    return _error_response("Execution error", str(e))
 
 
 def _serialize_blob_for_mcp(
@@ -881,7 +886,8 @@ async def get_message_categories(project_id: str) -> Dict[str, Any]:
 @mcp.tool()
 async def create_message(project_id: str, subject: str, content: str,
                          message_board_id: Optional[str] = None,
-                         category_id: Optional[str] = None) -> Dict[str, Any]:
+                         category_id: Optional[str] = None,
+                         publish: bool = True) -> Dict[str, Any]:
     """Create a new message on a project's message board.
 
     Args:
@@ -890,6 +896,7 @@ async def create_message(project_id: str, subject: str, content: str,
         content: Message body in HTML format
         message_board_id: Optional message board ID. If not provided, will be auto-discovered from the project.
         category_id: Optional message type/category ID
+        publish: When true, publish immediately. When false, create a draft.
     """
     client = _get_basecamp_client()
     if not client:
@@ -900,25 +907,46 @@ async def create_message(project_id: str, subject: str, content: str,
             lambda: client.create_message(
                 project_id, subject, content,
                 message_board_id=message_board_id,
-                category_id=category_id
+                category_id=category_id,
+                status="active" if publish else None
             )
         )
         return {
             "status": "success",
             "message": message,
-            "result": f"Message '{subject}' created successfully"
+            "result": f"Message '{subject}' {'published' if publish else 'drafted'} successfully"
         }
     except Exception as e:
         logger.error(f"Error creating message: {e}")
         if "401" in str(e) and "expired" in str(e).lower():
-            return {
-                "error": "OAuth token expired",
-                "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
-            }
-        return {
-            "error": "Execution error",
-            "message": str(e)
-        }
+            return _error_response(
+                "OAuth token expired",
+                "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again.",
+            )
+        return _error_response("Execution error", str(e))
+
+
+@mcp.tool()
+async def create_draft_message(project_id: str, subject: str, content: str,
+                               message_board_id: Optional[str] = None,
+                               category_id: Optional[str] = None) -> Dict[str, Any]:
+    """Create a draft message on a project's message board without publishing it.
+
+    Args:
+        project_id: The project ID
+        subject: Message title/subject
+        content: Message body in HTML format
+        message_board_id: Optional message board ID. If not provided, will be auto-discovered from the project.
+        category_id: Optional message type/category ID
+    """
+    return await create_message(
+        project_id,
+        subject,
+        content,
+        message_board_id=message_board_id,
+        category_id=category_id,
+        publish=False,
+    )
 
 
 # Inbox Tools (Email Forwards)
@@ -2209,7 +2237,8 @@ async def get_document(project_id: str, document_id: str) -> Dict[str, Any]:
         }
 
 @mcp.tool()
-async def create_document(project_id: str, vault_id: str, title: str, content: str) -> Dict[str, Any]:
+async def create_document(project_id: str, vault_id: str, title: str, content: str,
+                          publish: bool = True) -> Dict[str, Any]:
     """Create a document in a vault.
     
     Args:
@@ -2217,28 +2246,53 @@ async def create_document(project_id: str, vault_id: str, title: str, content: s
         vault_id: Vault ID
         title: Document title
         content: Document HTML content
+        publish: When true, publish immediately. When false, create a draft.
     """
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
     
     try:
-        doc = await _run_sync(client.create_document, project_id, vault_id, title, content)
+        doc = await _run_sync(
+            client.create_document,
+            project_id,
+            vault_id,
+            title,
+            content,
+            "active" if publish else None,
+        )
         return {
             "status": "success",
-            "document": doc
+            "document": doc,
+            "result": f"Document '{title}' {'published' if publish else 'drafted'} successfully"
         }
     except Exception as e:
         logger.error(f"Error creating document: {e}")
         if "401" in str(e) and "expired" in str(e).lower():
-            return {
-                "error": "OAuth token expired",
-                "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
-            }
-        return {
-            "error": "Execution error",
-            "message": str(e)
-        }
+            return _error_response(
+                "OAuth token expired",
+                "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again.",
+            )
+        return _error_response("Execution error", str(e))
+
+
+@mcp.tool()
+async def create_draft_document(project_id: str, vault_id: str, title: str, content: str) -> Dict[str, Any]:
+    """Create a draft document in a vault without publishing it.
+
+    Args:
+        project_id: Project ID
+        vault_id: Vault ID
+        title: Document title
+        content: Document HTML content
+    """
+    return await create_document(
+        project_id,
+        vault_id,
+        title,
+        content,
+        publish=False,
+    )
 
 @mcp.tool()
 async def update_document(project_id: str, document_id: str, title: Optional[str] = None, content: Optional[str] = None) -> Dict[str, Any]:
@@ -2688,4 +2742,4 @@ async def reposition_todolist_group(
 if __name__ == "__main__":
     logger.info("Starting Basecamp FastMCP server")
     # Run using official MCP stdio transport
-    mcp.run(transport='stdio') 
+    mcp.run(transport='stdio')

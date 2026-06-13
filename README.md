@@ -7,21 +7,21 @@
 
 An MCP server for Basecamp 3. It lets MCP-capable clients such as Codex, Cursor, and Claude Desktop read and manage Basecamp projects through OAuth-authenticated Basecamp API calls.
 
-The main server is [`basecamp_fastmcp.py`](basecamp_fastmcp.py). It uses the official `mcp.server.fastmcp` Python SDK and exposes 77 tools covering projects, todos, message boards, campfires, card tables, inbox forwards, documents, uploads, comments, events, webhooks, and search.
+The main server is [`basecamp_fastmcp.py`](basecamp_fastmcp.py). It uses the official `mcp.server.fastmcp` Python SDK and exposes 79 tools covering projects, todos, message boards, campfires, card tables, inbox forwards, documents, uploads, comments, events, webhooks, and search.
 
 ## What It Can Do
 
 - Browse Basecamp projects and project details.
 - Search across projects, todos, messages, campfire lines, comments, uploads, and schedules.
 - Read and manage todolists, todos, todo groups, and completion state.
-- Read and post message board messages, including categories.
+- Read and create message board messages, including drafts and categories.
 - Read campfire lines.
 - Read and create comments.
 - Work with card tables, columns, cards, and card steps.
 - Read inbox forwards and replies.
 - Read daily check-ins and answers.
 - Upload attachments and inspect uploads.
-- Read and manage documents.
+- Read and manage documents, including drafts.
 - List events and manage webhooks.
 - Generate local MCP configuration for Codex, Cursor, and Claude Desktop.
 
@@ -134,7 +134,7 @@ python -m pytest tests/ -v
 
 ## Available Tools
 
-The FastMCP server exposes 77 tools.
+The FastMCP server exposes 79 tools.
 
 ### Projects And Search
 
@@ -170,6 +170,12 @@ The FastMCP server exposes 77 tools.
 - `get_message`
 - `get_message_categories`
 - `create_message`
+- `create_draft_message`
+
+Pass `publish: false` to `create_message` to create a draft message instead
+of posting it immediately. Agents can also call `create_draft_message` directly
+when the intended operation is specifically to create a draft.
+
 - `get_campfire_lines`
 - `get_daily_check_ins`
 - `get_question_answers`
@@ -249,6 +255,12 @@ The FastMCP server exposes 77 tools.
 - `get_documents`
 - `get_document`
 - `create_document`
+- `create_draft_document`
+
+Pass `publish: false` to `create_document` to create a draft document instead
+of publishing it immediately. Agents can also call `create_draft_document`
+directly when the intended operation is specifically to create a draft.
+
 - `update_document`
 - `trash_document`
 - `get_events`
