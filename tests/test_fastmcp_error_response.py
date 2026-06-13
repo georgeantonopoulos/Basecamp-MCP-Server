@@ -21,6 +21,19 @@ def test_error_response_includes_status_error():
 def test_auth_error_response_includes_status_error(mock_is_expired):
     response = basecamp_fastmcp._get_auth_error_response()
 
-    assert response["status"] == "error"
-    assert response["error"] == "Authentication required"
-    assert "message" in response
+    assert response == {
+        "status": "error",
+        "error": "Authentication required",
+        "message": "Please authenticate with Basecamp first. Visit http://localhost:8000 to log in.",
+    }
+
+
+@patch("basecamp_fastmcp.token_storage.is_token_expired", return_value=True)
+def test_expired_auth_error_response_includes_status_error(mock_is_expired):
+    response = basecamp_fastmcp._get_auth_error_response()
+
+    assert response == {
+        "status": "error",
+        "error": "OAuth token expired",
+        "message": "Your Basecamp OAuth token has expired. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again.",
+    }
