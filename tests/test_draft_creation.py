@@ -126,6 +126,28 @@ def test_cli_create_message_draft_passes_status_none(mock_get_token, mock_auth):
 
 @patch("mcp_server_cli.auth_manager.ensure_authenticated", return_value=True)
 @patch("mcp_server_cli.token_storage.get_token", return_value={"access_token": "token", "account_id": "12345"})
+def test_cli_create_message_string_false_publish_drafts(mock_get_token, mock_auth):
+    server = MCPServer()
+
+    with patch.object(BasecampClient, "create_message", return_value={"id": "msg-1"}) as mock_create:
+        result = server._execute_tool(
+            "create_message",
+            {
+                "project_id": "project-1",
+                "subject": "Kickoff",
+                "content": "<div>Hello</div>",
+                "message_board_id": "board-1",
+                "publish": "false",
+            },
+        )
+
+    assert result["status"] == "success"
+    assert result["result"] == "Message 'Kickoff' drafted successfully"
+    assert mock_create.call_args.kwargs["status"] is None
+
+
+@patch("mcp_server_cli.auth_manager.ensure_authenticated", return_value=True)
+@patch("mcp_server_cli.token_storage.get_token", return_value={"access_token": "token", "account_id": "12345"})
 def test_cli_create_draft_message_passes_status_none(mock_get_token, mock_auth):
     server = MCPServer()
 
@@ -178,6 +200,28 @@ def test_cli_create_document_draft_passes_status_none(mock_get_token, mock_auth)
         "<div>Draft</div>",
         status=None,
     )
+
+
+@patch("mcp_server_cli.auth_manager.ensure_authenticated", return_value=True)
+@patch("mcp_server_cli.token_storage.get_token", return_value={"access_token": "token", "account_id": "12345"})
+def test_cli_create_document_string_zero_publish_drafts(mock_get_token, mock_auth):
+    server = MCPServer()
+
+    with patch.object(BasecampClient, "create_document", return_value={"id": "doc-1"}) as mock_create:
+        result = server._execute_tool(
+            "create_document",
+            {
+                "project_id": "project-1",
+                "vault_id": "vault-1",
+                "title": "Plan",
+                "content": "<div>Draft</div>",
+                "publish": "0",
+            },
+        )
+
+    assert result["status"] == "success"
+    assert result["result"] == "Document 'Plan' drafted successfully"
+    assert mock_create.call_args.kwargs["status"] is None
 
 
 @patch("mcp_server_cli.auth_manager.ensure_authenticated", return_value=True)

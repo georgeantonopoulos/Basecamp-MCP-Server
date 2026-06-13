@@ -36,6 +36,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger('mcp_cli_server')
 
+
+def _coerce_bool(value: Any, default: bool = False) -> bool:
+    """Normalize MCP boolean-ish values from clients that send strings."""
+    if value is None:
+        return default
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return bool(value)
+
+
 class MCPServer:
     """MCP server implementing the Model Context Protocol for Cursor."""
 
@@ -958,11 +968,7 @@ class MCPServer:
                 description = arguments.get("description")
                 assignee_ids = arguments.get("assignee_ids")
                 completion_subscriber_ids = arguments.get("completion_subscriber_ids")
-                notify_arg = arguments.get("notify", False)
-                if isinstance(notify_arg, str):
-                    notify = notify_arg.strip().lower() in ("1", "true", "yes", "on")
-                else:
-                    notify = bool(notify_arg)
+                notify = _coerce_bool(arguments.get("notify", False))
                 due_on = arguments.get("due_on")
                 starts_on = arguments.get("starts_on")
                 
@@ -1100,7 +1106,7 @@ class MCPServer:
                 content = arguments.get("content")
                 message_board_id = arguments.get("message_board_id")
                 category_id = arguments.get("category_id")
-                publish = arguments.get("publish", True)
+                publish = _coerce_bool(arguments.get("publish", True), default=True)
                 message = client.create_message(
                     project_id,
                     subject,
@@ -1516,7 +1522,7 @@ class MCPServer:
                 vault_id = arguments.get("vault_id")
                 title = arguments.get("title")
                 content = arguments.get("content")
-                publish = arguments.get("publish", True)
+                publish = _coerce_bool(arguments.get("publish", True), default=True)
                 doc = client.create_document(
                     project_id,
                     vault_id,
