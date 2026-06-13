@@ -97,18 +97,26 @@ def _get_basecamp_client() -> Optional[BasecampClient]:
         logger.error(f"Error creating Basecamp client: {e}")
         return None
 
+def _error_response(error: str, message: str) -> Dict[str, Any]:
+    """Return a consistent MCP tool error response."""
+    return {
+        "status": "error",
+        "error": error,
+        "message": message,
+    }
+
+
 def _get_auth_error_response() -> Dict[str, Any]:
     """Return consistent auth error response."""
     if token_storage.is_token_expired():
-        return {
-            "error": "OAuth token expired",
-            "message": "Your Basecamp OAuth token has expired. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
-        }
-    else:
-        return {
-            "error": "Authentication required", 
-            "message": "Please authenticate with Basecamp first. Visit http://localhost:8000 to log in."
-        }
+        return _error_response(
+            "OAuth token expired",
+            "Your Basecamp OAuth token has expired. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again.",
+        )
+    return _error_response(
+        "Authentication required",
+        "Please authenticate with Basecamp first. Visit http://localhost:8000 to log in.",
+    )
 
 async def _run_sync(func, *args, **kwargs):
     """Wrapper to run synchronous functions in thread pool."""
@@ -119,14 +127,11 @@ def _handle_download_error(e: Exception, kind: str) -> Dict[str, Any]:
     """Map a BasecampClient download exception to an MCP error response."""
     logger.error(f"Error downloading {kind}: {e}")
     if "401" in str(e) and "expired" in str(e).lower():
-        return {
-            "error": "OAuth token expired",
-            "message": (
-                "Your Basecamp OAuth token expired during the API call. "
-                "Re-authenticate via this server's OAuth endpoint."
-            ),
-        }
-    return {"error": "Execution error", "message": str(e)}
+        return _error_response(
+            "OAuth token expired",
+            "Your Basecamp OAuth token expired during the API call. Re-authenticate via this server's OAuth endpoint.",
+        )
+    return _error_response("Execution error", str(e))
 
 
 def _serialize_blob_for_mcp(
@@ -914,14 +919,11 @@ async def create_message(project_id: str, subject: str, content: str,
     except Exception as e:
         logger.error(f"Error creating message: {e}")
         if "401" in str(e) and "expired" in str(e).lower():
-            return {
-                "error": "OAuth token expired",
-                "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
-            }
-        return {
-            "error": "Execution error",
-            "message": str(e)
-        }
+            return _error_response(
+                "OAuth token expired",
+                "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again.",
+            )
+        return _error_response("Execution error", str(e))
 
 
 @mcp.tool()
@@ -2267,14 +2269,11 @@ async def create_document(project_id: str, vault_id: str, title: str, content: s
     except Exception as e:
         logger.error(f"Error creating document: {e}")
         if "401" in str(e) and "expired" in str(e).lower():
-            return {
-                "error": "OAuth token expired",
-                "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
-            }
-        return {
-            "error": "Execution error",
-            "message": str(e)
-        }
+            return _error_response(
+                "OAuth token expired",
+                "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again.",
+            )
+        return _error_response("Execution error", str(e))
 
 
 @mcp.tool()
