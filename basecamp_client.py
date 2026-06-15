@@ -464,7 +464,10 @@ class BasecampClient:
         """
         endpoint = f'buckets/{project_id}/todos/{todo_id}/completion.json'
         response = self.post(endpoint)
-        if response.status_code == 201:
+        # Basecamp returns 204 No Content on success (sometimes 201 with a body).
+        if response.status_code in (200, 201, 204):
+            if response.status_code == 204 or not response.text.strip():
+                return {"status": "completed", "todo_id": todo_id}
             return response.json()
         else:
             raise Exception(f"Failed to complete todo: {response.status_code} - {response.text}")
@@ -1211,7 +1214,9 @@ class BasecampClient:
     def complete_card(self, project_id, card_id):
         """Mark a card as complete."""
         response = self.post(f'buckets/{project_id}/todos/{card_id}/completion.json')
-        if response.status_code == 201:
+        if response.status_code in (200, 201, 204):
+            if response.status_code == 204 or not response.text.strip():
+                return {"status": "completed", "card_id": card_id}
             return response.json()
         else:
             raise Exception(f"Failed to complete card: {response.status_code} - {response.text}")
@@ -1277,7 +1282,9 @@ class BasecampClient:
     def complete_card_step(self, project_id, step_id):
         """Mark a card step as complete."""
         response = self.post(f'buckets/{project_id}/todos/{step_id}/completion.json')
-        if response.status_code == 201:
+        if response.status_code in (200, 201, 204):
+            if response.status_code == 204 or not response.text.strip():
+                return {"status": "completed", "step_id": step_id}
             return response.json()
         else:
             raise Exception(f"Failed to complete card step: {response.status_code} - {response.text}")
