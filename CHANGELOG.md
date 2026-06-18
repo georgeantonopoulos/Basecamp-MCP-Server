@@ -14,6 +14,13 @@ All notable changes to this project are documented here. The format is based on 
 - `download_upload` MCP tool for retrieving the binary content of a vault `Upload` recording (PDF, image, document, …) directly through MCP. Returns the file as `ImageContent` for image MIME types and as an `EmbeddedResource` (`BlobResourceContents`) for everything else, so the MCP host can forward the blob to the model and the file is read natively (PDF tables, images, OCR) without an out-of-band fetch. Caps the payload via `max_bytes` (default 25 MB) so the MCP transport and model context are not stressed by huge files.
 - `download_attachment` MCP tool for retrieving inline comment/message attachments. Pass the `content_attachments[].download_url` returned by `get_comments` / `get_messages` and receive the file as MCP `ImageContent` (image MIME types) or `EmbeddedResource` (everything else). Required because inline attachments are `Attachment` objects, not `Upload` recordings — the `/uploads/{id}` endpoint returns 404 for their IDs. The implementation walks the 302 redirect to the pre-signed storage host manually and strips the OAuth `Authorization` header on the cross-host hop to avoid leaking the Bearer token. Honours a `max_bytes` guard (default 25 MB) via the caller-supplied `byte_size`, `Content-Length`, and a streaming cutoff.
 
+### Fixed
+
+- Todo and card completion helpers now treat Basecamp's successful `204 No Content`
+  responses as completed instead of raising an error.
+- Card-step completion now uses Basecamp's documented card-table step completions
+  endpoint with `completion: "on"` / `"off"`.
+
 ### Notes
 
 - `download_upload` and `download_attachment` rely on the MCP host (the client application) forwarding `ImageContent` / `EmbeddedResource` blocks to the model. As of June 2026, Claude Code (CLI) supports both fully, including `application/pdf`. Claude Desktop / claude.ai web rejects non-image `EmbeddedResource` blocks with `"Resources of type 'application/pdf' are not currently supported"` — the bytes arrive at the host but never reach the model. No server-side workaround possible.
