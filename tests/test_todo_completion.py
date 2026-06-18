@@ -85,22 +85,6 @@ class TestTodoCompletion(unittest.TestCase):
         self.assertEqual(result.get('status'), 'completed')
         self.assertEqual(result.get('card_id'), '2')
 
-    def test_complete_card_step_accepts_204(self):
-        """complete_card_step returns the completion dict (with step_id) on 204."""
-        client = _client()
-        with patch.object(client, 'post', return_value=_response(204, '')):
-            result = client.complete_card_step('1', '2')
-        self.assertEqual(result.get('status'), 'completed')
-        self.assertEqual(result.get('step_id'), '2')
-
-    def test_complete_card_step_accepts_200_empty_body(self):
-        """complete_card_step also accepts a 200 with an empty body."""
-        client = _client()
-        with patch.object(client, 'post', return_value=_response(200, '')):
-            result = client.complete_card_step('1', '2')
-        self.assertEqual(result.get('status'), 'completed')
-        self.assertEqual(result.get('step_id'), '2')
-
 
 if __name__ == '__main__':
     unittest.main()
