@@ -1281,19 +1281,23 @@ class BasecampClient:
 
     def complete_card_step(self, project_id, step_id):
         """Mark a card step as complete."""
-        response = self.post(f'buckets/{project_id}/todos/{step_id}/completion.json')
-        if response.status_code in (200, 201, 204):
-            if response.status_code == 204 or not response.text.strip():
-                return {"status": "completed", "step_id": step_id}
+        response = self.put(
+            f'buckets/{project_id}/card_tables/steps/{step_id}/completions.json',
+            {"completion": "on"},
+        )
+        if response.status_code == 200:
             return response.json()
         else:
             raise Exception(f"Failed to complete card step: {response.status_code} - {response.text}")
 
     def uncomplete_card_step(self, project_id, step_id):
         """Mark a card step as incomplete."""
-        response = self.delete(f'buckets/{project_id}/todos/{step_id}/completion.json')
-        if response.status_code == 204:
-            return True
+        response = self.put(
+            f'buckets/{project_id}/card_tables/steps/{step_id}/completions.json',
+            {"completion": "off"},
+        )
+        if response.status_code == 200:
+            return response.json()
         else:
             raise Exception(f"Failed to uncomplete card step: {response.status_code} - {response.text}")
 
