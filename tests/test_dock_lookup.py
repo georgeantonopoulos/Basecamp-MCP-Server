@@ -27,6 +27,7 @@ class TestDockLookup(unittest.TestCase):
         project = {
             'dock': [
                 {'name': 'todoset', 'id': 1},
+                {},
                 {'name': 'schedule', 'id': 2},
             ],
         }
@@ -51,9 +52,9 @@ class TestDockLookup(unittest.TestCase):
     def test_get_todoset_reports_missing_dock(self):
         client = _client()
         with patch.object(client, 'get_project', return_value={}):
-            with self.assertRaisesRegex(
-                    Exception, 'Failed to get todoset for project: 1'):
+            with self.assertRaisesRegex(Exception, 'Failed to get todoset for project: 1') as ctx:
                 client.get_todoset('1')
+        self.assertEqual(str(ctx.exception), 'Failed to get todoset for project: 1')
 
     def test_get_todoset_returns_named_dock_item(self):
         client = _client()
@@ -105,6 +106,18 @@ class TestDockLookup(unittest.TestCase):
             result = client.get_schedule_entries('1')
         self.assertEqual(result, [])
         get_all_pages.assert_not_called()
+
+    def test_get_schedule_entries_uses_named_dock_item(self):
+        client = _client()
+        project = {'dock': [{'name': 'schedule', 'id': 42}]}
+        with patch.object(client, 'get_project', return_value=project), \
+                patch.object(client, 'get_all_pages', return_value=[{'id': 1}]) as get_all_pages:
+            result = client.get_schedule_entries('1')
+        self.assertEqual(result, [{'id': 1}])
+        get_all_pages.assert_called_once_with(
+            'buckets/1/schedules/42/entries.json',
+            error_label='schedule entries',
+        )
 
 
 if __name__ == '__main__':

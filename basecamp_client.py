@@ -210,9 +210,18 @@ class BasecampClient:
     def _find_dock_item(self, project, name):
         """Return a named project dock item, or None when it is unavailable."""
         try:
-            return next(item for item in project["dock"] if item["name"] == name)
-        except (KeyError, TypeError, StopIteration):
+            dock = project["dock"]
+        except (KeyError, TypeError):
             return None
+
+        try:
+            for item in dock:
+                if isinstance(item, dict) and item.get("name") == name:
+                    return item
+        except TypeError:
+            return None
+
+        return None
 
     # To-do list methods
     def get_todoset(self, project_id):
@@ -220,9 +229,7 @@ class BasecampClient:
         project = self.get_project(project_id)
         dock_item = self._find_dock_item(project, "todoset")
         if dock_item is None:
-            raise Exception(
-                f"Failed to get todoset for project: {project_id}. "
-                f"Project response: {project}")
+            raise Exception(f"Failed to get todoset for project: {project_id}")
         return dock_item
     
     def get_todolists(self, project_id):
