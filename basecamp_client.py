@@ -207,14 +207,23 @@ class BasecampClient:
         else:
             raise Exception(f"Failed to get project: {response.status_code} - {response.text}")
 
+    def _find_dock_item(self, project, name):
+        """Return a named project dock item, or None when it is unavailable."""
+        try:
+            return next(item for item in project["dock"] if item["name"] == name)
+        except (KeyError, TypeError, StopIteration):
+            return None
+
     # To-do list methods
     def get_todoset(self, project_id):
         """Get the todoset for a project (Basecamp 3 has one todoset per project)."""
         project = self.get_project(project_id)
-        try:
-            return next(_ for _ in project["dock"] if _["name"] == "todoset")
-        except (IndexError, TypeError, StopIteration):
-            raise Exception(f"Failed to get todoset for project: {project.id}. Project response: {project}")
+        dock_item = self._find_dock_item(project, "todoset")
+        if dock_item is None:
+            raise Exception(
+                f"Failed to get todoset for project: {project_id}. "
+                f"Project response: {project}")
+        return dock_item
     
     def get_todolists(self, project_id):
         """Get all todolists for a project."""
@@ -600,16 +609,16 @@ class BasecampClient:
             dict: Message board details including id, title, messages_count, etc.
         """
         project = self.get_project(project_id)
-        try:
-            dock_item = next(_ for _ in project["dock"] if _["name"] == "message_board")
-            board_id = dock_item['id']
-            response = self.get(f'buckets/{project_id}/message_boards/{board_id}.json')
-            if response.status_code == 200:
-                return response.json()
-            else:
-                raise Exception(f"Failed to get message board: {response.status_code} - {response.text}")
-        except (IndexError, TypeError, StopIteration):
+        dock_item = self._find_dock_item(project, "message_board")
+        if dock_item is None:
             raise Exception(f"No message board found for project: {project_id}")
+
+        board_id = dock_item['id']
+        response = self.get(f'buckets/{project_id}/message_boards/{board_id}.json')
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to get message board: {response.status_code} - {response.text}")
 
     def get_messages(self, project_id, message_board_id=None):
         """Get all messages from a message board, handling pagination.
@@ -710,16 +719,16 @@ class BasecampClient:
             dict: Inbox details including forwards_count, forwards_url, etc.
         """
         project = self.get_project(project_id)
-        try:
-            dock_item = next(_ for _ in project["dock"] if _["name"] == "inbox")
-            inbox_id = dock_item['id']
-            response = self.get(f'buckets/{project_id}/inboxes/{inbox_id}.json')
-            if response.status_code == 200:
-                return response.json()
-            else:
-                raise Exception(f"Failed to get inbox: {response.status_code} - {response.text}")
-        except (IndexError, TypeError, StopIteration):
+        dock_item = self._find_dock_item(project, "inbox")
+        if dock_item is None:
             raise Exception(f"No inbox found for project: {project_id}")
+
+        inbox_id = dock_item['id']
+        response = self.get(f'buckets/{project_id}/inboxes/{inbox_id}.json')
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to get inbox: {response.status_code} - {response.text}")
 
     def get_forwards(self, project_id, inbox_id=None):
         """Get all forwards from an inbox, handling pagination.
@@ -830,9 +839,8 @@ class BasecampClient:
         # The schedule ID is discovered from the project's dock array,
         # following the same pattern as get_todoset().
         project = self.get_project(project_id)
-        try:
-            dock_item = next(_ for _ in project["dock"] if _["name"] == "schedule")
-        except (KeyError, TypeError, StopIteration):
+        dock_item = self._find_dock_item(project, "schedule")
+        if dock_item is None:
             return []
 
         return self.get_all_pages(

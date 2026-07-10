@@ -16,6 +16,8 @@ All notable changes to this project are documented here. The format is based on 
 
 ### Fixed
 
+- Project dock lookups for to-do sets, message boards, inboxes, and schedules
+  now share consistent handling for missing or malformed dock data.
 - All list helpers now follow Basecamp's `Link` header pagination via a shared
   `get_all_pages()` helper. Previously only `get_todos`, `get_todolist_groups`,
   `get_messages`, `get_forwards`, and `get_inbox_replies` paginated; the other
