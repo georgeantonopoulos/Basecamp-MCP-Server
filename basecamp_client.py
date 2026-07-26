@@ -126,7 +126,8 @@ class BasecampClient:
     def get(self, endpoint, params=None):
         """Make a GET request to the Basecamp API."""
         url = f"{self.base_url}/{endpoint}"
-        return requests.get(url, auth=self.auth, headers=self.headers, params=params)
+        return requests.get(url, auth=self.auth, headers=self.headers, params=params,
+                             timeout=(10, 300))
 
     def get_all_pages(self, endpoint, params=None, error_label="items"):
         """Fetch all pages of a list endpoint, following pagination.
@@ -177,22 +178,26 @@ class BasecampClient:
     def post(self, endpoint, data=None):
         """Make a POST request to the Basecamp API."""
         url = f"{self.base_url}/{endpoint}"
-        return requests.post(url, auth=self.auth, headers=self.headers, json=data)
+        return requests.post(url, auth=self.auth, headers=self.headers, json=data,
+                             timeout=(10, 300))
 
     def put(self, endpoint, data=None):
         """Make a PUT request to the Basecamp API."""
         url = f"{self.base_url}/{endpoint}"
-        return requests.put(url, auth=self.auth, headers=self.headers, json=data)
+        return requests.put(url, auth=self.auth, headers=self.headers, json=data,
+                             timeout=(10, 300))
 
     def delete(self, endpoint):
         """Make a DELETE request to the Basecamp API."""
         url = f"{self.base_url}/{endpoint}"
-        return requests.delete(url, auth=self.auth, headers=self.headers)
+        return requests.delete(url, auth=self.auth, headers=self.headers,
+                                timeout=(10, 300))
 
     def patch(self, endpoint, data=None):
         """Make a PATCH request to the Basecamp API."""
         url = f"{self.base_url}/{endpoint}"
-        return requests.patch(url, auth=self.auth, headers=self.headers, json=data)
+        return requests.patch(url, auth=self.auth, headers=self.headers, json=data,
+                              timeout=(10, 300))
 
     # Project methods
     def get_projects(self):
