@@ -428,6 +428,16 @@ class BasecampClient:
         Without this merge, changing one field (e.g. content) silently wipes the
         to-do's assignees, due date, start date and description.
 
+        Known limitation — lost updates: because this reads then writes, an edit
+        made by someone else between the GET and the PUT is overwritten by the
+        values read here. Basecamp's to-do endpoint offers no way to close that
+        window: its ETag / Last-Modified support is for cache validation, not
+        optimistic concurrency, so there is no conditional PUT to make the write
+        depend on the version that was read. The exposure is a few hundred
+        milliseconds, and it replaces an unconditional loss of the omitted
+        fields on every call, but callers performing unattended bulk edits
+        should treat a lost update as possible.
+
         Args:
             project_id (str): Project ID
             todo_id (str): Todo ID
