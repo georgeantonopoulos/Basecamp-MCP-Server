@@ -416,42 +416,81 @@ class BasecampClient:
                     completion_subscriber_ids=None, notify=None, due_on=None, starts_on=None):
         """
         Update an existing todo item.
-        
+
+        Fetches the to-do first and merges the caller's fields over its current
+        values, because Basecamp's PUT clears any parameter that is absent from
+        the request:
+
+            "Omitting a parameter will clear its value, for example,
+             empty/missing assignee_ids clears existing assignees.
+             Pass all existing parameters in addition to those being updated."
+            -- https://github.com/basecamp/bc3-api/blob/master/sections/todos.md
+
+        Without this merge, changing one field (e.g. content) silently wipes the
+        to-do's assignees, due date, start date and description.
+
+        Known limitation — lost updates: because this reads then writes, an edit
+        made by someone else between the GET and the PUT is overwritten by the
+        values read here. Basecamp's to-do endpoint offers no way to close that
+        window: its ETag / Last-Modified support is for cache validation, not
+        optimistic concurrency, so there is no conditional PUT to make the write
+        depend on the version that was read. The exposure is a few hundred
+        milliseconds, and it replaces an unconditional loss of the omitted
+        fields on every call, but callers performing unattended bulk edits
+        should treat a lost update as possible.
+
         Args:
             project_id (str): Project ID
             todo_id (str): Todo ID
             content (str, optional): The todo item's text
             description (str, optional): HTML description
-            assignee_ids (list, optional): List of person IDs to assign
-            completion_subscriber_ids (list, optional): List of person IDs to notify on completion
-            notify (bool, optional): Whether to notify assignees
-            due_on (str, optional): Due date in YYYY-MM-DD format
-            starts_on (str, optional): Start date in YYYY-MM-DD format
-            
+            assignee_ids (list, optional): List of person IDs to assign.
+                Pass [] explicitly to clear all assignees.
+            completion_subscriber_ids (list, optional): List of person IDs to
+                notify on completion. Pass [] explicitly to clear.
+            notify (bool, optional): Whether to notify assignees. Transient —
+                it triggers notifications and is not stored on the to-do, so it
+                is only sent when explicitly supplied.
+            due_on (str, optional): Due date in YYYY-MM-DD format.
+                Pass "" explicitly to clear an existing due date.
+            starts_on (str, optional): Start date in YYYY-MM-DD format.
+                Pass "" explicitly to clear an existing start date.
+
         Returns:
             dict: The updated todo
         """
+        if all(value is None for value in (content, description, assignee_ids,
+                                           completion_subscriber_ids, notify,
+                                           due_on, starts_on)):
+            raise ValueError("No fields provided to update")
+
         endpoint = f'buckets/{project_id}/todos/{todo_id}.json'
-        data = {}
-        
-        if content is not None:
-            data['content'] = content
-        if description is not None:
-            data['description'] = description
-        if assignee_ids is not None:
-            data['assignee_ids'] = assignee_ids
-        if completion_subscriber_ids is not None:
-            data['completion_subscriber_ids'] = completion_subscriber_ids
+
+        # Re-send the to-do's existing values for anything the caller omitted.
+        current = self.get_todo(project_id, todo_id)
+        current_assignee_ids = [a['id'] for a in current.get('assignees') or []]
+        current_subscriber_ids = [
+            s['id'] for s in current.get('completion_subscribers') or []
+        ]
+
+        data = {
+            'content': content if content is not None else current.get('content', ''),
+            'description': (description if description is not None
+                            else current.get('description') or ''),
+            'assignee_ids': (assignee_ids if assignee_ids is not None
+                             else current_assignee_ids),
+            'completion_subscriber_ids': (completion_subscriber_ids
+                                          if completion_subscriber_ids is not None
+                                          else current_subscriber_ids),
+            'due_on': due_on if due_on is not None else current.get('due_on'),
+            'starts_on': starts_on if starts_on is not None else current.get('starts_on'),
+        }
+
+        # `notify` is transient rather than stored state, so only pass it through
+        # when the caller asked for it.
         if notify is not None:
             data['notify'] = notify
-        if due_on is not None:
-            data['due_on'] = due_on
-        if starts_on is not None:
-            data['starts_on'] = starts_on
 
-        if not data:
-            raise ValueError("No fields provided to update")
-            
         response = self.put(endpoint, data)
         if response.status_code == 200:
             return response.json()
