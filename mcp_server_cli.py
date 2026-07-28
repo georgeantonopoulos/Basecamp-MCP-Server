@@ -762,6 +762,40 @@ class MCPServer:
                     },
                     "required": ["project_id", "document_id"]
                 }
+            },
+            {
+                "name": "get_assignable_people",
+                "description": "Get all people who can have to-dos assigned to them (account-wide). Use a person's id with get_person_assignments to fetch their to-dos across all projects.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            },
+            {
+                "name": "get_person_assignments",
+                "description": "Get all active, pending to-dos assigned to a specific person across ALL projects in one call (API counterpart of the web report at /reports/todos/assigned/{person_id}).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "person_id": {"type": "string", "description": "The person's ID (see get_assignable_people)"},
+                        "group_by": {
+                            "type": "string",
+                            "enum": ["bucket", "date"],
+                            "description": "Optional grouping — 'bucket' (by project, API default) or 'date' (by due date)"
+                        }
+                    },
+                    "required": ["person_id"]
+                }
+            },
+            {
+                "name": "get_overdue_todos",
+                "description": "Get all overdue to-dos across all projects, grouped by lateness (under_a_week_late, over_a_week_late, over_a_month_late, over_three_months_late).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
             }
         ]
 
@@ -1576,6 +1610,33 @@ class MCPServer:
                 return {
                     "status": "success",
                     "message": "Document trashed"
+                }
+
+            elif tool_name == "get_assignable_people":
+                people = client.get_assignable_people()
+                return {
+                    "status": "success",
+                    "people": people,
+                    "count": len(people)
+                }
+
+            elif tool_name == "get_person_assignments":
+                person_id = arguments.get("person_id")
+                group_by = arguments.get("group_by")
+                report = client.get_person_assignments(person_id, group_by)
+                return {
+                    "status": "success",
+                    "person": report.get("person"),
+                    "grouped_by": report.get("grouped_by"),
+                    "todos": report.get("todos", []),
+                    "count": len(report.get("todos") or [])
+                }
+
+            elif tool_name == "get_overdue_todos":
+                report = client.get_overdue_todos()
+                return {
+                    "status": "success",
+                    "overdue": report
                 }
 
             else:

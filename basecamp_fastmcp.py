@@ -10,7 +10,7 @@ import base64
 import logging
 import os
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 import anyio
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -258,6 +258,105 @@ async def search_basecamp(query: str, project_id: Optional[str] = None) -> Dict[
         }
     except Exception as e:
         logger.error(f"Error searching Basecamp: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {
+                "error": "OAuth token expired",
+                "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
+            }
+        return {
+            "error": "Execution error",
+            "message": str(e)
+        }
+
+@mcp.tool()
+async def get_assignable_people() -> Dict[str, Any]:
+    """Get all people who can have to-dos assigned to them.
+
+    Returns the account-wide list of assignable people (id, name,
+    email_address, title, ...). Use a person's id with
+    get_person_assignments to fetch their to-dos across all projects.
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        people = await _run_sync(client.get_assignable_people)
+        return {
+            "status": "success",
+            "people": people,
+            "count": len(people)
+        }
+    except Exception as e:
+        logger.error(f"Error getting assignable people: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {
+                "error": "OAuth token expired",
+                "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
+            }
+        return {
+            "error": "Execution error",
+            "message": str(e)
+        }
+
+@mcp.tool()
+async def get_person_assignments(person_id: str, group_by: Optional[Literal["bucket", "date"]] = None) -> Dict[str, Any]:
+    """Get all active, pending to-dos assigned to a specific person.
+
+    Cross-project report: returns the person's assignments across ALL
+    projects in one call (API counterpart of the web report at
+    /reports/todos/assigned/{person_id}). Prefer this over iterating
+    projects when you need everything assigned to one person.
+
+    Args:
+        person_id: The person's ID (see get_assignable_people)
+        group_by: Optional grouping — 'bucket' (by project, API default)
+            or 'date' (by due date)
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        report = await _run_sync(client.get_person_assignments, person_id, group_by)
+        return {
+            "status": "success",
+            "person": report.get("person"),
+            "grouped_by": report.get("grouped_by"),
+            "todos": report.get("todos", []),
+            "count": len(report.get("todos") or [])
+        }
+    except Exception as e:
+        logger.error(f"Error getting assignments for person {person_id}: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {
+                "error": "OAuth token expired",
+                "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
+            }
+        return {
+            "error": "Execution error",
+            "message": str(e)
+        }
+
+@mcp.tool()
+async def get_overdue_todos() -> Dict[str, Any]:
+    """Get all overdue to-dos across all projects, grouped by lateness.
+
+    Groups: under_a_week_late, over_a_week_late, over_a_month_late,
+    over_three_months_late.
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        report = await _run_sync(client.get_overdue_todos)
+        return {
+            "status": "success",
+            "overdue": report
+        }
+    except Exception as e:
+        logger.error(f"Error getting overdue todos: {e}")
         if "401" in str(e) and "expired" in str(e).lower():
             return {
                 "error": "OAuth token expired",

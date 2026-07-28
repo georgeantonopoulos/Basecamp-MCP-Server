@@ -126,7 +126,8 @@ class BasecampClient:
     def get(self, endpoint, params=None):
         """Make a GET request to the Basecamp API."""
         url = f"{self.base_url}/{endpoint}"
-        return requests.get(url, auth=self.auth, headers=self.headers, params=params)
+        return requests.get(url, auth=self.auth, headers=self.headers, params=params,
+                            timeout=(10, 300))
 
     def get_all_pages(self, endpoint, params=None, error_label="items"):
         """Fetch all pages of a list endpoint, following pagination.
@@ -616,6 +617,83 @@ class BasecampClient:
     def get_people(self):
         """Get all people in the account, handling pagination."""
         return self.get_all_pages('people.json', error_label="people")
+
+    # Report methods
+    def get_assignable_people(self):
+        """Get all people who can have to-dos assigned to them.
+
+        Wraps `GET /reports/todos/assigned.json`. Useful for building a list
+        of people to then retrieve their individual to-do assignments via
+        get_person_assignments().
+
+        Returns:
+            list: Person objects (id, name, email_address, title, ...)
+        """
+        return self.get_all_pages('reports/todos/assigned.json',
+                                  error_label="assignable people")
+
+    def get_person_assignments(self, person_id, group_by=None):
+        """Get all active, pending to-dos assigned to a specific person.
+
+        Wraps `GET /reports/todos/assigned/{person_id}.json` — the API
+        counterpart of the web report at
+        `/reports/todos/assigned/{person_id}`. Unlike per-project todo
+        listings, this returns the person's assignments across ALL projects
+        in one call.
+
+        Args:
+            person_id (str): The person's ID
+            group_by (str, optional): 'bucket' groups to-dos by project,
+                'date' groups by due date. API default: 'bucket'.
+
+        Returns:
+            dict: {person, grouped_by, todos} where todos spans all projects
+        """
+        endpoint = f'reports/todos/assigned/{person_id}.json'
+        params = {'group_by': group_by} if group_by else None
+
+        # The response is a single object, but the embedded todos list may be
+        # paginated via the Link header like other list endpoints. Follow
+        # `rel="next"` and merge the todos arrays defensively.
+        result = None
+        page = 1
+        while True:
+            if page > self.MAX_PAGES:
+                raise Exception(
+                    f"Failed to get person assignments: pagination exceeded "
+                    f"{self.MAX_PAGES} pages for endpoint {endpoint}")
+            page_params = dict(params or {}, page=page) if page > 1 else params
+            response = self.get(endpoint, params=page_params)
+            if response.status_code != 200:
+                raise Exception(f"Failed to get person assignments: {response.status_code} - {response.text}")
+
+            data = response.json() or {}
+            if result is None:
+                result = data
+            else:
+                result.setdefault('todos', []).extend(data.get('todos') or [])
+
+            link_header = response.headers.get("Link", "")
+            if not data.get('todos') or 'rel="next"' not in link_header:
+                break
+
+            page += 1
+
+        return result
+
+    def get_overdue_todos(self):
+        """Get all overdue to-dos across all projects, grouped by lateness.
+
+        Wraps `GET /reports/todos/overdue.json`.
+
+        Returns:
+            dict: Groups `under_a_week_late`, `over_a_week_late`,
+                `over_a_month_late`, `over_three_months_late`
+        """
+        response = self.get('reports/todos/overdue.json')
+        if response.status_code != 200:
+            raise Exception(f"Failed to get overdue todos: {response.status_code} - {response.text}")
+        return response.json()
 
     # Campfire (chat) methods
     def get_campfires(self, project_id):

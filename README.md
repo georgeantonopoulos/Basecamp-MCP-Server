@@ -134,7 +134,7 @@ python -m pytest tests/ -v
 
 ## Available Tools
 
-The FastMCP server exposes 79 tools.
+The FastMCP server exposes 82 tools.
 
 ### Projects And Search
 
@@ -142,6 +142,17 @@ The FastMCP server exposes 79 tools.
 - `get_project`
 - `search_basecamp`
 - `global_search`
+
+### Reports
+
+- `get_assignable_people` — all people who can have to-dos assigned to them
+  (`GET /reports/todos/assigned.json`)
+- `get_person_assignments` — all active, pending to-dos assigned to one
+  person across **all** projects (`GET /reports/todos/assigned/{id}.json`,
+  optional `group_by: bucket|date`). Prefer this over iterating projects
+  when you need everything assigned to a single person.
+- `get_overdue_todos` — all overdue to-dos across all projects, grouped by
+  lateness (`GET /reports/todos/overdue.json`)
 
 ### Todos
 
