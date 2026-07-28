@@ -3,6 +3,9 @@ python-dotenv==1.0.0
 flask==2.3.3
 flask-cors==4.0.0
 pytest==7.4.0
-mcp[cli]>=1.2.0
+# Capped below 2.0: mcp 2.0.0 removed `mcp.server.fastmcp`, which
+# basecamp_fastmcp.py imports. Without the upper bound a fresh install resolves
+# 2.x and the server fails to start with ModuleNotFoundError.
+mcp[cli]>=1.2.0,<2
 httpx>=0.25.0
 anyio>=4.0.0
