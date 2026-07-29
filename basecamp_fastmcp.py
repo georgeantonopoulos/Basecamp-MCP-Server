@@ -123,6 +123,97 @@ async def _run_sync(func, *args, **kwargs):
     return await anyio.to_thread.run_sync(func, *args, **kwargs)
 
 
+# --------------------------------------------------------------------------
+# Payload shaping
+#
+# Basecamp's API is generous: a 24-project account returns ~149k characters for
+# `projects.json`, of which the fields needed to identify a project are under
+# 1%. That overflows the MCP tool-result limit, so the host spills the result to
+# a file and the caller has to parse it out of band — which makes the most basic
+# discovery call unusable inline.
+#
+# Shaping happens here, at the MCP boundary, rather than in BasecampClient: the
+# client stays a faithful API wrapper (so mcp_server_cli.py and any direct
+# consumer are unaffected), and only what is handed to the model is trimmed.
+# --------------------------------------------------------------------------
+
+# Dropped at every detail level. None of these are actionable from an MCP
+# caller: avatar/CDN links cannot be viewed, the *_url endpoints cannot be
+# invoked through this server, and the sgid blobs are opaque handles only needed
+# when composing an @mention (fetch the person record directly for that).
+_NOISE_KEYS = frozenset({
+    "avatar_url",
+    "attachable_sgid",
+    "sgid",
+    "bookmark_url",
+    "star_url",
+    "subscription_url",
+    "comments_url",
+    "boosts_url",
+    "completion_url",
+    "status_url",
+})
+
+# Kept when detail="summary" — enough to identify and choose a project.
+_PROJECT_SUMMARY_KEYS = ("id", "name", "status", "purpose", "description", "app_url")
+
+# Kept when detail="summary" on to-do shaped payloads. `description` is
+# deliberately excluded (21%+ of those payloads) in favour of Basecamp's own
+# `has_description` flag — fetch the single record when the body is wanted.
+_TODO_SUMMARY_KEYS = (
+    "id", "title", "content", "type", "status", "completed",
+    "due_on", "starts_on", "has_description", "comments_count",
+    "app_url", "is_priority",
+)
+
+
+def _prune(obj):
+    """Recursively strip _NOISE_KEYS from any API payload."""
+    if isinstance(obj, dict):
+        return {k: _prune(v) for k, v in obj.items() if k not in _NOISE_KEYS}
+    if isinstance(obj, list):
+        return [_prune(v) for v in obj]
+    return obj
+
+
+def _person_brief(person):
+    """Reduce a person record to what identifies them."""
+    if not isinstance(person, dict):
+        return person
+    return {k: person[k] for k in ("id", "name") if k in person}
+
+
+def _project_summary(project):
+    """Identity-only view of a project (no `people`, no `dock`)."""
+    if not isinstance(project, dict):
+        return project
+    return {k: project[k] for k in _PROJECT_SUMMARY_KEYS if k in project}
+
+
+def _todo_summary(todo):
+    """Identity/scheduling view of a to-do, with people reduced to id+name."""
+    if not isinstance(todo, dict):
+        return todo
+    out = {k: todo[k] for k in _TODO_SUMMARY_KEYS if k in todo}
+    for key in ("bucket", "parent"):
+        src = todo.get(key)
+        if isinstance(src, dict):
+            out[key] = {k: src[k] for k in ("id", "name", "title", "type") if k in src}
+    if isinstance(todo.get("assignees"), list):
+        out["assignees"] = [_person_brief(p) for p in todo["assignees"]]
+    return out
+
+
+def _shape_todos(todos, detail):
+    """Apply the chosen detail level to a list of to-do records."""
+    if not isinstance(todos, list):
+        return _prune(todos)
+    if detail == "full":
+        return [_prune(t) for t in todos]
+    return [_todo_summary(_prune(t)) for t in todos]
+
+
+
 def _handle_download_error(e: Exception, kind: str) -> Dict[str, Any]:
     """Map a BasecampClient download exception to an MCP error response."""
     logger.error(f"Error downloading {kind}: {e}")
@@ -171,19 +262,82 @@ def _serialize_blob_for_mcp(
 # Core MCP Tools - Starting with essential ones from original server
 
 @mcp.tool()
-async def get_projects() -> Dict[str, Any]:
-    """Get all Basecamp projects."""
+async def get_projects(
+    detail: Literal["summary", "full"] = "summary",
+    query: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: Optional[int] = None,
+) -> Dict[str, Any]:
+    """List Basecamp projects. Returns a compact summary by default.
+
+    Use this to discover projects and find the ID you need. Pass `query` to
+    search by name rather than listing everything.
+
+    detail="summary" (the default) returns only id, name, status, purpose,
+    description and app_url — a few hundred characters per project.
+
+    detail="full" returns Basecamp's complete project records, including the
+    `people` sample and the `dock`. That is roughly 6,000 characters per
+    project and can exceed the tool-result limit on a large account, so only
+    ask for it when you specifically need those fields.
+
+    **Dock IDs (todoset, message_board, kanban_board, vault, schedule, …) are
+    not in either view. Call get_project(project_id) for those** — you need
+    them only for a project you have already chosen, and including them for
+    every project is what makes the full payload unmanageable.
+
+    Args:
+        detail: "summary" (default) or "full".
+        query: Case-insensitive substring match on the project name.
+        status: Filter by project status, e.g. "active" or "archived".
+        limit: Return at most this many projects (applied after filtering).
+    """
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
-    
+
     try:
         projects = await _run_sync(client.get_projects)
-        return {
+        total = len(projects)
+
+        if query:
+            needle = query.strip().lower()
+            projects = [p for p in projects
+                        if needle in (p.get("name") or "").lower()]
+        if status:
+            wanted = status.strip().lower()
+            projects = [p for p in projects
+                        if (p.get("status") or "").lower() == wanted]
+
+        matched = len(projects)
+        truncated = False
+        if limit is not None and limit >= 0 and matched > limit:
+            projects = projects[:limit]
+            truncated = True
+
+        if detail == "full":
+            projects = [_prune(p) for p in projects]
+        else:
+            projects = [_project_summary(_prune(p)) for p in projects]
+
+        result = {
             "status": "success",
             "projects": projects,
-            "count": len(projects)
+            "count": len(projects),
+            "detail": detail,
         }
+        if matched != total:
+            result["total_before_filter"] = total
+        if truncated:
+            result["truncated"] = True
+            result["matched"] = matched
+        if detail == "summary":
+            result["notice"] = (
+                "Summary view. Call get_project(project_id) for a project's dock "
+                "IDs (todoset, message_board, kanban_board, …), or pass "
+                "detail='full' for complete records."
+            )
+        return result
     except Exception as e:
         logger.error(f"Error getting projects: {e}")
         if "401" in str(e) and "expired" in str(e).lower():
@@ -198,17 +352,45 @@ async def get_projects() -> Dict[str, Any]:
 
 @mcp.tool()
 async def get_project(project_id: str) -> Dict[str, Any]:
-    """Get details for a specific project.
-    
+    """Get one project's details, including its dock IDs.
+
+    This is where the dock lives: the IDs of the project's enabled tools
+    (todoset, message_board, kanban_board, vault, schedule, chat, inbox,
+    questionnaire). Those IDs are what the per-tool calls need — e.g. the
+    todoset ID for get_todolists, the kanban_board ID for get_cards.
+
+    Use get_projects to find the project_id, then this call for the dock.
+
     Args:
         project_id: The project ID
     """
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
-    
+
     try:
         project = await _run_sync(client.get_project, project_id)
+        project = _prune(project)
+
+        # The dock is the point of this call, but each entry carries both `url`
+        # (API) and `app_url` (web) for the same resource. Keep app_url; the
+        # API URL is reconstructible from the id and never needed verbatim.
+        dock = project.get("dock")
+        if isinstance(dock, list):
+            project["dock"] = [
+                {k: v for k, v in item.items() if k != "url"}
+                if isinstance(item, dict) else item
+                for item in dock
+            ]
+
+        # The `people` sample is a partial list and rarely what the caller
+        # wants; reduce to id+name (get_people gives the real roster).
+        people = project.get("people")
+        if isinstance(people, dict):
+            for group in people.values():
+                if isinstance(group, dict) and isinstance(group.get("sample"), list):
+                    group["sample"] = [_person_brief(p) for p in group["sample"]]
+
         return {
             "status": "success",
             "project": project
@@ -269,12 +451,30 @@ async def search_basecamp(query: str, project_id: Optional[str] = None) -> Dict[
         }
 
 @mcp.tool()
-async def get_assignable_people() -> Dict[str, Any]:
+async def get_assignable_people(
+    query: Optional[str] = None,
+    detail: Literal["summary", "full"] = "summary",
+) -> Dict[str, Any]:
     """Get all people who can have to-dos assigned to them.
 
-    Returns the account-wide list of assignable people (id, name,
-    email_address, title, ...). Use a person's id with
-    get_person_assignments to fetch their to-dos across all projects.
+    Account-wide list. Use a person's id with get_person_assignments to fetch
+    their to-dos across all projects. Pass `query` to look someone up by name
+    or email instead of retrieving the whole roster.
+
+    **The authenticated user is not in this list** — Basecamp excludes you from
+    the assignable report, so you cannot find your own person ID here. Use
+    get_my_profile / the /my/profile endpoint for that, or take the `creator`
+    id from any record you authored.
+
+    Note that `email_address` is often returned partially masked by Basecamp
+    (e.g. "m•••@•••••.••"), so it is unreliable for matching.
+
+    detail="summary" (the default) returns id, name, email_address, title and
+    company name. detail="full" returns complete person records.
+
+    Args:
+        query: Case-insensitive substring match on name or email address.
+        detail: "summary" (default) or "full".
     """
     client = _get_basecamp_client()
     if not client:
@@ -282,11 +482,35 @@ async def get_assignable_people() -> Dict[str, Any]:
 
     try:
         people = await _run_sync(client.get_assignable_people)
-        return {
+        total = len(people)
+
+        if query:
+            needle = query.strip().lower()
+            people = [p for p in people
+                      if needle in (p.get("name") or "").lower()
+                      or needle in (p.get("email_address") or "").lower()]
+
+        if detail == "full":
+            shaped = [_prune(p) for p in people]
+        else:
+            shaped = []
+            for p in people:
+                row = {k: p[k] for k in ("id", "name", "email_address", "title")
+                       if k in p}
+                company = p.get("company")
+                if isinstance(company, dict) and company.get("name"):
+                    row["company"] = company["name"]
+                shaped.append(row)
+
+        result = {
             "status": "success",
-            "people": people,
-            "count": len(people)
+            "people": shaped,
+            "count": len(shaped),
+            "detail": detail,
         }
+        if len(shaped) != total:
+            result["total_before_filter"] = total
+        return result
     except Exception as e:
         logger.error(f"Error getting assignable people: {e}")
         if "401" in str(e) and "expired" in str(e).lower():
@@ -300,7 +524,11 @@ async def get_assignable_people() -> Dict[str, Any]:
         }
 
 @mcp.tool()
-async def get_person_assignments(person_id: str, group_by: Optional[Literal["bucket", "date"]] = None) -> Dict[str, Any]:
+async def get_person_assignments(
+    person_id: str,
+    group_by: Optional[Literal["bucket", "date"]] = None,
+    detail: Literal["summary", "full"] = "summary",
+) -> Dict[str, Any]:
     """Get all active, pending to-dos assigned to a specific person.
 
     Cross-project report: returns the person's assignments across ALL
@@ -308,10 +536,20 @@ async def get_person_assignments(person_id: str, group_by: Optional[Literal["buc
     /reports/todos/assigned/{person_id}). Prefer this over iterating
     projects when you need everything assigned to one person.
 
+    Each to-do includes `due_on` (may be null) and `bucket.name`, so overdue
+    and upcoming items can be identified by comparing against today's date.
+
+    detail="summary" (the default) returns identity and scheduling fields with
+    people reduced to id+name. It omits the `description` body — check
+    `has_description` and call get_todo(project_id, todo_id) when you need it.
+    detail="full" returns complete records; on an account with many
+    assignments that can exceed the tool-result limit.
+
     Args:
         person_id: The person's ID (see get_assignable_people)
         group_by: Optional grouping — 'bucket' (by project, API default)
             or 'date' (by due date)
+        detail: "summary" (default) or "full".
     """
     client = _get_basecamp_client()
     if not client:
@@ -319,12 +557,14 @@ async def get_person_assignments(person_id: str, group_by: Optional[Literal["buc
 
     try:
         report = await _run_sync(client.get_person_assignments, person_id, group_by)
+        todos = report.get("todos") or []
         return {
             "status": "success",
-            "person": report.get("person"),
+            "person": _person_brief(_prune(report.get("person") or {})),
             "grouped_by": report.get("grouped_by"),
-            "todos": report.get("todos", []),
-            "count": len(report.get("todos") or [])
+            "todos": _shape_todos(todos, detail),
+            "count": len(todos),
+            "detail": detail,
         }
     except Exception as e:
         logger.error(f"Error getting assignments for person {person_id}: {e}")
@@ -339,11 +579,29 @@ async def get_person_assignments(person_id: str, group_by: Optional[Literal["buc
         }
 
 @mcp.tool()
-async def get_overdue_todos() -> Dict[str, Any]:
-    """Get all overdue to-dos across all projects, grouped by lateness.
+async def get_overdue_todos(
+    detail: Literal["summary", "full"] = "summary",
+    assignee_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Get overdue to-dos for the WHOLE ACCOUNT, grouped by how late they are.
 
-    Groups: under_a_week_late, over_a_week_late, over_a_month_late,
-    over_three_months_late.
+    **This is account-wide — everyone's overdue to-dos, not just yours.** On a
+    team account that is usually dozens of items belonging to other people. To
+    find one person's overdue work, either pass `assignee_id`, or use
+    get_person_assignments and compare `due_on` against today.
+
+    The result is grouped, not a flat list: `under_a_week_late`,
+    `over_a_week_late`, `over_a_month_late`, `over_three_months_late`. Code
+    expecting a list, or a `todos` key, will read zero items.
+
+    detail="summary" (the default) trims each to-do to identity and scheduling
+    fields and omits the `description` body. detail="full" returns complete
+    records — on a busy account that runs to hundreds of thousands of
+    characters and will exceed the tool-result limit.
+
+    Args:
+        detail: "summary" (default) or "full".
+        assignee_id: Optionally return only to-dos assigned to this person ID.
     """
     client = _get_basecamp_client()
     if not client:
@@ -351,10 +609,31 @@ async def get_overdue_todos() -> Dict[str, Any]:
 
     try:
         report = await _run_sync(client.get_overdue_todos)
-        return {
+        overdue = {}
+        counts = {}
+        total = 0
+        for group, todos in (report or {}).items():
+            if not isinstance(todos, list):
+                overdue[group] = _prune(todos)
+                continue
+            if assignee_id:
+                wanted = str(assignee_id)
+                todos = [t for t in todos
+                         if any(str((a or {}).get("id")) == wanted
+                                for a in (t.get("assignees") or []))]
+            overdue[group] = _shape_todos(todos, detail)
+            counts[group] = len(todos)
+            total += len(todos)
+
+        result = {
             "status": "success",
-            "overdue": report
+            "overdue": overdue,
+            "counts_by_group": counts,
+            "total": total,
+            "detail": detail,
+            "scope": ("assignee " + str(assignee_id)) if assignee_id else "entire account",
         }
+        return result
     except Exception as e:
         logger.error(f"Error getting overdue todos: {e}")
         if "401" in str(e) and "expired" in str(e).lower():
