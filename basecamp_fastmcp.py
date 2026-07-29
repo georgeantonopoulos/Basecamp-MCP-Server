@@ -408,6 +408,13 @@ async def get_projects(
 
         matched = len(projects)
 
+        # "at most -1" is meaningless; clamp rather than let it through. Left
+        # unclamped a negative limit is neither None (so the default cap below
+        # is skipped) nor >= 0 (so truncation is skipped), and the whole
+        # unbounded listing is returned with no `truncated` flag.
+        if limit is not None and limit < 0:
+            limit = 0
+
         # A full record is ~2,700 chars, so an unbounded detail="full" call
         # overflows the tool-result limit on any sizeable account. Cap it by
         # default; `truncated`/`matched` tell the caller there is more, and
@@ -419,7 +426,7 @@ async def get_projects(
             default_limit_applied = True
 
         truncated = False
-        if effective_limit is not None and effective_limit >= 0 and matched > effective_limit:
+        if effective_limit is not None and matched > effective_limit:
             projects = projects[:effective_limit]
             truncated = True
 

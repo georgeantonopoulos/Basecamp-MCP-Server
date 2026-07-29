@@ -131,6 +131,22 @@ class TestProjectShaping(unittest.TestCase):
         self.assertTrue(r["truncated"])
         self.assertEqual(r["matched"], 1)
 
+    def test_negative_limit_cannot_bypass_the_cap(self):
+        """A negative limit must not disable truncation.
+
+        Regression: -1 is neither None (so the detail="full" default cap was
+        skipped) nor >= 0 (so the truncation branch was skipped), and the whole
+        unbounded listing came back with no `truncated` flag.
+        """
+        for bad in (-1, -99):
+            r = self._projects(detail="full", limit=bad)
+            self.assertEqual(r["count"], 0, f"limit={bad} returned records")
+            self.assertTrue(r["truncated"], f"limit={bad} did not report truncation")
+
+    def test_full_detail_is_capped_when_no_limit_given(self):
+        r = self._projects(detail="full")
+        self.assertLessEqual(r["count"], bf._FULL_DETAIL_DEFAULT_LIMIT)
+
 
 MESSAGE = {
     "id": 7, "title": "Kickoff", "subject": "Kickoff", "type": "Message",
