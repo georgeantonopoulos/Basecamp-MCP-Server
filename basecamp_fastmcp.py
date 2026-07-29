@@ -166,6 +166,67 @@ _TODO_SUMMARY_KEYS = (
     "app_url", "is_priority",
 )
 
+# Cap for an unbounded detail="full" project listing. Full records run ~2,700
+# chars each, so a whole account overflows the tool-result limit; the caller
+# sees `truncated`/`matched` and can page or narrow.
+_FULL_DETAIL_DEFAULT_LIMIT = 5
+
+# Messages and comments: `content` IS the payload the caller came for, so it is
+# never dropped or truncated — unlike a to-do's `description`, there is no
+# has_description flag to fall back on and no way to identify the record
+# without it. What gets trimmed is the surrounding metadata.
+_MESSAGE_SUMMARY_KEYS = (
+    "id", "title", "subject", "type", "status", "content",
+    "created_at", "updated_at", "comments_count", "app_url",
+)
+_COMMENT_SUMMARY_KEYS = (
+    "id", "type", "status", "content", "created_at", "updated_at", "app_url",
+)
+
+# Nested records reduced to id+name in every summary view. A full person record
+# is ~900 characters — email address, timestamps, company, timezone and a dozen
+# capability flags — repeated on every row of a listing.
+_BRIEF_NESTED_KEYS = ("creator", "bucket", "parent")
+
+
+def _brief_nested(record, out):
+    """Copy creator/bucket/parent across, reduced to identifying fields."""
+    for key in _BRIEF_NESTED_KEYS:
+        src = record.get(key)
+        if not isinstance(src, dict):
+            continue
+        if key == "creator":
+            out[key] = _person_brief(src)
+        else:
+            out[key] = {k: src[k] for k in ("id", "name", "title", "type")
+                        if k in src}
+    return out
+
+
+def _message_summary(message):
+    """Message with its content intact but metadata trimmed."""
+    if not isinstance(message, dict):
+        return message
+    out = {k: message[k] for k in _MESSAGE_SUMMARY_KEYS if k in message}
+    return _brief_nested(message, out)
+
+
+def _comment_summary(comment):
+    """Comment with its content intact but metadata trimmed."""
+    if not isinstance(comment, dict):
+        return comment
+    out = {k: comment[k] for k in _COMMENT_SUMMARY_KEYS if k in comment}
+    return _brief_nested(comment, out)
+
+
+def _shape_records(records, detail, summarise):
+    """Apply a detail level to a list of records using `summarise` for summary."""
+    if not isinstance(records, list):
+        return _prune(records)
+    if detail == "full":
+        return [_prune(r) for r in records]
+    return [summarise(_prune(r)) for r in records]
+
 
 def _prune(obj):
     """Recursively strip _NOISE_KEYS from any API payload."""
@@ -190,15 +251,48 @@ def _project_summary(project):
     return {k: project[k] for k in _PROJECT_SUMMARY_KEYS if k in project}
 
 
+def _trim_dock(project):
+    """Drop the redundant API `url` from each dock entry, keeping `app_url`.
+
+    Every dock entry carries both `url` and `app_url` for the same resource,
+    which is ~1,000 wasted characters per project. Shared by get_project and
+    get_projects(detail="full") so the two cannot drift apart.
+    """
+    if not isinstance(project, dict):
+        return project
+    dock = project.get("dock")
+    if isinstance(dock, list):
+        project["dock"] = [
+            {k: v for k, v in item.items() if k != "url"}
+            if isinstance(item, dict) else item
+            for item in dock
+        ]
+    return project
+
+
+def _trim_people_sample(project):
+    """Reduce each `people` group's sample to id+name."""
+    if not isinstance(project, dict):
+        return project
+    people = project.get("people")
+    if isinstance(people, dict):
+        for group in people.values():
+            if isinstance(group, dict) and isinstance(group.get("sample"), list):
+                group["sample"] = [_person_brief(p) for p in group["sample"]]
+    return project
+
+
+def _project_full(project):
+    """Complete project record, minus the redundancies (dock url, people bulk)."""
+    return _trim_people_sample(_trim_dock(project))
+
+
 def _todo_summary(todo):
     """Identity/scheduling view of a to-do, with people reduced to id+name."""
     if not isinstance(todo, dict):
         return todo
     out = {k: todo[k] for k in _TODO_SUMMARY_KEYS if k in todo}
-    for key in ("bucket", "parent"):
-        src = todo.get(key)
-        if isinstance(src, dict):
-            out[key] = {k: src[k] for k in ("id", "name", "title", "type") if k in src}
+    _brief_nested(todo, out)
     if isinstance(todo.get("assignees"), list):
         out["assignees"] = [_person_brief(p) for p in todo["assignees"]]
     return out
@@ -277,9 +371,12 @@ async def get_projects(
     description and app_url — a few hundred characters per project.
 
     detail="full" returns Basecamp's complete project records, including the
-    `people` sample and the `dock`. That is roughly 6,000 characters per
-    project and can exceed the tool-result limit on a large account, so only
-    ask for it when you specifically need those fields.
+    `people` sample and the `dock`. Those run ~2,700 characters each, so a
+    whole account would overflow the tool-result limit — **detail="full" is
+    therefore capped at 5 projects unless you pass an explicit `limit`.** When
+    the cap or a limit applies, the response carries `truncated: true` and
+    `matched: <n>` so you can see how many were held back, and you can narrow
+    with `query`/`status` or page with `limit`.
 
     **Dock IDs (todoset, message_board, kanban_board, vault, schedule, …) are
     not in either view. Call get_project(project_id) for those** — you need
@@ -310,13 +407,24 @@ async def get_projects(
                         if (p.get("status") or "").lower() == wanted]
 
         matched = len(projects)
+
+        # A full record is ~2,700 chars, so an unbounded detail="full" call
+        # overflows the tool-result limit on any sizeable account. Cap it by
+        # default; `truncated`/`matched` tell the caller there is more, and
+        # query/status/limit let them narrow or page.
+        effective_limit = limit
+        default_limit_applied = False
+        if detail == "full" and limit is None:
+            effective_limit = _FULL_DETAIL_DEFAULT_LIMIT
+            default_limit_applied = True
+
         truncated = False
-        if limit is not None and limit >= 0 and matched > limit:
-            projects = projects[:limit]
+        if effective_limit is not None and effective_limit >= 0 and matched > effective_limit:
+            projects = projects[:effective_limit]
             truncated = True
 
         if detail == "full":
-            projects = [_prune(p) for p in projects]
+            projects = [_project_full(_prune(p)) for p in projects]
         else:
             projects = [_project_summary(_prune(p)) for p in projects]
 
@@ -331,6 +439,12 @@ async def get_projects(
         if truncated:
             result["truncated"] = True
             result["matched"] = matched
+            if default_limit_applied:
+                result["notice_limit"] = (
+                    f"detail='full' is capped at {_FULL_DETAIL_DEFAULT_LIMIT} "
+                    f"projects by default ({matched} matched). Pass an explicit "
+                    f"limit, or narrow with query/status."
+                )
         if detail == "summary":
             result["notice"] = (
                 "Summary view. Call get_project(project_id) for a project's dock "
@@ -369,28 +483,7 @@ async def get_project(project_id: str) -> Dict[str, Any]:
         return _get_auth_error_response()
 
     try:
-        project = await _run_sync(client.get_project, project_id)
-        project = _prune(project)
-
-        # The dock is the point of this call, but each entry carries both `url`
-        # (API) and `app_url` (web) for the same resource. Keep app_url; the
-        # API URL is reconstructible from the id and never needed verbatim.
-        dock = project.get("dock")
-        if isinstance(dock, list):
-            project["dock"] = [
-                {k: v for k, v in item.items() if k != "url"}
-                if isinstance(item, dict) else item
-                for item in dock
-            ]
-
-        # The `people` sample is a partial list and rarely what the caller
-        # wants; reduce to id+name (get_people gives the real roster).
-        people = project.get("people")
-        if isinstance(people, dict):
-            for group in people.values():
-                if isinstance(group, dict) and isinstance(group.get("sample"), list):
-                    group["sample"] = [_person_brief(p) for p in group["sample"]]
-
+        project = _project_full(_prune(await _run_sync(client.get_project, project_id)))
         return {
             "status": "success",
             "project": project
@@ -682,6 +775,7 @@ async def get_todos(
     todolist_id: str,
     completed: bool = False,
     status: Optional[str] = None,
+    detail: Literal["summary", "full"] = "summary",
 ) -> Dict[str, Any]:
     """Get todos from a todo list.
 
@@ -690,11 +784,18 @@ async def get_todos(
     reporting delivered work by title rather than an open/closed ratio), or
     ``status='archived'``/``'trashed'`` to fetch by recording status.
 
+    detail="summary" (the default) returns identity and scheduling fields with
+    people reduced to id+name, and omits the `description` body — check the
+    `has_description` flag and call get_todo for the text. A full to-do record
+    averages ~7,900 characters, so a long list overflows the tool-result limit;
+    a summary is roughly a tenth of that.
+
     Args:
         project_id: Project ID
         todolist_id: The todo list ID
         completed: When True, return completed to-dos (Basecamp ?completed=true)
         status: Optional recording-status filter: 'archived' or 'trashed'
+        detail: "summary" (default) or "full".
     """
     client = _get_basecamp_client()
     if not client:
@@ -705,8 +806,9 @@ async def get_todos(
             client.get_todos, project_id, todolist_id, completed, status)
         return {
             "status": "success",
-            "todos": todos,
-            "count": len(todos)
+            "todos": _shape_todos(todos, detail),
+            "count": len(todos),
+            "detail": detail,
         }
     except Exception as e:
         logger.error(f"Error getting todos: {e}")
@@ -823,6 +925,9 @@ async def update_todo(project_id: str, todo_id: str,
         description: HTML description of the todo
         assignee_ids: List of person IDs to assign
         completion_subscriber_ids: List of person IDs to notify on completion
+        notify: When true, Basecamp emails the assignees about this change.
+            Transient — it is not stored on the to-do. Omit it unless the
+            caller has actually asked for people to be notified.
         due_on: Due date in YYYY-MM-DD format
         starts_on: Start date in YYYY-MM-DD format
     """
@@ -1054,14 +1159,29 @@ async def global_search(query: str) -> Dict[str, Any]:
         }
 
 @mcp.tool()
-async def get_comments(recording_id: str, project_id: str, page: int = 1) -> Dict[str, Any]:
+async def get_comments(
+    recording_id: str,
+    project_id: str,
+    page: int = 1,
+    detail: Literal["summary", "full"] = "summary",
+) -> Dict[str, Any]:
     """Get comments for a Basecamp item.
+
+    detail="summary" (the default) keeps each comment's `content` in full —
+    the discussion is the point — and trims the metadata around it, reducing
+    `creator` to id+name and dropping `content_attachments`. Use
+    detail="full" when you need attachment download URLs.
+
+    Note that `content` itself is the bulk of this payload (~3,700 characters
+    per comment on a busy thread), so a long thread can still be large even in
+    summary; use `page` to walk it rather than pulling everything at once.
 
     Args:
         recording_id: The item ID
         project_id: The project ID
         page: Page number for pagination (default: 1). Basecamp uses geared pagination:
               page 1 has 15 results, page 2 has 30, page 3 has 50, page 4+ has 100.
+        detail: "summary" (default) or "full".
     """
     client = _get_basecamp_client()
     if not client:
@@ -1071,11 +1191,12 @@ async def get_comments(recording_id: str, project_id: str, page: int = 1) -> Dic
         result = await _run_sync(client.get_comments, project_id, recording_id, page)
         return {
             "status": "success",
-            "comments": result["comments"],
+            "comments": _shape_records(result["comments"], detail, _comment_summary),
             "count": len(result["comments"]),
             "page": page,
             "total_count": result["total_count"],
-            "next_page": result["next_page"]
+            "next_page": result["next_page"],
+            "detail": detail,
         }
     except Exception as e:
         logger.error(f"Error getting comments: {e}")
@@ -1182,12 +1303,22 @@ async def get_message_board(project_id: str) -> Dict[str, Any]:
         }
 
 @mcp.tool()
-async def get_messages(project_id: str, message_board_id: Optional[str] = None) -> Dict[str, Any]:
+async def get_messages(
+    project_id: str,
+    message_board_id: Optional[str] = None,
+    detail: Literal["summary", "full"] = "summary",
+) -> Dict[str, Any]:
     """Get all messages from a project's message board.
+
+    detail="summary" (the default) keeps each message's `content` in full —
+    that is what you came for — and trims the surrounding metadata, reducing
+    `creator` to id+name. A full person record is ~900 characters repeated on
+    every row, which is the single largest cost in this payload.
 
     Args:
         project_id: The project ID
         message_board_id: Optional message board ID. If not provided, will be auto-discovered from the project.
+        detail: "summary" (default) or "full".
     """
     client = _get_basecamp_client()
     if not client:
@@ -1197,8 +1328,9 @@ async def get_messages(project_id: str, message_board_id: Optional[str] = None) 
         messages = await _run_sync(client.get_messages, project_id, message_board_id)
         return {
             "status": "success",
-            "messages": messages,
-            "count": len(messages)
+            "messages": _shape_records(messages, detail, _message_summary),
+            "count": len(messages),
+            "detail": detail,
         }
     except Exception as e:
         logger.error(f"Error getting messages: {e}")

@@ -132,6 +132,61 @@ class TestProjectShaping(unittest.TestCase):
         self.assertEqual(r["matched"], 1)
 
 
+MESSAGE = {
+    "id": 7, "title": "Kickoff", "subject": "Kickoff", "type": "Message",
+    "status": "active", "content": "<div>Welcome aboard</div>",
+    "created_at": "2026-01-01T00:00:00Z", "comments_count": 2,
+    "app_url": "https://app.basecamp.com/1/buckets/1/messages/7",
+    "bookmark_url": "https://3.basecampapi.com/1/my/bookmarks/CCC.json",
+    "creator": {"id": 8, "name": "Ann", "email_address": "ann@x.com",
+                "avatar_url": "https://cdn/b", "attachable_sgid": "BAh",
+                "time_zone": "Etc/UTC", "company": {"id": 3, "name": "Acme"},
+                "can_manage_projects": True, "admin": False},
+    "bucket": {"id": 1, "name": "Acme Rebuild", "type": "Project"},
+}
+
+COMMENT = {
+    "id": 21, "type": "Comment", "status": "active",
+    "content": "<div>Looks good to me</div>",
+    "created_at": "2026-01-02T00:00:00Z",
+    "app_url": "https://app.basecamp.com/1/buckets/1/comments/21",
+    "content_attachments": [{"sgid": "BAh", "download_url": "https://x/y",
+                             "filename": "a.png", "byte_size": 100}],
+    "creator": dict(MESSAGE["creator"]),
+    "parent": {"id": 7, "title": "Kickoff", "type": "Message"},
+}
+
+
+class TestCreatorReduction(unittest.TestCase):
+    """`creator` is kept but reduced to id+name in every summary view."""
+
+    def test_message_summary_keeps_content_and_trims_creator(self):
+        out = bf._message_summary(bf._prune(dict(MESSAGE)))
+        self.assertEqual(out["content"], "<div>Welcome aboard</div>")
+        self.assertEqual(out["creator"], {"id": 8, "name": "Ann"})
+        self.assertNotIn("bookmark_url", out)
+
+    def test_comment_summary_keeps_content_drops_attachments(self):
+        out = bf._comment_summary(bf._prune(dict(COMMENT)))
+        self.assertEqual(out["content"], "<div>Looks good to me</div>")
+        self.assertEqual(out["creator"], {"id": 8, "name": "Ann"})
+        self.assertNotIn("content_attachments", out)
+        self.assertEqual(out["parent"], {"id": 7, "title": "Kickoff",
+                                        "type": "Message"})
+
+    def test_full_detail_keeps_attachments_but_still_prunes_noise(self):
+        out = bf._shape_records([dict(COMMENT)], "full", bf._comment_summary)[0]
+        self.assertIn("content_attachments", out)
+        self.assertNotIn("sgid", out["content_attachments"][0])
+        self.assertNotIn("avatar_url", out["creator"])
+
+    def test_creator_reduction_is_a_real_saving(self):
+        import json
+        full = len(json.dumps(bf._prune(dict(MESSAGE))))
+        summ = len(json.dumps(bf._message_summary(bf._prune(dict(MESSAGE)))))
+        self.assertLess(summ, full)
+
+
 class TestTodoShaping(unittest.TestCase):
 
     def test_summary_drops_description_but_keeps_the_flag(self):
@@ -143,7 +198,9 @@ class TestTodoShaping(unittest.TestCase):
     def test_summary_reduces_people_to_id_and_name(self):
         out = bf._shape_todos([dict(TODO)], "summary")[0]
         self.assertEqual(out["assignees"], [{"id": 9, "name": "Joe West"}])
-        self.assertNotIn("creator", out)
+        # creator is kept but reduced: a full person record is ~900 chars,
+        # repeated on every row of a listing.
+        self.assertEqual(out["creator"], {"id": 8, "name": "Ann"})
 
     def test_summary_reduces_bucket_to_identity(self):
         out = bf._shape_todos([dict(TODO)], "summary")[0]
