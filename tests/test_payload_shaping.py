@@ -39,6 +39,7 @@ PROJECT = {
     "bookmark_url": "https://3.basecampapi.com/1/my/bookmarks/AAA.json",
     "star_url": "https://3.basecampapi.com/1/projects/1/star.json",
     "created_at": "2026-01-01T00:00:00Z",
+    "updated_at": "2026-02-01T00:00:00Z",
     "people": {"team": {"count": 1, "sample": [
         {"id": 9, "name": "Joe West", "avatar_url": "https://cdn/avatar",
          "attachable_sgid": "BAh7CEkiCG..."}]}},
@@ -103,8 +104,7 @@ class TestProjectShaping(unittest.TestCase):
         r = self._projects()
         self.assertEqual(r["detail"], "summary")
         p = r["projects"][0]
-        self.assertEqual(set(p), {"id", "name", "status", "purpose",
-                                  "description", "app_url"})
+        self.assertEqual(set(p), set(bf._PROJECT_SUMMARY_KEYS) | {"tools"})
         self.assertNotIn("people", p)
         self.assertNotIn("dock", p)
 

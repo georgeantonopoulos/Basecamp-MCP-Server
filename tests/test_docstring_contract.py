@@ -23,6 +23,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import basecamp_fastmcp as bf
+from payload_shaping import FULL_RESPONSES_ENV
 
 TOOLS = bf.mcp._tool_manager._tools
 
@@ -90,6 +91,18 @@ class TestDocstringMatchesSignature(unittest.TestCase):
                 claimed = _prose_default(doc, p)
                 if claimed is None or spec.default is inspect._empty:
                     continue
+                if spec.default is None:
+                    # None is a sentinel meaning "resolve at runtime", not a
+                    # claim about behaviour — so prose may name the effective
+                    # default. It must say what decides it, though, otherwise
+                    # the reader is told a default that an env var can change
+                    # out from under them.
+                    if FULL_RESPONSES_ENV not in doc:
+                        bad.append(
+                            f"{name}: {p} defaults to None (resolved at runtime) "
+                            f"and prose claims '{claimed}', but the docstring "
+                            f"never mentions {FULL_RESPONSES_ENV}")
+                    continue
                 if str(spec.default) != claimed:
                     bad.append(
                         f"{name}: docstring says {p}='{claimed}' is the default, "
@@ -113,8 +126,12 @@ class TestSummaryShapeMatchesDocstring(unittest.TestCase):
         named = {w.strip(" `.,\n\t") for w in re.split(r",|\band\b", m.group(1))
                  if w.strip(" `.,\n\t")}
         self.assertEqual(
-            named, set(bf._PROJECT_SUMMARY_KEYS),
+            named, set(bf._PROJECT_SUMMARY_KEYS) | {"tools"},
             "docstring's summary field list differs from _PROJECT_SUMMARY_KEYS")
+        # `tools` is listed among the summary fields, so it must also be
+        # explained — a bare field name tells the model nothing about cost.
+        self.assertIn("dock entries", doc,
+                      "the `tools` field is listed but never explained")
 
     def test_project_summary_projection_returns_only_those_keys(self):
         fat = {k: k for k in list(bf._PROJECT_SUMMARY_KEYS) + [
