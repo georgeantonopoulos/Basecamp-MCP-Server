@@ -94,9 +94,15 @@ class TestPrune(unittest.TestCase):
 
 class TestProjectShaping(unittest.TestCase):
 
-    def _projects(self, **kwargs):
+    # A literal, not _FULL_DETAIL_DEFAULT_LIMIT + n: a fixture sized from the
+    # constant grows with it, so the cap assertions could never fail.
+    MANY = 7
+
+    def _projects(self, _count=1, **kwargs):
+        listing = [dict(PROJECT, id=i, name="Acme" if i == 1 else f"Acme-{i}")
+                   for i in range(1, _count + 1)]
         with patch.object(bf, "_get_basecamp_client") as gc:
-            gc.return_value.get_projects.return_value = [dict(PROJECT)]
+            gc.return_value.get_projects.return_value = listing
             with patch.object(bf, "_run_sync", _fake_run_sync):
                 return run(bf.get_projects(**kwargs))
 
@@ -139,13 +145,24 @@ class TestProjectShaping(unittest.TestCase):
         unbounded listing came back with no `truncated` flag.
         """
         for bad in (-1, -99):
-            r = self._projects(detail="full", limit=bad)
+            r = self._projects(self.MANY, detail="full", limit=bad)
             self.assertEqual(r["count"], 0, f"limit={bad} returned records")
             self.assertTrue(r["truncated"], f"limit={bad} did not report truncation")
+            self.assertEqual(r["matched"], self.MANY)
 
     def test_full_detail_is_capped_when_no_limit_given(self):
-        r = self._projects(detail="full")
-        self.assertLessEqual(r["count"], bf._FULL_DETAIL_DEFAULT_LIMIT)
+        """Needs more projects than the cap, or removing the cap still passes."""
+        r = self._projects(self.MANY, detail="full")
+        self.assertEqual(r["count"], 5)
+        self.assertEqual(r["matched"], self.MANY)
+        self.assertTrue(r["truncated"])
+        self.assertIn("notice_limit", r)
+
+    def test_an_explicit_limit_overrides_the_default_cap(self):
+        r = self._projects(self.MANY, detail="full", limit=self.MANY)
+        self.assertEqual(r["count"], self.MANY)
+        self.assertNotIn("truncated", r)
+        self.assertNotIn("notice_limit", r)
 
 
 MESSAGE = {

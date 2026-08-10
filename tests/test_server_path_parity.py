@@ -9,6 +9,7 @@ assert they agree.
 """
 
 import asyncio
+import copy
 import os
 import sys
 import unittest
@@ -67,44 +68,115 @@ def _cli_with(**client_attrs):
     return MCPServer(), SimpleNamespace(**client_attrs)
 
 
+def project_listing(n):
+    """`n` distinct projects — enough to make the default full cap bite.
+
+    A single-project fixture cannot exercise a cap of 5: the assertions pass
+    whether the cap is applied or removed entirely.
+    """
+    out = []
+    for i in range(1, n + 1):
+        p = copy.deepcopy(PROJECT)
+        p["id"] = i
+        p["name"] = "Acme" if i == 1 else f"Acme-{i}"
+        p["status"] = "active" if i % 2 else "archived"
+        p["app_url"] = f"https://app/{i}"
+        out.append(p)
+    return out
+
+
 class TestProjectsParity(unittest.TestCase):
+
+    # A literal, not FULL_DETAIL_DEFAULT_LIMIT + 2: deriving the fixture from
+    # the constant makes the cap assertions tautological, since raising the
+    # constant would grow the fixture to match.
+    PROJECT_COUNT = 7
+
+    def setUp(self):
+        self.raw = project_listing(self.PROJECT_COUNT)
 
     def _fastmcp(self, **kwargs):
         with patch.object(bf, "_get_basecamp_client") as gc:
-            gc.return_value.get_projects.return_value = [dict(PROJECT)]
+            gc.return_value.get_projects.return_value = list(self.raw)
             with patch.object(bf, "_run_sync", _fake_run_sync):
                 return run(bf.get_projects(**kwargs))
 
     def _cli(self, **args):
-        server, client = _cli_with(get_projects=lambda: [dict(PROJECT)])
+        server, client = _cli_with(get_projects=lambda: list(self.raw))
         with patch.object(MCPServer, "_get_basecamp_client", return_value=client):
             return server._execute_tool("get_projects", args)
 
-    def test_summary_shapes_match(self):
-        a, b = self._fastmcp(), self._cli()
-        self.assertEqual(set(a["projects"][0]), set(b["projects"][0]))
-        self.assertEqual(a["projects"][0], b["projects"][0])
-        self.assertEqual(a["detail"], b["detail"], "detail label differs")
+    def _both(self, **kwargs):
+        return self._fastmcp(**kwargs), self._cli(**kwargs)
 
-    def test_full_shapes_match(self):
-        a = self._fastmcp(detail="full")
-        b = self._cli(detail="full")
-        self.assertEqual(set(a["projects"][0]), set(b["projects"][0]))
-        for p in (a["projects"][0], b["projects"][0]):
+    def _assert_identical(self, a, b, label):
+        """Compare the whole response, not just the first record.
+
+        Comparing only projects[0] and `detail` is what let the paths drift:
+        the CLI was omitting `notice`, `total_before_filter` and the
+        default-cap metadata while these tests passed.
+        """
+        self.assertEqual(a, b, f"{label}: responses differ between paths")
+
+    def test_summary_responses_match(self):
+        a, b = self._both()
+        self._assert_identical(a, b, "summary")
+        self.assertIn("notice", a)
+        self.assertEqual(a["detail"], ps.SUMMARY)
+
+    def test_full_responses_match(self):
+        a, b = self._both(detail="full", limit=100)
+        self._assert_identical(a, b, "full")
+        self.assertNotIn("notice", a, "the summary notice must not leak into full")
+        for p in a["projects"]:
             self.assertNotIn("bookmark_url", p)
             self.assertTrue(all("url" not in d for d in p["dock"]))
 
-    def test_query_filter_matches(self):
-        self.assertEqual(len(self._fastmcp(query="acme")["projects"]),
-                         len(self._cli(query="acme")["projects"]))
-        self.assertEqual(len(self._fastmcp(query="zzz")["projects"]),
-                         len(self._cli(query="zzz")["projects"]))
+    def test_filtered_responses_match_including_envelope(self):
+        for kwargs in ({"query": "acme"}, {"query": "zzz"},
+                       {"status": "active"}, {"status": "archived"},
+                       {"query": "acme", "limit": 2}):
+            with self.subTest(**kwargs):
+                a, b = self._both(**kwargs)
+                self._assert_identical(a, b, str(kwargs))
+
+    def test_total_before_filter_reported_on_both_paths(self):
+        a, b = self._both(query="acme-3")
+        self._assert_identical(a, b, "query=acme-3")
+        self.assertEqual(a["count"], 1)
+        self.assertEqual(a["total_before_filter"], self.PROJECT_COUNT)
+
+    def test_documented_full_cap_is_five(self):
+        """The docstrings and README promise 5; pin it so they stay true."""
+        self.assertEqual(ps.FULL_DETAIL_DEFAULT_LIMIT, 5)
+
+    def test_default_full_cap_metadata_matches(self):
+        a, b = self._both(detail="full")
+        self._assert_identical(a, b, "default full cap")
+        self.assertEqual(a["count"], 5)
+        self.assertEqual(a["matched"], self.PROJECT_COUNT)
+        self.assertTrue(a["truncated"])
+        self.assertIn("notice_limit", a)
+        self.assertIn("5", a["notice_limit"])
+
+    def test_explicit_limit_suppresses_the_cap_notice(self):
+        a, b = self._both(detail="full", limit=2)
+        self._assert_identical(a, b, "explicit limit")
+        self.assertEqual(a["count"], 2)
+        self.assertNotIn("notice_limit", a)
 
     def test_negative_limit_clamped_on_both_paths(self):
-        a, b = self._fastmcp(limit=-1), self._cli(limit=-1)
+        a, b = self._both(limit=-1)
+        self._assert_identical(a, b, "limit=-1")
         self.assertEqual(a["count"], 0)
-        self.assertEqual(b["count"], 0)
-        self.assertTrue(a.get("truncated") and b.get("truncated"))
+        self.assertTrue(a["truncated"])
+
+    def test_cli_rejects_a_non_integer_limit(self):
+        """inputSchema is advisory in the hand-rolled CLI dispatch."""
+        result = self._cli(limit="ten")
+        self.assertEqual(result.get("error"), "Invalid argument")
+        self.assertIn("limit", result["message"])
+        self.assertNotIn("projects", result)
 
 
 class TestTodosParity(unittest.TestCase):
@@ -186,16 +258,29 @@ class TestEnvVarAffectsBothPaths(unittest.TestCase):
 class TestCliSchemasDeclareDetail(unittest.TestCase):
     """A knob the handler honours but the schema hides is unusable."""
 
+    SHAPED = ("get_projects", "get_todos", "get_comments", "get_cards",
+              "get_columns", "get_card_table", "get_card_tables",
+              "get_assignable_people")
+
+    def setUp(self):
+        self.tools = {t["name"]: t for t in MCPServer()._get_available_tools()}
+
+    def test_shaped_cli_tools_are_registered(self):
+        """Skipping an absent tool would let a rename pass silently."""
+        absent = [n for n in self.SHAPED if n not in self.tools]
+        self.assertEqual(absent, [],
+                         f"shaped CLI tools are not registered: {absent}")
+
     def test_shaped_cli_tools_declare_detail(self):
-        tools = {t["name"]: t for t in MCPServer()._get_available_tools()}
-        shaped = ["get_projects", "get_todos", "get_comments", "get_cards",
-                  "get_columns", "get_card_table", "get_card_tables",
-                  "get_assignable_people"]
-        missing = [n for n in shaped
-                   if n in tools
-                   and "detail" not in tools[n]["inputSchema"]["properties"]]
+        missing = [n for n in self.SHAPED
+                   if "detail" not in self.tools[n]["inputSchema"]["properties"]]
         self.assertEqual(missing, [],
                          f"CLI schemas omit `detail`: {missing}")
+
+    def test_get_projects_declares_its_filters(self):
+        props = self.tools["get_projects"]["inputSchema"]["properties"]
+        for name in ("query", "status", "limit"):
+            self.assertIn(name, props, f"get_projects schema omits `{name}`")
 
 
 if __name__ == "__main__":

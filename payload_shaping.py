@@ -287,3 +287,96 @@ def shape_card_table(table, detail):
         if isinstance(cols, list):
             table[key] = [column_summary(c) for c in cols]
     return table
+
+
+class InvalidArgument(ValueError):
+    """A caller-supplied argument could not be used as given."""
+
+
+def coerce_limit(value):
+    """Return ``value`` as a non-negative int, or None when unset.
+
+    mcp_server_cli hand-rolls its dispatch, so ``inputSchema`` is advisory
+    there: nothing rejects ``{"limit": "ten"}`` before it reaches the handler.
+    A bare int() would raise a ValueError that surfaces as a generic execution
+    error, so name the bad argument instead.
+
+    Negative limits clamp to 0. "At most -1" is meaningless, and left
+    unclamped a negative is neither None (so the default cap is skipped) nor
+    >= 0 (so truncation is skipped) — the whole unbounded listing comes back
+    with no `truncated` flag.
+    """
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        raise InvalidArgument(f"limit must be an integer, got {value!r}")
+    try:
+        limit = int(value)
+    except (TypeError, ValueError):
+        raise InvalidArgument(
+            f"limit must be an integer, got {value!r}") from None
+    return max(limit, 0)
+
+
+def projects_response(projects, detail, query=None, status=None, limit=None):
+    """Filter, cap and shape a raw project listing into a tool response.
+
+    Both server paths call this. Keeping the whole envelope here — not only
+    the per-record shaping — is what stops them drifting again: the caller
+    gets the same `notice`, `total_before_filter` and cap metadata whichever
+    path answered.
+    """
+    total = len(projects)
+
+    if query:
+        needle = str(query).strip().lower()
+        projects = [p for p in projects
+                    if needle in (p.get("name") or "").lower()]
+    if status:
+        wanted = str(status).strip().lower()
+        projects = [p for p in projects
+                    if (p.get("status") or "").lower() == wanted]
+    matched = len(projects)
+
+    limit = coerce_limit(limit)
+
+    # A full record is ~2,700 chars, so an unbounded detail="full" call
+    # overflows the tool-result limit on any sizeable account. Cap it by
+    # default; `truncated`/`matched` say there is more, and query/status/limit
+    # let the caller narrow or page.
+    effective = limit
+    default_limit_applied = False
+    if detail == FULL and limit is None:
+        effective = FULL_DETAIL_DEFAULT_LIMIT
+        default_limit_applied = True
+
+    truncated = False
+    if effective is not None and matched > effective:
+        projects = projects[:effective]
+        truncated = True
+
+    shape = project_full if detail == FULL else project_summary
+    result = {
+        "status": "success",
+        "projects": [shape(prune(p)) for p in projects],
+        "count": len(projects),
+        "detail": detail,
+    }
+    if matched != total:
+        result["total_before_filter"] = total
+    if truncated:
+        result["truncated"] = True
+        result["matched"] = matched
+        if default_limit_applied:
+            result["notice_limit"] = (
+                f"detail='full' is capped at {FULL_DETAIL_DEFAULT_LIMIT} "
+                f"projects by default ({matched} matched). Pass an explicit "
+                f"limit, or narrow with query/status."
+            )
+    if detail == SUMMARY:
+        result["notice"] = (
+            "Summary view. Call get_project(project_id) for a project's dock "
+            "IDs (todoset, message_board, kanban_board, …), or pass "
+            "detail='full' for complete records."
+        )
+    return result

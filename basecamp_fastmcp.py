@@ -261,70 +261,10 @@ async def get_projects(
 
     try:
         projects = await _run_sync(client.get_projects)
-        total = len(projects)
-
-        if query:
-            needle = query.strip().lower()
-            projects = [p for p in projects
-                        if needle in (p.get("name") or "").lower()]
-        if status:
-            wanted = status.strip().lower()
-            projects = [p for p in projects
-                        if (p.get("status") or "").lower() == wanted]
-
-        matched = len(projects)
-
-        # "at most -1" is meaningless; clamp rather than let it through. Left
-        # unclamped a negative limit is neither None (so the default cap below
-        # is skipped) nor >= 0 (so truncation is skipped), and the whole
-        # unbounded listing is returned with no `truncated` flag.
-        if limit is not None and limit < 0:
-            limit = 0
-
-        # A full record is ~2,700 chars, so an unbounded detail="full" call
-        # overflows the tool-result limit on any sizeable account. Cap it by
-        # default; `truncated`/`matched` tell the caller there is more, and
-        # query/status/limit let them narrow or page.
-        effective_limit = limit
-        default_limit_applied = False
-        if detail == "full" and limit is None:
-            effective_limit = _FULL_DETAIL_DEFAULT_LIMIT
-            default_limit_applied = True
-
-        truncated = False
-        if effective_limit is not None and matched > effective_limit:
-            projects = projects[:effective_limit]
-            truncated = True
-
-        if detail == "full":
-            projects = [_project_full(_prune(p)) for p in projects]
-        else:
-            projects = [_project_summary(_prune(p)) for p in projects]
-
-        result = {
-            "status": "success",
-            "projects": projects,
-            "count": len(projects),
-            "detail": detail,
-        }
-        if matched != total:
-            result["total_before_filter"] = total
-        if truncated:
-            result["truncated"] = True
-            result["matched"] = matched
-            if default_limit_applied:
-                result["notice_limit"] = (
-                    f"detail='full' is capped at {_FULL_DETAIL_DEFAULT_LIMIT} "
-                    f"projects by default ({matched} matched). Pass an explicit "
-                    f"limit, or narrow with query/status."
-                )
-        if detail == "summary":
-            result["notice"] = (
-                "Summary view. Call get_project(project_id) for a project's dock "
-                "IDs (todoset, message_board, kanban_board, …), or pass "
-                "detail='full' for complete records."
-            )
-        return result
+        # Filtering, capping and the response envelope all live in
+        # payload_shaping so mcp_server_cli answers identically.
+        return _shape.projects_response(
+            projects, detail, query=query, status=status, limit=limit)
     except Exception as e:
         logger.error(f"Error getting projects: {e}")
         if "401" in str(e) and "expired" in str(e).lower():

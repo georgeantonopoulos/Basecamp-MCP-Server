@@ -978,42 +978,16 @@ class MCPServer:
 
         try:
             if tool_name == "get_projects":
-                detail = _shape.resolve_detail(arguments.get("detail"))
-                projects = client.get_projects()
-                query = arguments.get("query")
-                if query:
-                    needle = str(query).strip().lower()
-                    projects = [pr for pr in projects
-                                if needle in (pr.get("name") or "").lower()]
-                status_filter = arguments.get("status")
-                if status_filter:
-                    wanted = str(status_filter).strip().lower()
-                    projects = [pr for pr in projects
-                                if (pr.get("status") or "").lower() == wanted]
-                matched = len(projects)
-                limit = arguments.get("limit")
-                if limit is not None and int(limit) < 0:
-                    limit = 0
-                effective = int(limit) if limit is not None else (
-                    _shape.FULL_DETAIL_DEFAULT_LIMIT if detail == _shape.FULL else None)
-                truncated = False
-                if effective is not None and matched > effective:
-                    projects = projects[:effective]
-                    truncated = True
-                if detail == _shape.FULL:
-                    projects = [_shape.project_full(_shape.prune(pr)) for pr in projects]
-                else:
-                    projects = [_shape.project_summary(_shape.prune(pr)) for pr in projects]
-                result = {
-                    "status": "success",
-                    "projects": projects,
-                    "count": len(projects),
-                    "detail": detail,
-                }
-                if truncated:
-                    result["truncated"] = True
-                    result["matched"] = matched
-                return result
+                # Filtering, capping and the response envelope come from
+                # payload_shaping so this path answers identically to
+                # basecamp_fastmcp.
+                return _shape.projects_response(
+                    client.get_projects(),
+                    _shape.resolve_detail(arguments.get("detail")),
+                    query=arguments.get("query"),
+                    status=arguments.get("status"),
+                    limit=arguments.get("limit"),
+                )
 
             elif tool_name == "get_project":
                 project_id = arguments.get("project_id")
@@ -1711,6 +1685,16 @@ class MCPServer:
                     "error": "Unknown tool",
                     "message": f"Tool '{tool_name}' is not supported"
                 }
+
+        except _shape.InvalidArgument as e:
+            # This dispatch is hand-rolled, so inputSchema is advisory: a bad
+            # argument type reaches the handler. Name the argument rather than
+            # letting it read as a server fault.
+            logger.warning(f"Invalid argument for tool {tool_name}: {e}")
+            return {
+                "error": "Invalid argument",
+                "message": str(e)
+            }
 
         except Exception as e:
             logger.error(f"Error executing tool {tool_name}: {e}")
