@@ -178,22 +178,26 @@ class BasecampClient:
     def post(self, endpoint, data=None):
         """Make a POST request to the Basecamp API."""
         url = f"{self.base_url}/{endpoint}"
-        return requests.post(url, auth=self.auth, headers=self.headers, json=data)
+        return requests.post(url, auth=self.auth, headers=self.headers, json=data,
+                             timeout=(10, 300))
 
     def put(self, endpoint, data=None):
         """Make a PUT request to the Basecamp API."""
         url = f"{self.base_url}/{endpoint}"
-        return requests.put(url, auth=self.auth, headers=self.headers, json=data)
+        return requests.put(url, auth=self.auth, headers=self.headers, json=data,
+                            timeout=(10, 300))
 
     def delete(self, endpoint):
         """Make a DELETE request to the Basecamp API."""
         url = f"{self.base_url}/{endpoint}"
-        return requests.delete(url, auth=self.auth, headers=self.headers)
+        return requests.delete(url, auth=self.auth, headers=self.headers,
+                               timeout=(10, 300))
 
     def patch(self, endpoint, data=None):
         """Make a PATCH request to the Basecamp API."""
         url = f"{self.base_url}/{endpoint}"
-        return requests.patch(url, auth=self.auth, headers=self.headers, json=data)
+        return requests.patch(url, auth=self.auth, headers=self.headers, json=data,
+                              timeout=(10, 300))
 
     # Project methods
     def get_projects(self):
