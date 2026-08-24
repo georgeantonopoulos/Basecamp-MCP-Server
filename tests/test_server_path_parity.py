@@ -194,15 +194,15 @@ class TestTodosParity(unittest.TestCase):
             return server._execute_tool(
                 "get_todos", dict(project_id="1", todolist_id="2", **args))
 
-    def test_summary_shapes_match(self):
+    def test_summary_responses_match(self):
         a, b = self._fastmcp(), self._cli()
-        self.assertEqual(a["todos"][0], b["todos"][0])
+        self.assertEqual(a, b, "todo responses differ between paths")
         self.assertNotIn("description", a["todos"][0])
         self.assertEqual(a["todos"][0]["creator"], {"id": 8, "name": "Ann"})
 
-    def test_full_shapes_match(self):
+    def test_full_responses_match(self):
         a, b = self._fastmcp(detail="full"), self._cli(detail="full")
-        self.assertEqual(set(a["todos"][0]), set(b["todos"][0]))
+        self.assertEqual(a, b, "todo full responses differ between paths")
         self.assertIn("description", a["todos"][0])
 
 
@@ -231,16 +231,15 @@ class TestEnvVarAffectsBothPaths(unittest.TestCase):
     def test_env_unset_gives_summary_on_both(self):
         os.environ.pop(ps.FULL_RESPONSES_ENV, None)
         a, b = self._both()
+        self.assertEqual(a, b, "responses differ with the env var unset")
         self.assertEqual(a["detail"], ps.SUMMARY)
-        self.assertEqual(b["detail"], ps.SUMMARY)
 
     def test_env_set_gives_full_on_both(self):
         os.environ[ps.FULL_RESPONSES_ENV] = "1"
         a, b = self._both()
+        self.assertEqual(a, b, "responses differ with the env var set")
         self.assertEqual(a["detail"], ps.FULL)
-        self.assertEqual(b["detail"], ps.FULL)
         self.assertIn("dock", a["projects"][0])
-        self.assertIn("dock", b["projects"][0])
 
     def test_explicit_detail_overrides_env_on_both(self):
         os.environ[ps.FULL_RESPONSES_ENV] = "1"
@@ -251,8 +250,67 @@ class TestEnvVarAffectsBothPaths(unittest.TestCase):
         server, client = _cli_with(get_projects=lambda: [dict(PROJECT)])
         with patch.object(MCPServer, "_get_basecamp_client", return_value=client):
             b = server._execute_tool("get_projects", {"detail": "summary"})
+        self.assertEqual(a, b,
+                         "responses differ when detail overrides the env var")
         self.assertEqual(a["detail"], ps.SUMMARY)
-        self.assertEqual(b["detail"], ps.SUMMARY)
+
+
+class TestAssignablePeopleParity(unittest.TestCase):
+    """The CLI copy had no `query`, no `company`, no `total_before_filter`."""
+
+    PEOPLE = [
+        {"id": 9, "name": "Joe West", "email_address": "joe@x.com",
+         "title": "Dev", "avatar_url": "https://cdn/a",
+         "attachable_sgid": "BAh",
+         "company": {"id": 3, "name": "Acme Ltd"}},
+        {"id": 10, "name": "Ann Blake", "email_address": "ann@y.com",
+         "title": "PM", "avatar_url": "https://cdn/b",
+         "company": {"id": 4, "name": "Beta Co"}},
+    ]
+
+    def _fastmcp(self, **kwargs):
+        with patch.object(bf, "_get_basecamp_client") as gc:
+            gc.return_value.get_assignable_people.return_value = [
+                dict(p) for p in self.PEOPLE]
+            with patch.object(bf, "_run_sync", _fake_run_sync):
+                return run(bf.get_assignable_people(**kwargs))
+
+    def _cli(self, **args):
+        server, client = _cli_with(
+            get_assignable_people=lambda *a, **k: [dict(p) for p in self.PEOPLE])
+        with patch.object(MCPServer, "_get_basecamp_client", return_value=client):
+            return server._execute_tool("get_assignable_people", args)
+
+    def test_summary_responses_match(self):
+        a, b = self._fastmcp(), self._cli()
+        self.assertEqual(a, b, "people responses differ between paths")
+        self.assertEqual(a["count"], 2)
+        self.assertNotIn("total_before_filter", a)
+
+    def test_company_name_is_flattened_on_both_paths(self):
+        a, b = self._fastmcp(), self._cli()
+        self.assertEqual(a, b)
+        self.assertEqual(a["people"][0]["company"], "Acme Ltd")
+        self.assertNotIn("avatar_url", a["people"][0])
+
+    def test_query_matches_on_both_paths(self):
+        for q in ("joe", "JOE", "ann@y.com", "nobody"):
+            with self.subTest(query=q):
+                a, b = self._fastmcp(query=q), self._cli(query=q)
+                self.assertEqual(a, b, f"query={q!r} differs between paths")
+
+    def test_query_reports_total_before_filter(self):
+        a, b = self._fastmcp(query="joe"), self._cli(query="joe")
+        self.assertEqual(a, b)
+        self.assertEqual(a["count"], 1)
+        self.assertEqual(a["total_before_filter"], 2)
+
+    def test_full_responses_match_and_prune(self):
+        a, b = self._fastmcp(detail="full"), self._cli(detail="full")
+        self.assertEqual(a, b)
+        self.assertNotIn("avatar_url", a["people"][0])
+        self.assertNotIn("attachable_sgid", a["people"][0])
+        self.assertIsInstance(a["people"][0]["company"], dict)
 
 
 OVERDUE_REPORT = {
@@ -457,6 +515,16 @@ class TestCliSchemasDeclareDetail(unittest.TestCase):
                    if "detail" not in self.tools[n]["inputSchema"]["properties"]]
         self.assertEqual(missing, [],
                          f"CLI schemas omit `detail`: {missing}")
+
+    def test_get_assignable_people_declares_query(self):
+        props = self.tools["get_assignable_people"]["inputSchema"]["properties"]
+        self.assertIn("query", props)
+
+    def test_get_overdue_todos_declares_its_knobs(self):
+        props = self.tools["get_overdue_todos"]["inputSchema"]["properties"]
+        for name in ("detail", "assignee_id"):
+            self.assertIn(name, props,
+                          f"get_overdue_todos schema omits `{name}`")
 
     def test_get_projects_declares_its_filters(self):
         props = self.tools["get_projects"]["inputSchema"]["properties"]

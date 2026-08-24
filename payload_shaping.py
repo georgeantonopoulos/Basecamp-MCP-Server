@@ -445,3 +445,44 @@ def person_assignments_response(report, detail):
         "count": len(todos),
         "detail": detail,
     }
+
+
+PERSON_ROW_KEYS = ("id", "name", "email_address", "title")
+
+
+def people_response(people, detail, query=None):
+    """Shape an assignable-people listing into a tool response.
+
+    Summary keeps the fields that identify someone well enough to pick them —
+    id, name, email_address, title — plus the company *name* flattened out of
+    the nested company object, which is otherwise the bulk of the row.
+    """
+    people = people or []
+    total = len(people)
+
+    if query:
+        needle = str(query).strip().lower()
+        people = [p for p in people
+                  if needle in (p.get("name") or "").lower()
+                  or needle in (p.get("email_address") or "").lower()]
+
+    if detail == FULL:
+        shaped = [prune(p) for p in people]
+    else:
+        shaped = []
+        for p in people:
+            row = {k: p[k] for k in PERSON_ROW_KEYS if k in p}
+            company = p.get("company")
+            if isinstance(company, dict) and company.get("name"):
+                row["company"] = company["name"]
+            shaped.append(row)
+
+    result = {
+        "status": "success",
+        "people": shaped,
+        "count": len(shaped),
+        "detail": detail,
+    }
+    if len(shaped) != total:
+        result["total_before_filter"] = total
+    return result

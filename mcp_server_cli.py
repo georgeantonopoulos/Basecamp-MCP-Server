@@ -781,7 +781,8 @@ class MCPServer:
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "detail": {"type": "string", "enum": ["summary", "full"], "description": "Response detail. Defaults to summary unless BASECAMP_MCP_FULL_RESPONSES=1."}
+                        "detail": {"type": "string", "enum": ["summary", "full"], "description": "Response detail. Defaults to summary unless BASECAMP_MCP_FULL_RESPONSES=1."},
+                        "query": {"type": "string", "description": "Case-insensitive substring match on name or email address"}
                     },
                     "required": []
                 }
@@ -1650,17 +1651,11 @@ class MCPServer:
                 }
 
             elif tool_name == "get_assignable_people":
-                detail = _shape.resolve_detail(arguments.get("detail"))
-                people = client.get_assignable_people()
-                return {
-                    "status": "success",
-                    "people": [_shape.prune(pp) for pp in people]
-                    if detail == _shape.FULL else
-                    [{k: pp[k] for k in ("id", "name", "email_address", "title")
-                      if k in pp} for pp in people],
-                    "detail": detail,
-                    "count": len(people)
-                }
+                return _shape.people_response(
+                    client.get_assignable_people(),
+                    _shape.resolve_detail(arguments.get("detail")),
+                    query=arguments.get("query"),
+                )
 
             elif tool_name == "get_person_assignments":
                 return _shape.person_assignments_response(

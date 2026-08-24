@@ -392,35 +392,9 @@ async def get_assignable_people(
 
     try:
         people = await _run_sync(client.get_assignable_people)
-        total = len(people)
-
-        if query:
-            needle = query.strip().lower()
-            people = [p for p in people
-                      if needle in (p.get("name") or "").lower()
-                      or needle in (p.get("email_address") or "").lower()]
-
-        if detail == "full":
-            shaped = [_prune(p) for p in people]
-        else:
-            shaped = []
-            for p in people:
-                row = {k: p[k] for k in ("id", "name", "email_address", "title")
-                       if k in p}
-                company = p.get("company")
-                if isinstance(company, dict) and company.get("name"):
-                    row["company"] = company["name"]
-                shaped.append(row)
-
-        result = {
-            "status": "success",
-            "people": shaped,
-            "count": len(shaped),
-            "detail": detail,
-        }
-        if len(shaped) != total:
-            result["total_before_filter"] = total
-        return result
+        # Filtering, projection and envelope live in payload_shaping so
+        # mcp_server_cli answers identically.
+        return _shape.people_response(people, detail, query=query)
     except Exception as e:
         logger.error(f"Error getting assignable people: {e}")
         if "401" in str(e) and "expired" in str(e).lower():
