@@ -471,15 +471,7 @@ async def get_person_assignments(
 
     try:
         report = await _run_sync(client.get_person_assignments, person_id, group_by)
-        todos = report.get("todos") or []
-        return {
-            "status": "success",
-            "person": _person_brief(_prune(report.get("person") or {})),
-            "grouped_by": report.get("grouped_by"),
-            "todos": _shape_todos(todos, detail),
-            "count": len(todos),
-            "detail": detail,
-        }
+        return _shape.person_assignments_response(report, detail)
     except Exception as e:
         logger.error(f"Error getting assignments for person {person_id}: {e}")
         if "401" in str(e) and "expired" in str(e).lower():
@@ -527,31 +519,9 @@ async def get_overdue_todos(
 
     try:
         report = await _run_sync(client.get_overdue_todos)
-        overdue = {}
-        counts = {}
-        total = 0
-        for group, todos in (report or {}).items():
-            if not isinstance(todos, list):
-                overdue[group] = _prune(todos)
-                continue
-            if assignee_id:
-                wanted = str(assignee_id)
-                todos = [t for t in todos
-                         if any(str((a or {}).get("id")) == wanted
-                                for a in (t.get("assignees") or []))]
-            overdue[group] = _shape_todos(todos, detail)
-            counts[group] = len(todos)
-            total += len(todos)
-
-        result = {
-            "status": "success",
-            "overdue": overdue,
-            "counts_by_group": counts,
-            "total": total,
-            "detail": detail,
-            "scope": ("assignee " + str(assignee_id)) if assignee_id else "entire account",
-        }
-        return result
+        # Bucket shaping and the envelope live in payload_shaping so
+        # mcp_server_cli answers identically.
+        return _shape.overdue_response(report, detail, assignee_id=assignee_id)
     except Exception as e:
         logger.error(f"Error getting overdue todos: {e}")
         if "401" in str(e) and "expired" in str(e).lower():

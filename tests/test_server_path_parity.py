@@ -255,6 +255,187 @@ class TestEnvVarAffectsBothPaths(unittest.TestCase):
         self.assertEqual(b["detail"], ps.SUMMARY)
 
 
+OVERDUE_REPORT = {
+    "under_a_week_late": [dict(TODO, id=101)],
+    "over_a_week_late": [dict(TODO, id=102), dict(TODO, id=103,
+                              assignees=[{"id": 77, "name": "Zoe"}])],
+    "over_a_month_late": [],
+    # A non-list bucket must survive rather than be dropped.
+    "generated_at": "2026-08-24T00:00:00Z",
+}
+
+ASSIGNMENTS_REPORT = {
+    "person": {"id": 8, "name": "Ann", "email_address": "a@x.com",
+               "avatar_url": "https://cdn/b", "attachable_sgid": "BAh"},
+    "grouped_by": "bucket",
+    "todos": [dict(TODO, id=201), dict(TODO, id=202)],
+}
+
+COLUMN = {
+    "id": 31, "title": "Doing", "type": "Kanban::Column",
+    "cards_count": 2, "app_url": "https://app/col/31",
+    "bookmark_url": "https://api/bm.json",
+    "subscription_url": "https://api/sub.json",
+    "creator": {"id": 8, "name": "Ann", "avatar_url": "https://cdn/b"},
+}
+
+CARD = {
+    "id": 41, "title": "Ship it", "content": "<div>body</div>",
+    "type": "Kanban::Card", "app_url": "https://app/card/41",
+    "attachable_sgid": "BAh", "comments_url": "https://api/c.json",
+    "assignees": [{"id": 9, "name": "Joe", "avatar_url": "https://cdn/a"}],
+}
+
+
+class TestOverdueTodosParity(unittest.TestCase):
+    """The CLI returned the raw report — no shaping, no envelope at all."""
+
+    def _fastmcp(self, **kwargs):
+        with patch.object(bf, "_get_basecamp_client") as gc:
+            gc.return_value.get_overdue_todos.return_value = dict(OVERDUE_REPORT)
+            with patch.object(bf, "_run_sync", _fake_run_sync):
+                return run(bf.get_overdue_todos(**kwargs))
+
+    def _cli(self, **args):
+        server, client = _cli_with(
+            get_overdue_todos=lambda *a, **k: dict(OVERDUE_REPORT))
+        with patch.object(MCPServer, "_get_basecamp_client", return_value=client):
+            return server._execute_tool("get_overdue_todos", args)
+
+    def test_summary_responses_match(self):
+        a, b = self._fastmcp(), self._cli()
+        self.assertEqual(a, b, "overdue responses differ between paths")
+        self.assertEqual(a["total"], 3)
+        self.assertEqual(a["counts_by_group"],
+                         {"under_a_week_late": 1, "over_a_week_late": 2,
+                          "over_a_month_late": 0})
+        self.assertEqual(a["scope"], "entire account")
+        self.assertEqual(a["detail"], ps.SUMMARY)
+
+    def test_full_responses_match(self):
+        a, b = self._fastmcp(detail="full"), self._cli(detail="full")
+        self.assertEqual(a, b)
+        self.assertEqual(a["detail"], ps.FULL)
+
+    def test_assignee_filter_matches_on_both_paths(self):
+        a, b = self._fastmcp(assignee_id="77"), self._cli(assignee_id="77")
+        self.assertEqual(a, b, "assignee filter differs between paths")
+        self.assertEqual(a["total"], 1)
+        self.assertEqual(a["scope"], "assignee 77")
+
+    def test_non_list_bucket_is_preserved(self):
+        a = self._fastmcp()
+        self.assertEqual(a["overdue"]["generated_at"], "2026-08-24T00:00:00Z")
+        self.assertNotIn("generated_at", a["counts_by_group"])
+
+    def test_summary_drops_the_bulk(self):
+        a = self._fastmcp()
+        todo = a["overdue"]["under_a_week_late"][0]
+        self.assertNotIn("description", todo)
+        self.assertNotIn("bookmark_url", todo)
+        self.assertEqual(todo["creator"], {"id": 8, "name": "Ann"})
+
+
+class TestPersonAssignmentsParity(unittest.TestCase):
+    """The CLI omitted `detail` and returned `person` unshaped."""
+
+    def _fastmcp(self, **kwargs):
+        with patch.object(bf, "_get_basecamp_client") as gc:
+            gc.return_value.get_person_assignments.return_value = dict(
+                ASSIGNMENTS_REPORT)
+            with patch.object(bf, "_run_sync", _fake_run_sync):
+                return run(bf.get_person_assignments(person_id="8", **kwargs))
+
+    def _cli(self, **args):
+        server, client = _cli_with(
+            get_person_assignments=lambda *a, **k: dict(ASSIGNMENTS_REPORT))
+        with patch.object(MCPServer, "_get_basecamp_client", return_value=client):
+            return server._execute_tool(
+                "get_person_assignments", dict(person_id="8", **args))
+
+    def test_summary_responses_match(self):
+        a, b = self._fastmcp(), self._cli()
+        self.assertEqual(a, b, "assignment responses differ between paths")
+        self.assertEqual(a["count"], 2)
+        self.assertEqual(a["detail"], ps.SUMMARY)
+
+    def test_full_responses_match(self):
+        a, b = self._fastmcp(detail="full"), self._cli(detail="full")
+        self.assertEqual(a, b)
+
+    def test_person_is_reduced_to_id_and_name(self):
+        a = self._fastmcp()
+        self.assertEqual(a["person"], {"id": 8, "name": "Ann"})
+
+
+class TestSingleRecordParity(unittest.TestCase):
+    """get_project/get_column/get_card must shape identically on both paths."""
+
+    def _pair(self, tool, payload, kwargs):
+        with patch.object(bf, "_get_basecamp_client") as gc:
+            getattr(gc.return_value, tool).return_value = dict(payload)
+            with patch.object(bf, "_run_sync", _fake_run_sync):
+                a = run(getattr(bf, tool)(**kwargs))
+        server, client = _cli_with(**{tool: lambda *x, **k: dict(payload)})
+        with patch.object(MCPServer, "_get_basecamp_client", return_value=client):
+            b = server._execute_tool(tool, dict(kwargs))
+        return a, b
+
+    def test_get_column_matches_and_prunes(self):
+        a, b = self._pair("get_column", COLUMN,
+                          {"project_id": "1", "column_id": "31"})
+        self.assertEqual(a, b, "get_column differs between paths")
+        self.assertNotIn("bookmark_url", a["column"])
+        self.assertNotIn("subscription_url", a["column"])
+        self.assertNotIn("avatar_url", a["column"]["creator"])
+
+    def test_get_card_matches_and_prunes(self):
+        a, b = self._pair("get_card", CARD,
+                          {"project_id": "1", "card_id": "41"})
+        self.assertEqual(a, b, "get_card differs between paths")
+        self.assertNotIn("attachable_sgid", a["card"])
+        self.assertNotIn("comments_url", a["card"])
+
+    def test_get_project_matches(self):
+        a, b = self._pair("get_project", PROJECT, {"project_id": "1"})
+        self.assertEqual(a, b, "get_project differs between paths")
+        self.assertTrue(all("url" not in d for d in a["project"]["dock"]))
+
+
+class TestShapingDoesNotMutateCallerData(unittest.TestCase):
+    """The helpers return a value, so they must not edit their argument.
+
+    get_project hands a caller-owned record straight to project_full; an
+    in-place trim there would edit data the caller still holds.
+    """
+
+    def test_trim_dock_leaves_the_input_alone(self):
+        original = copy.deepcopy(PROJECT)
+        out = ps.trim_dock(original)
+        self.assertEqual(original, PROJECT, "trim_dock mutated its argument")
+        self.assertTrue(all("url" not in d for d in out["dock"]))
+
+    def test_trim_people_sample_leaves_the_input_alone(self):
+        original = copy.deepcopy(PROJECT)
+        out = ps.trim_people_sample(original)
+        self.assertEqual(original, PROJECT,
+                         "trim_people_sample mutated its argument")
+        self.assertEqual(out["people"]["team"]["sample"][0],
+                         {"id": 9, "name": "Joe"})
+
+    def test_project_full_leaves_the_input_alone(self):
+        original = copy.deepcopy(PROJECT)
+        ps.project_full(original)
+        self.assertEqual(original, PROJECT, "project_full mutated its argument")
+
+    def test_shape_card_table_leaves_the_input_alone(self):
+        table = {"id": 1, "title": "Board", "lists": [dict(COLUMN)]}
+        original = copy.deepcopy(table)
+        ps.shape_card_table(table, ps.SUMMARY)
+        self.assertEqual(table, original,
+                         "shape_card_table mutated its argument")
+
+
 class TestCliSchemasDeclareDetail(unittest.TestCase):
     """A knob the handler honours but the schema hides is unusable."""
 

@@ -171,17 +171,21 @@ def trim_dock(project):
     Every dock entry carries both `url` and `app_url` for the same resource,
     which is ~1,000 wasted characters per project. Shared by get_project and
     get_projects(detail="full") so the two cannot drift apart.
+
+    Returns a new dict; the caller's project is never modified. These helpers
+    return a value, so they read as pure — and they are also reachable from
+    get_project, where the record belongs to the caller.
     """
     if not isinstance(project, dict):
         return project
     dock = project.get("dock")
-    if isinstance(dock, list):
-        project["dock"] = [
-            {k: v for k, v in item.items() if k != "url"}
-            if isinstance(item, dict) else item
-            for item in dock
-        ]
-    return project
+    if not isinstance(dock, list):
+        return project
+    return dict(project, dock=[
+        {k: v for k, v in item.items() if k != "url"}
+        if isinstance(item, dict) else item
+        for item in dock
+    ])
 
 
 def trim_people_sample(project):
@@ -189,15 +193,23 @@ def trim_people_sample(project):
 
     Note the sample is not guaranteed to be the full membership, so it is only
     ever exposed as a sample — never as a complete member list.
+
+    Returns a new dict, copying only the groups it rewrites; the caller's
+    project and its nested group dicts are left untouched.
     """
     if not isinstance(project, dict):
         return project
     people = project.get("people")
-    if isinstance(people, dict):
-        for group in people.values():
-            if isinstance(group, dict) and isinstance(group.get("sample"), list):
-                group["sample"] = [person_brief(p) for p in group["sample"]]
-    return project
+    if not isinstance(people, dict):
+        return project
+    groups = {}
+    for name, group in people.items():
+        if isinstance(group, dict) and isinstance(group.get("sample"), list):
+            groups[name] = dict(
+                group, sample=[person_brief(p) for p in group["sample"]])
+        else:
+            groups[name] = group
+    return dict(project, people=groups)
 
 
 def project_full(project):
@@ -278,6 +290,9 @@ def shape_card_table(table, detail):
     A single board runs ~11k tokens on a real account because the same
     subscriber objects repeat in every column, so summary drops the embedded
     cards and keeps a per-column count instead.
+
+    Non-mutating: prune() returns a fresh structure, so the rebinding below
+    never reaches the caller's table.
     """
     table = prune(table)
     if not isinstance(table, dict) or detail == FULL:
@@ -380,3 +395,53 @@ def projects_response(projects, detail, query=None, status=None, limit=None):
             "detail='full' for complete records."
         )
     return result
+
+
+def overdue_response(report, detail, assignee_id=None):
+    """Shape the overdue-todos report into a tool response.
+
+    The report is a dict of lateness buckets ("1_week", "2_weeks", …), not a
+    flat list, so each bucket is shaped independently and the counts are
+    reported per group as well as in total. A non-list bucket value is passed
+    through pruned rather than dropped, so an unexpected report shape degrades
+    to "less shaping" instead of losing data.
+    """
+    overdue = {}
+    counts = {}
+    total = 0
+    for group, todos in (report or {}).items():
+        if not isinstance(todos, list):
+            overdue[group] = prune(todos)
+            continue
+        if assignee_id:
+            wanted = str(assignee_id)
+            todos = [t for t in todos
+                     if any(str((a or {}).get("id")) == wanted
+                            for a in (t.get("assignees") or []))]
+        overdue[group] = shape_todos(todos, detail)
+        counts[group] = len(todos)
+        total += len(todos)
+
+    return {
+        "status": "success",
+        "overdue": overdue,
+        "counts_by_group": counts,
+        "total": total,
+        "detail": detail,
+        "scope": ("assignee " + str(assignee_id)) if assignee_id
+                 else "entire account",
+    }
+
+
+def person_assignments_response(report, detail):
+    """Shape one person's cross-project assignment report."""
+    report = report or {}
+    todos = report.get("todos") or []
+    return {
+        "status": "success",
+        "person": person_brief(prune(report.get("person") or {})),
+        "grouped_by": report.get("grouped_by"),
+        "todos": shape_todos(todos, detail),
+        "count": len(todos),
+        "detail": detail,
+    }

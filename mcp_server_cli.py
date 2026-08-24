@@ -808,7 +808,10 @@ class MCPServer:
                 "description": "Get all overdue to-dos across all projects, grouped by lateness (under_a_week_late, over_a_week_late, over_a_month_late, over_three_months_late).",
                 "inputSchema": {
                     "type": "object",
-                    "properties": {},
+                    "properties": {
+                        "detail": {"type": "string", "enum": ["summary", "full"], "description": "Response detail. Defaults to summary unless BASECAMP_MCP_FULL_RESPONSES=1."},
+                        "assignee_id": {"type": "string", "description": "Optional — return only to-dos assigned to this person ID (see get_assignable_people)"}
+                    },
                     "required": []
                 }
             }
@@ -1287,7 +1290,7 @@ class MCPServer:
                 column = client.get_column(project_id, column_id)
                 return {
                     "status": "success",
-                    "column": column
+                    "column": _shape.prune(column)
                 }
 
             elif tool_name == "create_column":
@@ -1388,7 +1391,7 @@ class MCPServer:
                 card = client.get_card(project_id, card_id)
                 return {
                     "status": "success",
-                    "card": card
+                    "card": _shape.prune(card)
                 }
 
             elif tool_name == "create_card":
@@ -1660,25 +1663,18 @@ class MCPServer:
                 }
 
             elif tool_name == "get_person_assignments":
-                person_id = arguments.get("person_id")
-                group_by = arguments.get("group_by")
-                report = client.get_person_assignments(person_id, group_by)
-                return {
-                    "status": "success",
-                    "person": report.get("person"),
-                    "grouped_by": report.get("grouped_by"),
-                    "todos": _shape.shape_todos(
-                        report.get("todos") or [],
-                        _shape.resolve_detail(arguments.get("detail"))),
-                    "count": len(report.get("todos") or [])
-                }
+                return _shape.person_assignments_response(
+                    client.get_person_assignments(
+                        arguments.get("person_id"), arguments.get("group_by")),
+                    _shape.resolve_detail(arguments.get("detail")),
+                )
 
             elif tool_name == "get_overdue_todos":
-                report = client.get_overdue_todos()
-                return {
-                    "status": "success",
-                    "overdue": report
-                }
+                return _shape.overdue_response(
+                    client.get_overdue_todos(),
+                    _shape.resolve_detail(arguments.get("detail")),
+                    assignee_id=arguments.get("assignee_id"),
+                )
 
             else:
                 return {
