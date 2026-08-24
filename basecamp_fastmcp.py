@@ -123,6 +123,46 @@ async def _run_sync(func, *args, **kwargs):
     return await anyio.to_thread.run_sync(func, *args, **kwargs)
 
 
+# --------------------------------------------------------------------------
+# Payload shaping
+#
+# Lives in payload_shaping.py so that this server and the compatibility CLI
+# (mcp_server_cli.py) cannot return different shapes for the same tool. The
+# module-level aliases below keep the call sites in this file unchanged.
+# --------------------------------------------------------------------------
+import payload_shaping as _shape
+
+_NOISE_KEYS = _shape.NOISE_KEYS
+_PROJECT_SUMMARY_KEYS = _shape.PROJECT_SUMMARY_KEYS
+_TODO_SUMMARY_KEYS = _shape.TODO_SUMMARY_KEYS
+_MESSAGE_SUMMARY_KEYS = _shape.MESSAGE_SUMMARY_KEYS
+_COMMENT_SUMMARY_KEYS = _shape.COMMENT_SUMMARY_KEYS
+_CARD_SUMMARY_KEYS = _shape.CARD_SUMMARY_KEYS
+_COLUMN_SUMMARY_KEYS = _shape.COLUMN_SUMMARY_KEYS
+_BRIEF_NESTED_KEYS = _shape.BRIEF_NESTED_KEYS
+_FULL_DETAIL_DEFAULT_LIMIT = _shape.FULL_DETAIL_DEFAULT_LIMIT
+
+_prune = _shape.prune
+_person_brief = _shape.person_brief
+_brief_nested = _shape.brief_nested
+_project_summary = _shape.project_summary
+_project_full = _shape.project_full
+_trim_dock = _shape.trim_dock
+_trim_people_sample = _shape.trim_people_sample
+_todo_summary = _shape.todo_summary
+_card_summary = _shape.card_summary
+_column_summary = _shape.column_summary
+_message_summary = _shape.message_summary
+_comment_summary = _shape.comment_summary
+_shape_records = _shape.shape_records
+_shape_todos = _shape.shape_todos
+_shape_cards = _shape.shape_cards
+_shape_card_table = _shape.shape_card_table
+_resolve_detail = _shape.resolve_detail
+
+
+
+
 def _handle_download_error(e: Exception, kind: str) -> Dict[str, Any]:
     """Map a BasecampClient download exception to an MCP error response."""
     logger.error(f"Error downloading {kind}: {e}")
@@ -171,19 +211,60 @@ def _serialize_blob_for_mcp(
 # Core MCP Tools - Starting with essential ones from original server
 
 @mcp.tool()
-async def get_projects() -> Dict[str, Any]:
-    """Get all Basecamp projects."""
+async def get_projects(
+    detail: Optional[Literal["summary", "full"]] = None,
+    query: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: Optional[int] = None,
+) -> Dict[str, Any]:
+    """List Basecamp projects. Returns a compact summary by default.
+
+    Use this to discover projects and find the ID you need. Pass `query` to
+    search by name rather than listing everything.
+
+    detail="summary" (the default) returns only id, name, status, purpose,
+    description, app_url, created_at, updated_at and tools — a few hundred
+    characters per project. `tools` lists the names of the project's enabled
+    dock entries (e.g. ["message_board", "todoset", "kanban_board"]), which
+    answers "does this project have a card table?" without the dock's bulk.
+
+    Set BASECAMP_MCP_FULL_RESPONSES=1 in the environment to make "full" the
+    default for list tools deployment-wide; an explicit `detail` argument
+    overrides it either way.
+
+    detail="full" returns Basecamp's complete project records, including the
+    `people` sample and the `dock`. Those run ~2,700 characters each, so a
+    whole account would overflow the tool-result limit — **detail="full" is
+    therefore capped at 5 projects unless you pass an explicit `limit`.** When
+    the cap or a limit applies, the response carries `truncated: true` and
+    `matched: <n>` so you can see how many were held back, and you can narrow
+    with `query`/`status` or page with `limit`.
+
+    **Dock IDs (todoset, message_board, kanban_board, vault, schedule, …) are
+    not in either view. Call get_project(project_id) for those** — you need
+    them only for a project you have already chosen, and including them for
+    every project is what makes the full payload unmanageable.
+
+    Args:
+        detail: "summary" (the default) or "full". Omit it to take the
+            deployment default, which is "summary" unless
+            BASECAMP_MCP_FULL_RESPONSES=1 is set in the environment.
+        query: Case-insensitive substring match on the project name.
+        status: Filter by project status, e.g. "active" or "archived".
+        limit: Return at most this many projects (applied after filtering).
+    """
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
-    
+
+    detail = _resolve_detail(detail)
+
     try:
         projects = await _run_sync(client.get_projects)
-        return {
-            "status": "success",
-            "projects": projects,
-            "count": len(projects)
-        }
+        # Filtering, capping and the response envelope all live in
+        # payload_shaping so mcp_server_cli answers identically.
+        return _shape.projects_response(
+            projects, detail, query=query, status=status, limit=limit)
     except Exception as e:
         logger.error(f"Error getting projects: {e}")
         if "401" in str(e) and "expired" in str(e).lower():
@@ -198,17 +279,24 @@ async def get_projects() -> Dict[str, Any]:
 
 @mcp.tool()
 async def get_project(project_id: str) -> Dict[str, Any]:
-    """Get details for a specific project.
-    
+    """Get one project's details, including its dock IDs.
+
+    This is where the dock lives: the IDs of the project's enabled tools
+    (todoset, message_board, kanban_board, vault, schedule, chat, inbox,
+    questionnaire). Those IDs are what the per-tool calls need — e.g. the
+    todoset ID for get_todolists, the kanban_board ID for get_cards.
+
+    Use get_projects to find the project_id, then this call for the dock.
+
     Args:
         project_id: The project ID
     """
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
-    
+
     try:
-        project = await _run_sync(client.get_project, project_id)
+        project = _project_full(_prune(await _run_sync(client.get_project, project_id)))
         return {
             "status": "success",
             "project": project
@@ -269,24 +357,44 @@ async def search_basecamp(query: str, project_id: Optional[str] = None) -> Dict[
         }
 
 @mcp.tool()
-async def get_assignable_people() -> Dict[str, Any]:
+async def get_assignable_people(
+    query: Optional[str] = None,
+    detail: Optional[Literal["summary", "full"]] = None,
+) -> Dict[str, Any]:
     """Get all people who can have to-dos assigned to them.
 
-    Returns the account-wide list of assignable people (id, name,
-    email_address, title, ...). Use a person's id with
-    get_person_assignments to fetch their to-dos across all projects.
+    Account-wide list. Use a person's id with get_person_assignments to fetch
+    their to-dos across all projects. Pass `query` to look someone up by name
+    or email instead of retrieving the whole roster.
+
+    **The authenticated user is not in this list** — Basecamp excludes you from
+    the assignable report, so you cannot find your own person ID here. Use
+    get_my_profile / the /my/profile endpoint for that, or take the `creator`
+    id from any record you authored.
+
+    Note that `email_address` is often returned partially masked by Basecamp
+    (e.g. "m•••@•••••.••"), so it is unreliable for matching.
+
+    detail="summary" (the default) returns id, name, email_address, title and
+    company name. detail="full" returns complete person records.
+
+    Args:
+        query: Case-insensitive substring match on name or email address.
+        detail: "summary" (the default) or "full". Omit it to take the
+            deployment default, which is "summary" unless
+            BASECAMP_MCP_FULL_RESPONSES=1 is set in the environment.
     """
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
 
+    detail = _resolve_detail(detail)
+
     try:
         people = await _run_sync(client.get_assignable_people)
-        return {
-            "status": "success",
-            "people": people,
-            "count": len(people)
-        }
+        # Filtering, projection and envelope live in payload_shaping so
+        # mcp_server_cli answers identically.
+        return _shape.people_response(people, detail, query=query)
     except Exception as e:
         logger.error(f"Error getting assignable people: {e}")
         if "401" in str(e) and "expired" in str(e).lower():
@@ -300,7 +408,11 @@ async def get_assignable_people() -> Dict[str, Any]:
         }
 
 @mcp.tool()
-async def get_person_assignments(person_id: str, group_by: Optional[Literal["bucket", "date"]] = None) -> Dict[str, Any]:
+async def get_person_assignments(
+    person_id: str,
+    group_by: Optional[Literal["bucket", "date"]] = None,
+    detail: Optional[Literal["summary", "full"]] = None,
+) -> Dict[str, Any]:
     """Get all active, pending to-dos assigned to a specific person.
 
     Cross-project report: returns the person's assignments across ALL
@@ -308,24 +420,32 @@ async def get_person_assignments(person_id: str, group_by: Optional[Literal["buc
     /reports/todos/assigned/{person_id}). Prefer this over iterating
     projects when you need everything assigned to one person.
 
+    Each to-do includes `due_on` (may be null) and `bucket.name`, so overdue
+    and upcoming items can be identified by comparing against today's date.
+
+    detail="summary" (the default) returns identity and scheduling fields with
+    people reduced to id+name. It omits the `description` body — check
+    `has_description` and call get_todo(project_id, todo_id) when you need it.
+    detail="full" returns complete records; on an account with many
+    assignments that can exceed the tool-result limit.
+
     Args:
         person_id: The person's ID (see get_assignable_people)
         group_by: Optional grouping — 'bucket' (by project, API default)
             or 'date' (by due date)
+        detail: "summary" (the default) or "full". Omit it to take the
+            deployment default, which is "summary" unless
+            BASECAMP_MCP_FULL_RESPONSES=1 is set in the environment.
     """
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
 
+    detail = _resolve_detail(detail)
+
     try:
         report = await _run_sync(client.get_person_assignments, person_id, group_by)
-        return {
-            "status": "success",
-            "person": report.get("person"),
-            "grouped_by": report.get("grouped_by"),
-            "todos": report.get("todos", []),
-            "count": len(report.get("todos") or [])
-        }
+        return _shape.person_assignments_response(report, detail)
     except Exception as e:
         logger.error(f"Error getting assignments for person {person_id}: {e}")
         if "401" in str(e) and "expired" in str(e).lower():
@@ -339,22 +459,43 @@ async def get_person_assignments(person_id: str, group_by: Optional[Literal["buc
         }
 
 @mcp.tool()
-async def get_overdue_todos() -> Dict[str, Any]:
-    """Get all overdue to-dos across all projects, grouped by lateness.
+async def get_overdue_todos(
+    detail: Optional[Literal["summary", "full"]] = None,
+    assignee_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Get overdue to-dos for the WHOLE ACCOUNT, grouped by how late they are.
 
-    Groups: under_a_week_late, over_a_week_late, over_a_month_late,
-    over_three_months_late.
+    **This is account-wide — everyone's overdue to-dos, not just yours.** On a
+    team account that is usually dozens of items belonging to other people. To
+    find one person's overdue work, either pass `assignee_id`, or use
+    get_person_assignments and compare `due_on` against today.
+
+    The result is grouped, not a flat list: `under_a_week_late`,
+    `over_a_week_late`, `over_a_month_late`, `over_three_months_late`. Code
+    expecting a list, or a `todos` key, will read zero items.
+
+    detail="summary" (the default) trims each to-do to identity and scheduling
+    fields and omits the `description` body. detail="full" returns complete
+    records — on a busy account that runs to hundreds of thousands of
+    characters and will exceed the tool-result limit.
+
+    Args:
+        detail: "summary" (the default) or "full". Omit it to take the
+            deployment default, which is "summary" unless
+            BASECAMP_MCP_FULL_RESPONSES=1 is set in the environment.
+        assignee_id: Optionally return only to-dos assigned to this person ID.
     """
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
 
+    detail = _resolve_detail(detail)
+
     try:
         report = await _run_sync(client.get_overdue_todos)
-        return {
-            "status": "success",
-            "overdue": report
-        }
+        # Bucket shaping and the envelope live in payload_shaping so
+        # mcp_server_cli answers identically.
+        return _shape.overdue_response(report, detail, assignee_id=assignee_id)
     except Exception as e:
         logger.error(f"Error getting overdue todos: {e}")
         if "401" in str(e) and "expired" in str(e).lower():
@@ -403,6 +544,7 @@ async def get_todos(
     todolist_id: str,
     completed: bool = False,
     status: Optional[str] = None,
+    detail: Optional[Literal["summary", "full"]] = None,
 ) -> Dict[str, Any]:
     """Get todos from a todo list.
 
@@ -411,23 +553,35 @@ async def get_todos(
     reporting delivered work by title rather than an open/closed ratio), or
     ``status='archived'``/``'trashed'`` to fetch by recording status.
 
+    detail="summary" (the default) returns identity and scheduling fields with
+    people reduced to id+name, and omits the `description` body — check the
+    `has_description` flag and call get_todo for the text. A full to-do record
+    averages ~7,900 characters, so a long list overflows the tool-result limit;
+    a summary is roughly a tenth of that.
+
     Args:
         project_id: Project ID
         todolist_id: The todo list ID
         completed: When True, return completed to-dos (Basecamp ?completed=true)
         status: Optional recording-status filter: 'archived' or 'trashed'
+        detail: "summary" (the default) or "full". Omit it to take the
+            deployment default, which is "summary" unless
+            BASECAMP_MCP_FULL_RESPONSES=1 is set in the environment.
     """
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
+
+    detail = _resolve_detail(detail)
 
     try:
         todos = await _run_sync(
             client.get_todos, project_id, todolist_id, completed, status)
         return {
             "status": "success",
-            "todos": todos,
-            "count": len(todos)
+            "todos": _shape_todos(todos, detail),
+            "count": len(todos),
+            "detail": detail,
         }
     except Exception as e:
         logger.error(f"Error getting todos: {e}")
@@ -544,6 +698,9 @@ async def update_todo(project_id: str, todo_id: str,
         description: HTML description of the todo
         assignee_ids: List of person IDs to assign
         completion_subscriber_ids: List of person IDs to notify on completion
+        notify: When true, Basecamp emails the assignees about this change.
+            Transient — it is not stored on the to-do. Omit it unless the
+            caller has actually asked for people to be notified.
         due_on: Due date in YYYY-MM-DD format
         starts_on: Start date in YYYY-MM-DD format
     """
@@ -775,28 +932,48 @@ async def global_search(query: str) -> Dict[str, Any]:
         }
 
 @mcp.tool()
-async def get_comments(recording_id: str, project_id: str, page: int = 1) -> Dict[str, Any]:
+async def get_comments(
+    recording_id: str,
+    project_id: str,
+    page: int = 1,
+    detail: Optional[Literal["summary", "full"]] = None,
+) -> Dict[str, Any]:
     """Get comments for a Basecamp item.
+
+    detail="summary" (the default) keeps each comment's `content` in full —
+    the discussion is the point — and trims the metadata around it, reducing
+    `creator` to id+name and dropping `content_attachments`. Use
+    detail="full" when you need attachment download URLs.
+
+    Note that `content` itself is the bulk of this payload (~3,700 characters
+    per comment on a busy thread), so a long thread can still be large even in
+    summary; use `page` to walk it rather than pulling everything at once.
 
     Args:
         recording_id: The item ID
         project_id: The project ID
         page: Page number for pagination (default: 1). Basecamp uses geared pagination:
               page 1 has 15 results, page 2 has 30, page 3 has 50, page 4+ has 100.
+        detail: "summary" (the default) or "full". Omit it to take the
+            deployment default, which is "summary" unless
+            BASECAMP_MCP_FULL_RESPONSES=1 is set in the environment.
     """
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
 
+    detail = _resolve_detail(detail)
+
     try:
         result = await _run_sync(client.get_comments, project_id, recording_id, page)
         return {
             "status": "success",
-            "comments": result["comments"],
+            "comments": _shape_records(result["comments"], detail, _comment_summary),
             "count": len(result["comments"]),
             "page": page,
             "total_count": result["total_count"],
-            "next_page": result["next_page"]
+            "next_page": result["next_page"],
+            "detail": detail,
         }
     except Exception as e:
         logger.error(f"Error getting comments: {e}")
@@ -903,23 +1080,38 @@ async def get_message_board(project_id: str) -> Dict[str, Any]:
         }
 
 @mcp.tool()
-async def get_messages(project_id: str, message_board_id: Optional[str] = None) -> Dict[str, Any]:
+async def get_messages(
+    project_id: str,
+    message_board_id: Optional[str] = None,
+    detail: Optional[Literal["summary", "full"]] = None,
+) -> Dict[str, Any]:
     """Get all messages from a project's message board.
+
+    detail="summary" (the default) keeps each message's `content` in full —
+    that is what you came for — and trims the surrounding metadata, reducing
+    `creator` to id+name. A full person record is ~900 characters repeated on
+    every row, which is the single largest cost in this payload.
 
     Args:
         project_id: The project ID
         message_board_id: Optional message board ID. If not provided, will be auto-discovered from the project.
+        detail: "summary" (the default) or "full". Omit it to take the
+            deployment default, which is "summary" unless
+            BASECAMP_MCP_FULL_RESPONSES=1 is set in the environment.
     """
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
 
+    detail = _resolve_detail(detail)
+
     try:
         messages = await _run_sync(client.get_messages, project_id, message_board_id)
         return {
             "status": "success",
-            "messages": messages,
-            "count": len(messages)
+            "messages": _shape_records(messages, detail, _message_summary),
+            "count": len(messages),
+            "detail": detail,
         }
     except Exception as e:
         logger.error(f"Error getting messages: {e}")
@@ -1251,22 +1443,36 @@ async def trash_forward(project_id: str, forward_id: str) -> Dict[str, Any]:
 
 
 @mcp.tool()
-async def get_card_tables(project_id: str) -> Dict[str, Any]:
+async def get_card_tables(
+    project_id: str,
+    detail: Optional[Literal["summary", "full"]] = None,
+) -> Dict[str, Any]:
     """Get all card tables for a project.
-    
+
+    detail="summary" (the default) summarises each table's embedded columns as
+    it does in get_card_table.
+
     Args:
         project_id: The project ID
+        detail: "summary" (the default) or "full". Omit it to take the
+            deployment default, which is "summary" unless
+            BASECAMP_MCP_FULL_RESPONSES=1 is set in the environment.
     """
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
-    
+
+    detail = _resolve_detail(detail)
+
     try:
         card_tables = await _run_sync(client.get_card_tables, project_id)
+        shaped = ([_shape_card_table(t, detail) for t in card_tables]
+                  if isinstance(card_tables, list) else _prune(card_tables))
         return {
             "status": "success",
-            "card_tables": card_tables,
-            "count": len(card_tables)
+            "card_tables": shaped,
+            "count": len(card_tables),
+            "detail": detail,
         }
     except Exception as e:
         logger.error(f"Error getting card tables: {e}")
@@ -1281,22 +1487,36 @@ async def get_card_tables(project_id: str) -> Dict[str, Any]:
         }
 
 @mcp.tool()
-async def get_card_table(project_id: str) -> Dict[str, Any]:
-    """Get the card table details for a project.
-    
+async def get_card_table(
+    project_id: str,
+    detail: Optional[Literal["summary", "full"]] = None,
+) -> Dict[str, Any]:
+    """Get the card table details for a project, including its columns.
+
+    detail="summary" (the default) summarises the embedded columns, keeping a
+    card count per column instead of their `subscribers` and `creator` records.
+    An empty five-column board measures ~19,000 characters at full detail, of
+    which the columns are ~85% — so ask for "full" only when you need it.
+
     Args:
         project_id: The project ID
+        detail: "summary" (the default) or "full". Omit it to take the
+            deployment default, which is "summary" unless
+            BASECAMP_MCP_FULL_RESPONSES=1 is set in the environment.
     """
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
-    
+
+    detail = _resolve_detail(detail)
+
     try:
         card_table = await _run_sync(client.get_card_table, project_id)
         card_table_details = await _run_sync(client.get_card_table_details, project_id, card_table['id'])
         return {
             "status": "success",
-            "card_table": card_table_details
+            "card_table": _shape_card_table(card_table_details, detail),
+            "detail": detail,
         }
     except Exception as e:
         logger.error(f"Error getting card table: {e}")
@@ -1313,23 +1533,39 @@ async def get_card_table(project_id: str) -> Dict[str, Any]:
         }
 
 @mcp.tool()
-async def get_columns(project_id: str, card_table_id: str) -> Dict[str, Any]:
+async def get_columns(
+    project_id: str,
+    card_table_id: str,
+    detail: Optional[Literal["summary", "full"]] = None,
+) -> Dict[str, Any]:
     """Get all columns in a card table.
-    
+
+    detail="summary" (the default) keeps each column's identity, position,
+    colour, on-hold state and card count, and drops its `subscribers` list and
+    full `creator` record. Those two are the bulk of this payload — a column
+    costs ~3,300 characters at full detail even when it holds no cards, because
+    the same person objects repeat in every column.
+
     Args:
         project_id: The project ID
         card_table_id: The card table ID
+        detail: "summary" (the default) or "full". Omit it to take the
+            deployment default, which is "summary" unless
+            BASECAMP_MCP_FULL_RESPONSES=1 is set in the environment.
     """
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
-    
+
+    detail = _resolve_detail(detail)
+
     try:
         columns = await _run_sync(client.get_columns, project_id, card_table_id)
         return {
             "status": "success",
-            "columns": columns,
-            "count": len(columns)
+            "columns": _shape_records(columns, detail, _column_summary),
+            "count": len(columns),
+            "detail": detail,
         }
     except Exception as e:
         logger.error(f"Error getting columns: {e}")
@@ -1344,23 +1580,39 @@ async def get_columns(project_id: str, card_table_id: str) -> Dict[str, Any]:
         }
 
 @mcp.tool()
-async def get_cards(project_id: str, column_id: str) -> Dict[str, Any]:
+async def get_cards(
+    project_id: str,
+    column_id: str,
+    detail: Optional[Literal["summary", "full"]] = None,
+) -> Dict[str, Any]:
     """Get all cards in a column.
-    
+
+    detail="summary" (the default) returns identity and scheduling fields with
+    assignees reduced to id+name, and omits the `description` body — check
+    `has_description` and call get_card for the text. Card records carry the
+    same person-object weight as to-dos, so a busy column overflows the
+    tool-result limit at full detail.
+
     Args:
         project_id: The project ID
         column_id: The column ID
+        detail: "summary" (the default) or "full". Omit it to take the
+            deployment default, which is "summary" unless
+            BASECAMP_MCP_FULL_RESPONSES=1 is set in the environment.
     """
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
-    
+
+    detail = _resolve_detail(detail)
+
     try:
         cards = await _run_sync(client.get_cards, project_id, column_id)
         return {
             "status": "success",
-            "cards": cards,
-            "count": len(cards)
+            "cards": _shape_cards(cards, detail),
+            "count": len(cards),
+            "detail": detail,
         }
     except Exception as e:
         logger.error(f"Error getting cards: {e}")
@@ -1425,7 +1677,7 @@ async def get_column(project_id: str, column_id: str) -> Dict[str, Any]:
         column = await _run_sync(client.get_column, project_id, column_id)
         return {
             "status": "success",
-            "column": column
+            "column": _prune(column),
         }
     except Exception as e:
         logger.error(f"Error getting column: {e}")
@@ -1548,7 +1800,7 @@ async def get_card(project_id: str, card_id: str) -> Dict[str, Any]:
         card = await _run_sync(client.get_card, project_id, card_id)
         return {
             "status": "success",
-            "card": card
+            "card": _prune(card),
         }
     except Exception as e:
         logger.error(f"Error getting card: {e}")
