@@ -24,7 +24,7 @@ def test_question_client_uses_documented_routes_and_payloads():
     with patch.object(client, "put", side_effect=[updated, updated]) as put:
         assert client.update_question("question-1", title="Weekly update")["id"] == "question-1"
         assert client.update_question_notification_settings(
-            "question-1", notify_on_answer=True, digest_include_unanswered=False
+            "question-1", responding=True, subscribed=False
         )["id"] == "question-1"
     with patch.object(client, "delete", return_value=updated) as delete:
         assert client.resume_question("question-1")["paused"] is False
@@ -41,7 +41,7 @@ def test_question_client_uses_documented_routes_and_payloads():
     )
     assert put.call_args_list[1].args == (
         "questions/question-1/notification_settings.json",
-        {"notify_on_answer": True, "digest_include_unanswered": False},
+        {"responding": True, "subscribed": False},
     )
     delete.assert_called_once_with("questions/question-1/pause.json")
     get.assert_called_once_with("buckets/project-1/questions/question-1.json")
@@ -54,7 +54,7 @@ def test_question_client_validates_mutations():
         lambda: client.create_question("q-1", "Question", {}),
         lambda: client.update_question("question-1"),
         lambda: client.update_question_notification_settings("question-1"),
-        lambda: client.update_question_notification_settings("question-1", notify_on_answer="yes"),
+        lambda: client.update_question_notification_settings("question-1", responding="yes"),
     ):
         try:
             call()
@@ -87,7 +87,7 @@ def test_question_management_tools_are_registered_and_return_structured_results(
     client.create_question.return_value = {"id": "question-1"}
     client.pause_question.return_value = {"paused": True}
     client.get_question_answerers.return_value = [{"id": "person-1"}]
-    client.update_question_notification_settings.return_value = {"notify_on_answer": True}
+    client.update_question_notification_settings.return_value = {"responding": True}
 
     async def run():
         with patch.object(basecamp_fastmcp, "_get_basecamp_client", return_value=client):
@@ -95,7 +95,7 @@ def test_question_management_tools_are_registered_and_return_structured_results(
                 await basecamp_fastmcp.create_question("q-1", "Daily", {"frequency": "every_day"}),
                 await basecamp_fastmcp.pause_question("question-1"),
                 await basecamp_fastmcp.update_question_notification_settings(
-                    "question-1", notify_on_answer=True
+                    "question-1", responding=True
                 ),
                 await basecamp_fastmcp.get_question_answerers("question-1"),
             )
@@ -105,7 +105,10 @@ def test_question_management_tools_are_registered_and_return_structured_results(
     assert paused == {
         "status": "success", "question": {"paused": True}, "message": "Question paused"
     }
-    assert settings == {"status": "success", "settings": {"notify_on_answer": True}}
+    assert settings == {"status": "success", "settings": {"responding": True}}
+    client.update_question_notification_settings.assert_called_once_with(
+        "question-1", True, None
+    )
     assert answerers == {
         "status": "success", "answerers": [{"id": "person-1"}], "count": 1
     }

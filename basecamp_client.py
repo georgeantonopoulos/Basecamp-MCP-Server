@@ -1503,17 +1503,15 @@ class BasecampClient:
         )
 
     def update_question_notification_settings(
-        self, question_id, notify_on_answer=None, digest_include_unanswered=None
+        self, question_id, responding=None, subscribed=None
     ):
         """Update the authenticated user's question notification settings."""
-        if notify_on_answer is None and digest_include_unanswered is None:
-            raise ValueError(
-                "notify_on_answer or digest_include_unanswered is required"
-            )
+        if responding is None and subscribed is None:
+            raise ValueError("responding or subscribed is required")
         data = {}
         for name, value in (
-            ("notify_on_answer", notify_on_answer),
-            ("digest_include_unanswered", digest_include_unanswered),
+            ("responding", responding),
+            ("subscribed", subscribed),
         ):
             if value is not None:
                 if not isinstance(value, bool):
@@ -2890,12 +2888,18 @@ class BasecampClient:
         since=None,
         sort=None,
         per_page=None,
+        limit=100,
+        page=None,
     ):
-        """Search account content through Basecamp's native Search API."""
+        """Search account content with an explicit page or bounded result total."""
         if not query or not query.strip():
             raise ValueError("query must not be empty")
         if per_page is not None and per_page < 1:
             raise ValueError("per_page must be >= 1")
+        if limit < 1 or limit > 1000:
+            raise ValueError("limit must be between 1 and 1000")
+        if page is not None and page < 1:
+            raise ValueError("page must be >= 1")
 
         params = {"q": query}
         if type_names:
@@ -2914,7 +2918,9 @@ class BasecampClient:
             params["sort"] = sort
         if per_page is not None:
             params["per_page"] = per_page
-        return self._get_paginated_collection("search.json", params=params)
+        return self._get_paginated_collection(
+            "search.json", params=params, limit=limit, page=page
+        )
 
     def update_recording_status(self, project_id, recording_id, status):
         """Set a recording status using Basecamp's generic recording endpoint."""

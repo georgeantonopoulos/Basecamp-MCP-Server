@@ -2293,8 +2293,16 @@ async def search_recordings(
     since: Optional[str] = None,
     sort: Optional[str] = None,
     per_page: Optional[int] = None,
+    limit: int = 100,
+    page: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """Search all accessible Basecamp content with native full-text filters."""
+    """Search Basecamp content, returning one page or at most ``limit`` results."""
+    if per_page is not None and per_page < 1:
+        return _error_response("Invalid input", "per_page must be >= 1")
+    if limit < 1 or limit > 1000:
+        return _error_response("Invalid input", "limit must be between 1 and 1000")
+    if page is not None and page < 1:
+        return _error_response("Invalid input", "page must be >= 1")
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
@@ -2310,6 +2318,8 @@ async def search_recordings(
             since,
             sort,
             per_page,
+            limit,
+            page,
         )
         return {"status": "success", "query": query, "results": results, "count": len(results)}
     except Exception as e:
@@ -3736,21 +3746,19 @@ async def resume_question(question_id: str) -> Dict[str, Any]:
 @mcp.tool()
 async def update_question_notification_settings(
     question_id: str,
-    notify_on_answer: Optional[bool] = None,
-    digest_include_unanswered: Optional[bool] = None,
+    responding: Optional[bool] = None,
+    subscribed: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """Update the authenticated user's automatic check-in notification settings."""
-    if notify_on_answer is None and digest_include_unanswered is None:
+    if responding is None and subscribed is None:
         return _error_response(
             "Invalid input",
-            "notify_on_answer or digest_include_unanswered is required",
+            "responding or subscribed is required",
         )
-    if notify_on_answer is not None and not isinstance(notify_on_answer, bool):
-        return _error_response("Invalid input", "notify_on_answer must be a boolean")
-    if digest_include_unanswered is not None and not isinstance(digest_include_unanswered, bool):
-        return _error_response(
-            "Invalid input", "digest_include_unanswered must be a boolean"
-        )
+    if responding is not None and not isinstance(responding, bool):
+        return _error_response("Invalid input", "responding must be a boolean")
+    if subscribed is not None and not isinstance(subscribed, bool):
+        return _error_response("Invalid input", "subscribed must be a boolean")
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
@@ -3758,8 +3766,8 @@ async def update_question_notification_settings(
         settings = await _run_sync(
             client.update_question_notification_settings,
             question_id,
-            notify_on_answer,
-            digest_include_unanswered,
+            responding,
+            subscribed,
         )
         return {"status": "success", "settings": settings}
     except Exception as e:

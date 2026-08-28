@@ -38,7 +38,38 @@ def test_native_search_client_uses_documented_filters():
             "sort": "recency",
             "per_page": 25,
         },
+        limit=100,
+        page=None,
     )
+
+
+def test_native_search_has_explicit_page_and_total_bounds():
+    client = BasecampClient.__new__(BasecampClient)
+    client._get_paginated_collection = MagicMock(return_value=[{"id": "recording-1"}])
+
+    client.search_recordings("launch", per_page=25, limit=40, page=2)
+
+    client._get_paginated_collection.assert_called_once_with(
+        "search.json",
+        params={"q": "launch", "per_page": 25},
+        limit=40,
+        page=2,
+    )
+
+
+def test_native_search_rejects_unsafe_bounds_before_requesting():
+    client = BasecampClient.__new__(BasecampClient)
+    client._get_paginated_collection = MagicMock()
+
+    for kwargs in ({"limit": 0}, {"limit": 1001}, {"page": 0}, {"per_page": 0}):
+        try:
+            client.search_recordings("launch", **kwargs)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"unsafe search bounds were accepted: {kwargs}")
+
+    client._get_paginated_collection.assert_not_called()
 
 
 def test_search_metadata_uses_documented_endpoint():
@@ -81,3 +112,6 @@ def test_native_search_tools_return_structured_results():
         "results": [{"id": "recording-1"}],
         "count": 1,
     }
+    client.search_recordings.assert_called_once_with(
+        "launch", None, None, None, None, True, None, None, None, 100, None
+    )
