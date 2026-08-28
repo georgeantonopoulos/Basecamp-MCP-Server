@@ -1,5 +1,7 @@
 """CLI MCP parity tests for recording, vault, and upload reads."""
 
+import os
+
 from unittest.mock import MagicMock, patch
 
 from basecamp_client import DEFAULT_REQUEST_TIMEOUT, BasecampClient
@@ -17,6 +19,7 @@ def test_cli_registers_vault_and_upload_read_tools():
     assert tools["get_upload"]["inputSchema"]["required"] == ["project_id", "upload_id"]
 
 
+@patch.dict(os.environ, {"USER_AGENT": "test-agent"})
 @patch("mcp_server_cli.auth_manager.ensure_authenticated", return_value=True)
 @patch(
     "mcp_server_cli.token_storage.get_token",
