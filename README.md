@@ -7,15 +7,29 @@
 
 An MCP server for Basecamp 3. It lets MCP-capable clients such as Codex, Cursor, and Claude Desktop read and manage Basecamp projects through OAuth-authenticated Basecamp API calls.
 
-The main server is [`basecamp_fastmcp.py`](basecamp_fastmcp.py). It uses the official `mcp.server.fastmcp` Python SDK and exposes 79 tools covering projects, todos, message boards, campfires, card tables, inbox forwards, documents, uploads, comments, events, webhooks, and search.
+The main server is [`basecamp_fastmcp.py`](basecamp_fastmcp.py). It uses the official `mcp.server.fastmcp` Python SDK and exposes 208 tools covering projects, people, todos, message boards, campfires, schedules, card tables, inbox forwards, documents, uploads, comments, events, webhooks, templates, reports, timesheets, gauges, Hill Charts, account administration, dock-tool management, client visibility, notifications, subscriptions, personal surfaces, account-wide feeds, timelines, Lineup markers, and search. The legacy JSON-RPC entry point advertises the same tool catalog for clients that still use it.
 
 ## What It Can Do
 
 - Browse Basecamp projects and project details.
+- Browse account people and project campfire rooms.
 - Search across projects, todos, messages, campfire lines, comments, uploads, and schedules.
 - Read and manage todolists, todos, todo groups, and completion state.
 - Read and create message board messages, including drafts and categories.
 - Read campfire lines.
+- Read, create, and update project schedule entries, including recurring occurrences.
+- Manage personal bookmarks and drafts, the personal note, and calendar colors.
+- Browse account-wide messages, comments, check-ins, forwards, files, to-dos, and cards with bounded results and filters.
+- Browse account and project activity timelines, including activity created by a specific person.
+- Read account-wide and project/recording timesheets, and create, update, or delete time entries.
+- Read project gauges, inspect needle history, record progress updates, and enable or disable gauges.
+- Read Hill Charts, resolve them from projects, and track or untrack to-do lists.
+- Create, update, pause, resume, and configure notifications for automatic check-in questions.
+- Inspect and administer account metadata, account logos, and recording client visibility.
+- Update upload metadata, replace files through attachment SGIDs, and inspect raw upload version events.
+- Create, rename, reorder, enable, disable, and permanently delete project dock tools.
+- Inspect and manage recording subscriptions and subscriber lists.
+- Create, update, list, and delete account-wide Lineup markers.
 - Read and create comments.
 - Work with card tables, columns, cards, and card steps.
 - Read inbox forwards and replies.
@@ -134,14 +148,77 @@ python -m pytest tests/ -v
 
 ## Available Tools
 
-The FastMCP server exposes 79 tools.
+The FastMCP server exposes 208 tools. The legacy JSON-RPC server exposes the same catalog and routes all tools through the FastMCP definitions, preserving one implementation path.
 
 ### Projects And Search
 
 - `get_projects`
+- `get_people`
+- `get_project_people`
+- `update_project_people`
+- `get_pingable_people`
+- `get_person`
+- `get_my_profile`
+- `get_my_assignments`
+- `get_completed_assignments`
+- `get_due_assignments`
+- `get_overdue_todos`
+- `get_upcoming_schedule`
+- `get_question_reminders`
+- `get_everything_messages`
+- `get_everything_comments`
+- `get_everything_checkins`
+- `get_everything_forwards`
+- `get_everything_files`
+- `get_everything_todos`
+- `get_everything_cards`
+- `get_timeline`
+- `get_project_timeline`
+- `get_person_timeline`
+- `get_lineup_markers`
+- `create_lineup_marker`
+- `update_lineup_marker`
+- `delete_lineup_marker`
+- `get_my_bookmarks`
+- `get_bookmark_status`
+- `create_bookmark`
+- `delete_bookmark`
+- `get_my_drafts`
+- `get_my_note`
+- `update_my_note`
+- `get_calendar`
+- `update_calendar`
+- `prioritize_assignment`
+- `deprioritize_assignment`
+- `reorder_priority`
+- `get_notifications`
+- `get_bubble_ups`
+- `mark_notifications_read`
+- `get_subscription`
+- `subscribe_to_recording`
+- `unsubscribe_from_recording`
+- `update_subscription`
 - `get_project`
+- `create_project`
+- `update_project`
+- `trash_project`
 - `search_basecamp`
 - `global_search`
+- `get_search_metadata`
+- `search_recordings`
+
+Native search uses Basecamp's account-wide Search API and supports type, project,
+creator, date, file-type, relevance/recency, and chat-exclusion filters.
+
+### Templates And Project Construction
+
+- `get_templates`
+- `get_template`
+- `create_template`
+- `update_template`
+- `trash_template`
+- `create_project_from_template`
+- `get_project_construction`
 
 ### Todos
 
@@ -170,20 +247,47 @@ The FastMCP server exposes 79 tools.
 - `get_message`
 - `get_message_categories`
 - `create_message`
+- `update_message`
+- `pin_message`
+- `unpin_message`
 - `create_draft_message`
+- `get_message_category`
+- `create_message_category`
+- `update_message_category`
+- `delete_message_category`
 
 Pass `publish: false` to `create_message` to create a draft message instead
 of posting it immediately. Agents can also call `create_draft_message` directly
 when the intended operation is specifically to create a draft.
 
 - `get_campfire_lines`
+- `get_campfires`
+- `get_campfire_line`
+- `create_campfire_line`
+- `delete_campfire_line`
 - `get_daily_check_ins`
 - `get_question_answers`
+- `get_questionnaire`
+- `get_questions`
+- `get_question`
+- `get_question_answer`
 
 ### Comments
 
 - `get_comments`
 - `create_comment`
+- `get_comment`
+- `update_comment`
+- `delete_comment`
+
+### Schedules
+
+- `get_schedule`
+- `get_schedule_entries`
+- `get_schedule_entry`
+- `get_schedule_entry_occurrence`
+- `create_schedule_entry`
+- `update_schedule_entry`
 
 ### Card Tables
 
@@ -228,6 +332,11 @@ when the intended operation is specifically to create a draft.
 - `create_attachment`
 - `get_uploads`
 - `get_upload`
+- `get_vaults`
+- `get_recordings`
+- `trash_recording`
+- `archive_recording`
+- `restore_recording`
 - `download_upload` — download a vault Upload recording (Docs & Files) and
   return its bytes as MCP content (``ImageContent`` for image MIME types,
   ``EmbeddedResource`` / ``BlobResourceContents`` otherwise). The MCP host
@@ -265,7 +374,9 @@ directly when the intended operation is specifically to create a draft.
 - `trash_document`
 - `get_events`
 - `get_webhooks`
+- `get_webhook`
 - `create_webhook`
+- `update_webhook`
 - `delete_webhook`
 
 ## Example Prompts

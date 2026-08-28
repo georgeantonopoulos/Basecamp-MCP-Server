@@ -1,9 +1,20 @@
 import os
 import re
+import mimetypes
 from urllib.parse import unquote, urljoin, urlparse
 
 import requests
 from dotenv import load_dotenv
+
+
+# Keep API calls bounded so an unavailable Basecamp endpoint cannot hang an
+# MCP request indefinitely. Downloads use the same connect timeout with a
+# longer read timeout because they may carry large files.
+DEFAULT_REQUEST_TIMEOUT = (10, 300)
+CALENDAR_COLORS = {
+    "white", "red", "orange", "yellow", "green", "blue", "aqua",
+    "purple", "gray", "pink", "brown",
+}
 
 
 def _is_basecamp_api_host(host):
@@ -123,36 +134,107 @@ class BasecampClient:
     def get(self, endpoint, params=None):
         """Make a GET request to the Basecamp API."""
         url = f"{self.base_url}/{endpoint}"
-        return requests.get(url, auth=self.auth, headers=self.headers, params=params)
+        return requests.get(
+            url,
+            auth=self.auth,
+            headers=self.headers,
+            params=params,
+            timeout=DEFAULT_REQUEST_TIMEOUT,
+        )
+
+    def _get_paginated_collection(self, endpoint, params=None, limit=None, page=None):
+        """Return a Basecamp collection, following RFC 5988 ``Link`` pages."""
+        if limit is not None and limit < 1:
+            raise ValueError("limit must be >= 1")
+        if page is not None and page < 1:
+            raise ValueError("page must be >= 1")
+        request_params = dict(params or {})
+        if page is not None:
+            request_params["page"] = page
+        response = self.get(endpoint, params=request_params or None)
+        items = []
+
+        while True:
+            if response.status_code != 200:
+                raise Exception(
+                    f"Failed to get collection: {response.status_code} - {response.text}"
+                )
+
+            payload = response.json()
+            if not isinstance(payload, list):
+                raise Exception(
+                    f"Failed to get collection: expected a list, got {type(payload).__name__}"
+                )
+            items.extend(payload)
+            if page is not None:
+                return items if limit is None else items[:limit]
+            if limit is not None and len(items) >= limit:
+                return items[:limit]
+            next_url = response.links.get("next", {}).get("url")
+            if not next_url:
+                return items
+
+            next_url_parts = urlparse(next_url)
+            if (
+                next_url_parts.scheme != "https"
+                or not _is_basecamp_api_host(next_url_parts.hostname or "")
+            ):
+                raise Exception("Refusing to follow pagination link outside Basecamp API")
+
+            response = requests.get(
+                next_url,
+                auth=self.auth,
+                headers=self.headers,
+                timeout=DEFAULT_REQUEST_TIMEOUT,
+            )
 
     def post(self, endpoint, data=None):
         """Make a POST request to the Basecamp API."""
         url = f"{self.base_url}/{endpoint}"
-        return requests.post(url, auth=self.auth, headers=self.headers, json=data)
+        return requests.post(
+            url,
+            auth=self.auth,
+            headers=self.headers,
+            json=data,
+            timeout=DEFAULT_REQUEST_TIMEOUT,
+        )
 
     def put(self, endpoint, data=None):
         """Make a PUT request to the Basecamp API."""
         url = f"{self.base_url}/{endpoint}"
-        return requests.put(url, auth=self.auth, headers=self.headers, json=data)
+        return requests.put(
+            url,
+            auth=self.auth,
+            headers=self.headers,
+            json=data,
+            timeout=DEFAULT_REQUEST_TIMEOUT,
+        )
 
     def delete(self, endpoint):
         """Make a DELETE request to the Basecamp API."""
         url = f"{self.base_url}/{endpoint}"
-        return requests.delete(url, auth=self.auth, headers=self.headers)
+        return requests.delete(
+            url,
+            auth=self.auth,
+            headers=self.headers,
+            timeout=DEFAULT_REQUEST_TIMEOUT,
+        )
 
     def patch(self, endpoint, data=None):
         """Make a PATCH request to the Basecamp API."""
         url = f"{self.base_url}/{endpoint}"
-        return requests.patch(url, auth=self.auth, headers=self.headers, json=data)
+        return requests.patch(
+            url,
+            auth=self.auth,
+            headers=self.headers,
+            json=data,
+            timeout=DEFAULT_REQUEST_TIMEOUT,
+        )
 
     # Project methods
     def get_projects(self):
         """Get all projects."""
-        response = self.get('projects.json')
-        if response.status_code == 200:
-            return response.json()
-        else:
-            raise Exception(f"Failed to get projects: {response.status_code} - {response.text}")
+        return self._get_paginated_collection("projects.json")
 
     def get_project(self, project_id):
         """Get a specific project by ID."""
@@ -162,6 +244,193 @@ class BasecampClient:
         else:
             raise Exception(f"Failed to get project: {response.status_code} - {response.text}")
 
+    def get_dock_tool(self, tool_id):
+        """Get one project dock tool."""
+        response = self.get(f"dock/tools/{tool_id}.json")
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to get dock tool: {response.status_code} - {response.text}")
+
+    def create_dock_tool(self, project_id, tool_type, title=None, visible_to_clients=None):
+        """Add a tool to a project's dock."""
+        valid_types = {
+            "Message::Board", "Todoset", "Vault", "Schedule", "Chat::Transcript",
+            "Kanban::Board", "Questionnaire", "Inbox",
+        }
+        if tool_type not in valid_types:
+            raise ValueError("unsupported dock tool type")
+        if visible_to_clients is not None and not isinstance(visible_to_clients, bool):
+            raise ValueError("visible_to_clients must be a boolean")
+        data = {"tool_type": tool_type}
+        if title is not None:
+            data["title"] = title
+        if visible_to_clients is not None:
+            data["visible_to_clients"] = visible_to_clients
+        response = self.post(f"buckets/{project_id}/dock/tools.json", data)
+        if response.status_code == 201:
+            return response.json()
+        raise Exception(f"Failed to create dock tool: {response.status_code} - {response.text}")
+
+    def update_dock_tool(self, tool_id, title):
+        """Rename a project dock tool."""
+        if not title or not title.strip():
+            raise ValueError("title is required")
+        response = self.put(f"dock/tools/{tool_id}.json", {"title": title})
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to update dock tool: {response.status_code} - {response.text}")
+
+    def enable_dock_tool(self, project_id, recording_id):
+        """Enable a recording in a project's dock."""
+        response = self.post(
+            f"buckets/{project_id}/recordings/{recording_id}/position.json"
+        )
+        if response.status_code == 201:
+            return True
+        raise Exception(f"Failed to enable dock tool: {response.status_code} - {response.text}")
+
+    def reposition_dock_tool(self, project_id, recording_id, position):
+        """Move a dock tool to a one-based position."""
+        if isinstance(position, bool) or not isinstance(position, int) or position < 1:
+            raise ValueError("position must be a positive integer")
+        response = self.put(
+            f"buckets/{project_id}/recordings/{recording_id}/position.json",
+            {"position": position},
+        )
+        if response.status_code == 200:
+            return True
+        raise Exception(f"Failed to reposition dock tool: {response.status_code} - {response.text}")
+
+    def disable_dock_tool(self, project_id, recording_id):
+        """Hide a recording from a project's dock without deleting it."""
+        response = self.delete(
+            f"buckets/{project_id}/recordings/{recording_id}/position.json"
+        )
+        if response.status_code == 204:
+            return True
+        raise Exception(f"Failed to disable dock tool: {response.status_code} - {response.text}")
+
+    def trash_dock_tool(self, tool_id):
+        """Permanently delete a dock tool and its content."""
+        response = self.delete(f"dock/tools/{tool_id}.json")
+        if response.status_code == 204:
+            return True
+        raise Exception(f"Failed to trash dock tool: {response.status_code} - {response.text}")
+
+    def create_project(self, name, description=None, admissions=None):
+        """Create a project."""
+        data = {"name": name}
+        if description is not None:
+            data["description"] = description
+        if admissions is not None:
+            data["admissions"] = admissions
+        response = self.post("projects.json", data)
+        if response.status_code == 201:
+            return response.json()
+        raise Exception(f"Failed to create project: {response.status_code} - {response.text}")
+
+    def update_project(
+        self,
+        project_id,
+        name,
+        description=None,
+        admissions=None,
+        start_date=None,
+        end_date=None,
+    ):
+        """Update a project's name, description, access policy, or dates."""
+        data = {"name": name}
+        if description is not None:
+            data["description"] = description
+        if admissions is not None:
+            data["admissions"] = admissions
+        if start_date is not None or end_date is not None:
+            if start_date is None or end_date is None:
+                raise ValueError("start_date and end_date must be provided together")
+            data["schedule_attributes"] = {
+                "start_date": start_date,
+                "end_date": end_date,
+            }
+        response = self.put(f"projects/{project_id}.json", data)
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to update project: {response.status_code} - {response.text}")
+
+    def trash_project(self, project_id):
+        """Move a project to the trash."""
+        response = self.delete(f"projects/{project_id}.json")
+        if response.status_code == 204:
+            return True
+        raise Exception(f"Failed to trash project: {response.status_code} - {response.text}")
+
+    # Template methods
+    def get_templates(self, status="active"):
+        """Get all visible project templates in a status."""
+        if status not in {"active", "archived", "trashed"}:
+            raise ValueError("status must be active, archived, or trashed")
+        params = {"status": status} if status != "active" else None
+        return self._get_paginated_collection("templates.json", params=params)
+
+    def get_template(self, template_id):
+        """Get a project template."""
+        response = self.get(f"templates/{template_id}.json")
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to get template: {response.status_code} - {response.text}")
+
+    def create_template(self, name, description=None):
+        """Create a project template."""
+        data = {"name": name}
+        if description is not None:
+            data["description"] = description
+        response = self.post("templates.json", data)
+        if response.status_code == 201:
+            return response.json()
+        raise Exception(f"Failed to create template: {response.status_code} - {response.text}")
+
+    def update_template(self, template_id, name=None, description=None):
+        """Update a project template."""
+        if name is None:
+            name = self.get_template(template_id).get("name")
+        if not name:
+            raise ValueError("name is required when the template has no current name")
+        data = {"name": name}
+        if description is not None:
+            data["description"] = description
+        response = self.put(f"templates/{template_id}.json", data)
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to update template: {response.status_code} - {response.text}")
+
+    def trash_template(self, template_id):
+        """Move a project template to the trash."""
+        response = self.delete(f"templates/{template_id}.json")
+        if response.status_code == 204:
+            return True
+        raise Exception(f"Failed to trash template: {response.status_code} - {response.text}")
+
+    def create_project_from_template(self, template_id, project_name, project_description=None):
+        """Start constructing a project from a template."""
+        project = {"name": project_name}
+        if project_description is not None:
+            project["description"] = project_description
+        response = self.post(
+            f"templates/{template_id}/project_constructions.json",
+            {"project": project},
+        )
+        if response.status_code == 201:
+            return response.json()
+        raise Exception(f"Failed to construct project: {response.status_code} - {response.text}")
+
+    def get_project_construction(self, template_id, construction_id):
+        """Get the status of a project construction."""
+        response = self.get(
+            f"templates/{template_id}/project_constructions/{construction_id}.json"
+        )
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to get project construction: {response.status_code} - {response.text}")
+
     # To-do list methods
     def get_todoset(self, project_id):
         """Get the todoset for a project (Basecamp 3 has one todoset per project)."""
@@ -169,7 +438,10 @@ class BasecampClient:
         try:
             return next(_ for _ in project["dock"] if _["name"] == "todoset")
         except (IndexError, TypeError, StopIteration):
-            raise Exception(f"Failed to get todoset for project: {project.id}. Project response: {project}")
+            raise Exception(
+                f"Failed to get todoset for project: {project_id}. "
+                f"Project response: {project}"
+            )
     
     def get_todolists(self, project_id):
         """Get all todolists for a project."""
@@ -560,28 +832,858 @@ class BasecampClient:
     # People methods
     def get_people(self):
         """Get all people in the account."""
-        response = self.get('people.json')
+        return self._get_paginated_collection("people.json")
+
+    def get_project_people(self, project_id):
+        """Get active people on a project."""
+        response = self.get(f"projects/{project_id}/people.json")
         if response.status_code == 200:
             return response.json()
-        else:
-            raise Exception(f"Failed to get people: {response.status_code} - {response.text}")
+        raise Exception(f"Failed to get project people: {response.status_code} - {response.text}")
+
+    def update_project_people(self, project_id, grant=None, revoke=None, create=None):
+        """Grant, revoke, or create people on a project."""
+        data = {}
+        if grant:
+            data["grant"] = grant
+        if revoke:
+            data["revoke"] = revoke
+        if create:
+            data["create"] = create
+        if not data:
+            raise ValueError("At least one of grant, revoke, or create is required")
+        response = self.put(f"projects/{project_id}/people/users.json", data)
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to update project people: {response.status_code} - {response.text}")
+
+    def get_pingable_people(self):
+        """Get account members who can be pinged."""
+        response = self.get("circles/people.json")
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to get pingable people: {response.status_code} - {response.text}")
+
+    def get_person(self, person_id):
+        """Get one person's profile."""
+        response = self.get(f"people/{person_id}.json")
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to get person: {response.status_code} - {response.text}")
+
+    def get_my_profile(self):
+        """Get the authenticated person's profile."""
+        response = self.get("my/profile.json")
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to get profile: {response.status_code} - {response.text}")
+
+    # Account-wide work report methods
+    def get_my_assignments(self):
+        """Get the current user's active assignments grouped by priority."""
+        response = self.get("my/assignments.json")
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to get assignments: {response.status_code} - {response.text}")
+
+    def get_completed_assignments(self):
+        """Get the current user's completed assignments."""
+        response = self.get("my/assignments/completed.json")
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to get completed assignments: {response.status_code} - {response.text}")
+
+    def get_due_assignments(self, scope="overdue"):
+        """Get the current user's assignments by due-date scope."""
+        valid_scopes = {
+            "overdue", "due_today", "due_tomorrow", "due_later_this_week",
+            "due_next_week", "due_later",
+        }
+        if scope not in valid_scopes:
+            raise ValueError(f"scope must be one of: {', '.join(sorted(valid_scopes))}")
+        response = self.get("my/assignments/due.json", params={"scope": scope})
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to get due assignments: {response.status_code} - {response.text}")
+
+    def get_overdue_todos(self):
+        """Get overdue to-dos across all projects, grouped by lateness."""
+        response = self.get("reports/todos/overdue.json")
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to get overdue todos: {response.status_code} - {response.text}")
+
+    def get_upcoming_schedule(self, window_starts_on, window_ends_on):
+        """Get upcoming schedule entries and due assignables across projects."""
+        response = self.get(
+            "reports/schedules/upcoming.json",
+            params={
+                "window_starts_on": window_starts_on,
+                "window_ends_on": window_ends_on,
+            },
+        )
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to get upcoming schedule: {response.status_code} - {response.text}")
+
+    def get_account(self):
+        """Get the account associated with the current access token."""
+        response = self.get("account.json")
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to get account: {response.status_code} - {response.text}")
+
+    def update_account_name(self, name):
+        """Rename the current Basecamp account."""
+        if not name or not name.strip():
+            raise ValueError("name is required")
+        response = self.put("account/name.json", {"name": name})
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(
+            f"Failed to update account name: {response.status_code} - {response.text}"
+        )
+
+    def update_account_logo(self, file_path):
+        """Upload or replace the account logo (administrator/owner only)."""
+        allowed_extensions = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".heic"}
+        extension = os.path.splitext(file_path)[1].lower()
+        if extension not in allowed_extensions:
+            raise ValueError("logo must be PNG, JPEG, GIF, WebP, AVIF, or HEIC")
+        file_size = os.path.getsize(file_path)
+        if file_size > 5 * 1024 * 1024:
+            raise ValueError("logo must not exceed 5 MB")
+        content_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+        headers = self.headers.copy()
+        headers.pop("Content-Type", None)
+        with open(file_path, "rb") as logo:
+            response = requests.put(
+                f"{self.base_url}/account/logo.json",
+                auth=self.auth,
+                headers=headers,
+                files={"logo": (os.path.basename(file_path), logo, content_type)},
+                timeout=DEFAULT_REQUEST_TIMEOUT,
+            )
+        if response.status_code == 204:
+            return True
+        raise Exception(
+            f"Failed to update account logo: {response.status_code} - {response.text}"
+        )
+
+    def remove_account_logo(self):
+        """Remove the account logo (administrator/owner only)."""
+        response = self.delete("account/logo.json")
+        if response.status_code == 204:
+            return True
+        raise Exception(
+            f"Failed to remove account logo: {response.status_code} - {response.text}"
+        )
+
+    def _get_everything_collection(self, endpoint, limit=100, params=None, page=None):
+        """Fetch one account-wide Everything collection with a safe result cap."""
+        query = dict(params or {})
+        return self._get_paginated_collection(
+            endpoint, params=query or None, limit=limit, page=page
+        )
+
+    def get_everything_messages(self, limit=100, page=None):
+        """Get recent messages across all accessible projects."""
+        return self._get_everything_collection("messages.json", limit=limit, page=page)
+
+    def get_everything_comments(self, limit=100, page=None):
+        """Get recent comments across all accessible projects."""
+        return self._get_everything_collection("comments.json", limit=limit, page=page)
+
+    def get_everything_checkins(self, limit=100, page=None):
+        """Get automatic check-in answers across all accessible projects."""
+        return self._get_everything_collection("checkins.json", limit=limit, page=page)
+
+    def get_everything_forwards(self, limit=100, page=None):
+        """Get inbox forwards across all accessible projects."""
+        return self._get_everything_collection("forwards.json", limit=limit, page=page)
+
+    def get_everything_files(self, limit=100, kind="all", person_ids=None, page=None):
+        """Get files across all accessible projects with optional filters."""
+        valid_kinds = {"all", "images", "pdfs", "documents", "videos"}
+        if kind not in valid_kinds:
+            raise ValueError(f"kind must be one of: {', '.join(sorted(valid_kinds))}")
+        params = {}
+        if kind != "all":
+            params["kind"] = kind
+        if person_ids:
+            params["people_ids[]"] = person_ids
+        return self._get_everything_collection(
+            "files.json", limit=limit, params=params, page=page
+        )
+
+    def get_everything_todos(self, status="open", limit=100, assignee_ids=None, due=None, page=None):
+        """Get filtered to-dos across all accessible projects."""
+        endpoints = {
+            "open": "todos/open.json",
+            "completed": "todos/completed.json",
+            "unassigned": "todos/unassigned.json",
+            "no_due_date": "todos/no_due_date.json",
+            "overdue": "todos/overdue.json",
+        }
+        if status not in endpoints:
+            raise ValueError(f"status must be one of: {', '.join(endpoints)}")
+        params = self._everything_task_params(assignee_ids, due)
+        return self._get_everything_collection(
+            endpoints[status], limit=limit, params=params, page=page
+        )
+
+    def get_everything_cards(self, status="open", limit=100, assignee_ids=None, due=None, page=None):
+        """Get filtered cards across all accessible projects."""
+        endpoints = {
+            "open": "cards/open.json",
+            "completed": "cards/completed.json",
+            "unassigned": "cards/unassigned.json",
+            "no_due_date": "cards/no_due_date.json",
+            "not_now": "cards/not_now.json",
+            "overdue": "cards/overdue.json",
+        }
+        if status not in endpoints:
+            raise ValueError(f"status must be one of: {', '.join(endpoints)}")
+        params = self._everything_task_params(assignee_ids, due)
+        return self._get_everything_collection(
+            endpoints[status], limit=limit, params=params, page=page
+        )
+
+    def get_timeline(self, limit=100, page=None):
+        """Get recent activity across all accessible projects."""
+        return self._get_everything_collection(
+            "reports/progress.json", limit=limit, page=page
+        )
+
+    def get_project_timeline(self, project_id, limit=100, page=None):
+        """Get recent activity within one project."""
+        return self._get_everything_collection(
+            f"projects/{project_id}/timeline.json", limit=limit, page=page
+        )
+
+    def get_person_timeline(self, person_id, limit=100, page=None):
+        """Get timeline events created by one person."""
+        if limit is not None and limit < 1:
+            raise ValueError("limit must be >= 1")
+        if page is not None and page < 1:
+            raise ValueError("page must be >= 1")
+        response = self.get(
+            f"reports/users/progress/{person_id}.json",
+            params={"page": page} if page is not None else None,
+        )
+        if response.status_code != 200:
+            raise Exception(
+                f"Failed to get person timeline: {response.status_code} - {response.text}"
+            )
+        result = response.json()
+        events = result.get("events", [])
+        if page is not None:
+            result["events"] = events if limit is None else events[:limit]
+            return result
+        while True:
+            if limit is not None and len(events) >= limit:
+                result["events"] = events[:limit]
+                return result
+            next_url = response.links.get("next", {}).get("url")
+            if not next_url:
+                result["events"] = events
+                return result
+            next_url_parts = urlparse(next_url)
+            if (
+                next_url_parts.scheme != "https"
+                or not _is_basecamp_api_host(next_url_parts.hostname or "")
+            ):
+                raise Exception("Refusing to follow pagination link outside Basecamp API")
+            response = requests.get(
+                next_url,
+                auth=self.auth,
+                headers=self.headers,
+                timeout=DEFAULT_REQUEST_TIMEOUT,
+            )
+            if response.status_code != 200:
+                raise Exception(
+                    f"Failed to get person timeline: {response.status_code} - {response.text}"
+                )
+            page = response.json()
+            events.extend(page.get("events", []))
+
+    def get_timesheet_report(
+        self, start_date=None, end_date=None, person_id=None, bucket_id=None
+    ):
+        """Get the non-paginated account-wide timesheet report."""
+        if (start_date is None) != (end_date is None):
+            raise ValueError("start_date and end_date must be provided together")
+        params = {}
+        if start_date is not None:
+            params["start_date"] = start_date
+            params["end_date"] = end_date
+        if person_id is not None:
+            params["person_id"] = person_id
+        if bucket_id is not None:
+            params["bucket_id"] = bucket_id
+        response = self.get("reports/timesheet.json", params=params or None)
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(
+            f"Failed to get timesheet report: {response.status_code} - {response.text}"
+        )
+
+    def get_project_timesheet(self, project_id, limit=None, page=None):
+        """Get paginated timesheet entries for a project."""
+        return self._get_paginated_collection(
+            f"projects/{project_id}/timesheet.json", limit=limit, page=page
+        )
+
+    def get_recording_timesheet(self, recording_id, limit=None, page=None):
+        """Get paginated timesheet entries for a recording."""
+        return self._get_paginated_collection(
+            f"recordings/{recording_id}/timesheet.json", limit=limit, page=page
+        )
+
+    def get_timesheet_entry(self, entry_id):
+        """Get one timesheet entry."""
+        response = self.get(f"timesheet_entries/{entry_id}.json")
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(
+            f"Failed to get timesheet entry: {response.status_code} - {response.text}"
+        )
+
+    def create_timesheet_entry(
+        self, recording_id, date, hours, description=None, person_id=None
+    ):
+        """Log time against a timesheetable recording."""
+        if not date:
+            raise ValueError("date is required")
+        if hours is None or hours == "":
+            raise ValueError("hours is required")
+        data = {"date": date, "hours": hours}
+        if description is not None:
+            data["description"] = description
+        if person_id is not None:
+            data["person_id"] = person_id
+        response = self.post(
+            f"recordings/{recording_id}/timesheet/entries.json", data
+        )
+        if response.status_code == 201:
+            return response.json()
+        raise Exception(
+            f"Failed to create timesheet entry: {response.status_code} - {response.text}"
+        )
+
+    def update_timesheet_entry(
+        self, entry_id, date=None, hours=None, description=None, person_id=None
+    ):
+        """Update selected fields on a timesheet entry."""
+        data = {}
+        if date is not None:
+            data["date"] = date
+        if hours is not None:
+            data["hours"] = hours
+        if description is not None:
+            data["description"] = description
+        if person_id is not None:
+            data["person_id"] = person_id
+        if not data:
+            raise ValueError("at least one timesheet field is required")
+        response = self.put(f"timesheet_entries/{entry_id}.json", data)
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(
+            f"Failed to update timesheet entry: {response.status_code} - {response.text}"
+        )
+
+    def delete_timesheet_entry(self, entry_id):
+        """Permanently delete a timesheet entry."""
+        response = self.delete(f"timesheet_entries/{entry_id}.json")
+        if response.status_code == 204:
+            return True
+        raise Exception(
+            f"Failed to delete timesheet entry: {response.status_code} - {response.text}"
+        )
+
+    def get_gauges(self, bucket_ids=None, limit=None, page=None):
+        """List account-wide project gauges, optionally in a requested order."""
+        params = None
+        if bucket_ids:
+            if isinstance(bucket_ids, (list, tuple)):
+                bucket_ids = ",".join(str(bucket_id) for bucket_id in bucket_ids)
+            params = {"bucket_ids": bucket_ids}
+        return self._get_paginated_collection(
+            "reports/gauges.json", params=params, limit=limit, page=page
+        )
+
+    def get_gauge_needles(self, project_id, limit=None, page=None):
+        """Get a project's gauge history, newest first."""
+        return self._get_paginated_collection(
+            f"projects/{project_id}/gauge/needles.json", limit=limit, page=page
+        )
+
+    def get_gauge_needle(self, needle_id):
+        """Get one gauge needle."""
+        response = self.get(f"gauge_needles/{needle_id}.json")
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(
+            f"Failed to get gauge needle: {response.status_code} - {response.text}"
+        )
+
+    def create_gauge_needle(
+        self,
+        project_id,
+        position,
+        color=None,
+        description=None,
+        notify=None,
+        subscriptions=None,
+    ):
+        """Record a new project progress update."""
+        self._validate_gauge_position(position)
+        if color is not None and color not in {"green", "yellow", "red"}:
+            raise ValueError("color must be green, yellow, or red")
+        if notify is not None and notify not in {"default", "everyone", "custom"}:
+            raise ValueError("notify must be default, everyone, or custom")
+        if notify == "custom" and not subscriptions:
+            raise ValueError("subscriptions are required when notify is custom")
+        data = {"gauge_needle": {"position": position}}
+        if color is not None:
+            data["gauge_needle"]["color"] = color
+        if description is not None:
+            data["gauge_needle"]["description"] = description
+        if notify is not None:
+            data["notify"] = notify
+        if subscriptions is not None:
+            data["subscriptions"] = subscriptions
+        response = self.post(f"projects/{project_id}/gauge/needles.json", data)
+        if response.status_code == 201:
+            return response.json()
+        raise Exception(
+            f"Failed to create gauge needle: {response.status_code} - {response.text}"
+        )
+
+    def update_gauge_needle(self, needle_id, description):
+        """Update the description of a gauge needle."""
+        if description is None:
+            raise ValueError("description is required")
+        response = self.put(
+            f"gauge_needles/{needle_id}.json",
+            {"gauge_needle": {"description": description}},
+        )
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(
+            f"Failed to update gauge needle: {response.status_code} - {response.text}"
+        )
+
+    def delete_gauge_needle(self, needle_id):
+        """Permanently delete a gauge needle."""
+        response = self.delete(f"gauge_needles/{needle_id}.json")
+        if response.status_code == 204:
+            return True
+        raise Exception(
+            f"Failed to delete gauge needle: {response.status_code} - {response.text}"
+        )
+
+    def toggle_gauge(self, project_id, enabled):
+        """Enable or disable a project's gauge."""
+        if not isinstance(enabled, bool):
+            raise ValueError("enabled must be a boolean")
+        response = self.put(
+            f"projects/{project_id}/gauge.json", {"gauge": {"enabled": enabled}}
+        )
+        if response.status_code == 200:
+            return True
+        raise Exception(
+            f"Failed to toggle gauge: {response.status_code} - {response.text}"
+        )
+
+    @staticmethod
+    def _validate_gauge_position(position):
+        if isinstance(position, bool) or not isinstance(position, int) or not 0 <= position <= 100:
+            raise ValueError("position must be an integer between 0 and 100")
+
+    def get_hill_chart(self, todoset_id):
+        """Get the hill chart for a to-do set."""
+        response = self.get(f"todosets/{todoset_id}/hill.json")
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(
+            f"Failed to get hill chart: {response.status_code} - {response.text}"
+        )
+
+    def get_project_hill_chart(self, project_id):
+        """Resolve a project's to-do set and return its hill chart."""
+        project = self.get_project(project_id)
+        todoset = next(
+            (tool for tool in project.get("dock", []) if tool.get("name") == "todoset"),
+            None,
+        )
+        if not todoset or not todoset.get("id"):
+            raise Exception(f"Project {project_id} does not expose a todoset")
+        return self.get_hill_chart(todoset["id"])
+
+    def update_hill_chart_settings(self, todoset_id, tracked=None, untracked=None):
+        """Track or untrack to-do lists on a hill chart."""
+        if not tracked and not untracked:
+            raise ValueError("tracked or untracked is required")
+        data = {}
+        if tracked:
+            data["tracked"] = tracked
+        if untracked:
+            data["untracked"] = untracked
+        response = self.put(f"todosets/{todoset_id}/hills/settings.json", data)
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(
+            f"Failed to update hill chart settings: {response.status_code} - {response.text}"
+        )
+
+    def create_question(self, questionnaire_id, title, schedule, visible_to_clients=None):
+        """Create an automatic check-in question."""
+        if not title:
+            raise ValueError("title is required")
+        if not isinstance(schedule, dict) or not schedule:
+            raise ValueError("schedule must be a non-empty object")
+        data = {"question": {"title": title, "schedule": schedule}}
+        if visible_to_clients is not None:
+            if not isinstance(visible_to_clients, bool):
+                raise ValueError("visible_to_clients must be a boolean")
+            data["visible_to_clients"] = visible_to_clients
+        response = self.post(f"questionnaires/{questionnaire_id}/questions.json", data)
+        if response.status_code == 201:
+            return response.json()
+        raise Exception(
+            f"Failed to create question: {response.status_code} - {response.text}"
+        )
+
+    def update_question(self, question_id, title=None, schedule=None):
+        """Update selected fields on an automatic check-in question."""
+        question = {}
+        if title is not None:
+            if not title:
+                raise ValueError("title must not be empty")
+            question["title"] = title
+        if schedule is not None:
+            if not isinstance(schedule, dict) or not schedule:
+                raise ValueError("schedule must be a non-empty object")
+            question["schedule"] = schedule
+        if not question:
+            raise ValueError("title or schedule is required")
+        response = self.put(f"questions/{question_id}.json", {"question": question})
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(
+            f"Failed to update question: {response.status_code} - {response.text}"
+        )
+
+    def pause_question(self, question_id):
+        """Pause an automatic check-in question."""
+        response = self.post(f"questions/{question_id}/pause.json")
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(
+            f"Failed to pause question: {response.status_code} - {response.text}"
+        )
+
+    def resume_question(self, question_id):
+        """Resume an automatic check-in question."""
+        response = self.delete(f"questions/{question_id}/pause.json")
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(
+            f"Failed to resume question: {response.status_code} - {response.text}"
+        )
+
+    def update_question_notification_settings(
+        self, question_id, notify_on_answer=None, digest_include_unanswered=None
+    ):
+        """Update the authenticated user's question notification settings."""
+        if notify_on_answer is None and digest_include_unanswered is None:
+            raise ValueError(
+                "notify_on_answer or digest_include_unanswered is required"
+            )
+        data = {}
+        for name, value in (
+            ("notify_on_answer", notify_on_answer),
+            ("digest_include_unanswered", digest_include_unanswered),
+        ):
+            if value is not None:
+                if not isinstance(value, bool):
+                    raise ValueError(f"{name} must be a boolean")
+                data[name] = value
+        response = self.put(
+            f"questions/{question_id}/notification_settings.json", data
+        )
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(
+            "Failed to update question notification settings: "
+            f"{response.status_code} - {response.text}"
+        )
+
+    def get_question_answerers(self, question_id, limit=None):
+        """List people who have answered a question."""
+        if limit is not None and limit < 1:
+            raise ValueError("limit must be >= 1")
+        return self._get_paginated_collection(
+            f"questions/{question_id}/answers/by.json", limit=limit
+        )
+
+    def get_lineup_markers(self):
+        """List account-wide Lineup markers."""
+        return self._get_paginated_collection("lineup/markers.json")
+
+    def create_lineup_marker(self, name, date):
+        """Create an account-wide Lineup marker."""
+        if not name:
+            raise ValueError("name is required")
+        if not date:
+            raise ValueError("date is required")
+        response = self.post("lineup/markers.json", {"name": name, "date": date})
+        if response.status_code == 201:
+            return True
+        raise Exception(f"Failed to create Lineup marker: {response.status_code} - {response.text}")
+
+    def update_lineup_marker(self, marker_id, name=None, date=None):
+        """Update fields on an account-wide Lineup marker."""
+        data = {}
+        if name is not None:
+            data["name"] = name
+        if date is not None:
+            data["date"] = date
+        if not data:
+            raise ValueError("name or date is required")
+        response = self.put(f"lineup/markers/{marker_id}.json", data)
+        if response.status_code == 200:
+            return True
+        raise Exception(f"Failed to update Lineup marker: {response.status_code} - {response.text}")
+
+    def delete_lineup_marker(self, marker_id):
+        """Delete an account-wide Lineup marker."""
+        response = self.delete(f"lineup/markers/{marker_id}.json")
+        if response.status_code == 204:
+            return True
+        raise Exception(f"Failed to delete Lineup marker: {response.status_code} - {response.text}")
+
+    @staticmethod
+    def _everything_task_params(assignee_ids=None, due=None):
+        """Build the documented Everything task filter query."""
+        if due is not None and due not in {"with", "without", "overdue"}:
+            raise ValueError("due must be one of: with, without, overdue")
+        params = {}
+        if assignee_ids:
+            params["assignee_ids[]"] = assignee_ids
+        if due:
+            params["due"] = due
+        return params
+
+    def get_question_reminders(self, limit=None):
+        """Get pending automatic check-in reminders for the current user."""
+        if limit is not None and limit < 1:
+            raise ValueError("limit must be >= 1")
+        reminders = self._get_paginated_collection("my/question_reminders.json", limit=limit)
+        return reminders if limit is None else reminders[:limit]
+
+    def get_my_bookmarks(self, limit=None):
+        """Get the authenticated user's bookmarked recordings."""
+        if limit is not None and limit < 1:
+            raise ValueError("limit must be >= 1")
+        return self._get_paginated_collection("my/bookmarks.json", limit=limit)
+
+    def get_bookmark_status(self, recording_id):
+        """Get whether a recording is bookmarked by the current user."""
+        response = self.get(f"recordings/{recording_id}/bookmark.json")
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to get bookmark status: {response.status_code} - {response.text}")
+
+    def create_bookmark(self, recording_id):
+        """Bookmark a recording for the current user."""
+        response = self.post(f"recordings/{recording_id}/bookmark.json")
+        if response.status_code == 201:
+            return True
+        raise Exception(f"Failed to create bookmark: {response.status_code} - {response.text}")
+
+    def delete_bookmark(self, recording_id):
+        """Remove a recording from the current user's bookmarks."""
+        response = self.delete(f"recordings/{recording_id}/bookmark.json")
+        if response.status_code == 204:
+            return True
+        raise Exception(f"Failed to delete bookmark: {response.status_code} - {response.text}")
+
+    def get_my_drafts(self, limit=None):
+        """Get the authenticated user's unpublished Basecamp drafts."""
+        if limit is not None and limit < 1:
+            raise ValueError("limit must be >= 1")
+        return self._get_paginated_collection("my/drafts.json", limit=limit)
+
+    def get_my_note(self):
+        """Get the authenticated user's personal note."""
+        response = self.get("my/notes.json")
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to get personal note: {response.status_code} - {response.text}")
+
+    def update_my_note(self, content):
+        """Replace the authenticated user's personal note content."""
+        response = self.put("my/notes.json", {"note": {"content": content}})
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to update personal note: {response.status_code} - {response.text}")
+
+    def get_calendar(self, calendar_id):
+        """Get a Basecamp calendar by ID."""
+        response = self.get(f"calendars/{calendar_id}.json")
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to get calendar: {response.status_code} - {response.text}")
+
+    def update_calendar(self, calendar_id, color):
+        """Update a Basecamp calendar's display color."""
+        if color not in CALENDAR_COLORS:
+            raise ValueError(f"color must be one of: {', '.join(sorted(CALENDAR_COLORS))}")
+        response = self.put(f"calendars/{calendar_id}.json", {"calendar": {"color": color}})
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to update calendar: {response.status_code} - {response.text}")
+
+    def get_notifications(self, page=None, limit_bubble_ups=False):
+        """Get the current user's grouped notification inbox."""
+        params = {}
+        if page is not None:
+            if page < 1:
+                raise ValueError("page must be >= 1")
+            params["page"] = page
+        if limit_bubble_ups:
+            params["limit_bubble_ups"] = True
+        response = self.get("my/readings.json", params=params or None)
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to get notifications: {response.status_code} - {response.text}")
+
+    def get_bubble_ups(self):
+        """Get all current and scheduled bubble-ups."""
+        return self._get_paginated_collection("my/readings/bubble_ups.json")
+
+    def mark_notifications_read(self, readables):
+        """Mark notification readable SGIDs as read."""
+        if not readables:
+            raise ValueError("readables must contain at least one readable SGID")
+        response = self.put("my/unreads.json", {"readables": readables})
+        if response.status_code == 200:
+            return True
+        raise Exception(f"Failed to mark notifications read: {response.status_code} - {response.text}")
+
+    def get_subscription(self, project_id, recording_id):
+        """Get subscribers and current-user subscription state for a recording."""
+        endpoint = f"buckets/{project_id}/recordings/{recording_id}/subscription.json"
+        response = self.get(endpoint)
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to get subscription: {response.status_code} - {response.text}")
+
+    def subscribe_to_recording(self, project_id, recording_id):
+        """Subscribe the current user to a recording."""
+        endpoint = f"buckets/{project_id}/recordings/{recording_id}/subscription.json"
+        response = self.post(endpoint)
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to subscribe to recording: {response.status_code} - {response.text}")
+
+    def unsubscribe_from_recording(self, project_id, recording_id):
+        """Unsubscribe the current user from a recording."""
+        endpoint = f"buckets/{project_id}/recordings/{recording_id}/subscription.json"
+        response = self.delete(endpoint)
+        if response.status_code == 204:
+            return True
+        raise Exception(f"Failed to unsubscribe from recording: {response.status_code} - {response.text}")
+
+    def update_subscription(self, project_id, recording_id, subscriptions=None, unsubscriptions=None):
+        """Add and/or remove people from a recording's subscriber list."""
+        data = {}
+        if subscriptions:
+            data["subscriptions"] = subscriptions
+        if unsubscriptions:
+            data["unsubscriptions"] = unsubscriptions
+        if not data:
+            raise ValueError("subscriptions or unsubscriptions is required")
+        endpoint = f"buckets/{project_id}/recordings/{recording_id}/subscription.json"
+        response = self.put(endpoint, data)
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to update subscription: {response.status_code} - {response.text}")
+
+    def prioritize_assignment(self, recording_id):
+        """Add an assignment recording to the current user's Up Next list."""
+        response = self.post("my/priorities.json", {"id": recording_id})
+        if response.status_code == 204:
+            return True
+        raise Exception(f"Failed to prioritize assignment: {response.status_code} - {response.text}")
+
+    def deprioritize_assignment(self, recording_id):
+        """Remove an assignment recording from the current user's Up Next list."""
+        response = self.delete(f"my/priorities/{recording_id}.json")
+        if response.status_code == 204:
+            return True
+        raise Exception(f"Failed to deprioritize assignment: {response.status_code} - {response.text}")
+
+    def reorder_priority(self, recording_id, position):
+        """Move an assignment recording to a position in Up Next."""
+        if position < 1:
+            raise ValueError("position must be >= 1")
+        response = self.post(
+            "my/priority_moves.json",
+            {"source_id": recording_id, "position": position},
+        )
+        if response.status_code == 204:
+            return True
+        raise Exception(f"Failed to reorder priority: {response.status_code} - {response.text}")
 
     # Campfire (chat) methods
     def get_campfires(self, project_id):
-        """Get the campfire for a project."""
-        response = self.get(f'buckets/{project_id}/chats.json')
-        if response.status_code == 200:
-            return response.json()
-        else:
-            raise Exception(f"Failed to get campfire: {response.status_code} - {response.text}")
+        """Get the Campfire rooms enabled in a project."""
+        project = self.get_project(project_id)
+        campfires = []
+        for item in project.get("dock", []):
+            if item.get("name") != "chat":
+                continue
+            response = self.get(f"buckets/{project_id}/chats/{item['id']}.json")
+            if response.status_code != 200:
+                raise Exception(f"Failed to get campfire: {response.status_code} - {response.text}")
+            campfires.append(response.json())
+        return campfires
 
     def get_campfire_lines(self, project_id, campfire_id):
-        """Get chat lines from a campfire."""
-        response = self.get(f'buckets/{project_id}/chats/{campfire_id}/lines.json')
+        """Get all chat lines from a campfire, following pagination."""
+        return self._get_paginated_collection(
+            f'buckets/{project_id}/chats/{campfire_id}/lines.json'
+        )
+
+    def get_campfire_line(self, project_id, campfire_id, line_id):
+        """Get one line from a campfire."""
+        response = self.get(
+            f'buckets/{project_id}/chats/{campfire_id}/lines/{line_id}.json'
+        )
         if response.status_code == 200:
             return response.json()
         else:
-            raise Exception(f"Failed to get campfire lines: {response.status_code} - {response.text}")
+            raise Exception(f"Failed to get campfire line: {response.status_code} - {response.text}")
+
+    def create_campfire_line(self, project_id, campfire_id, content):
+        """Create a plain-text line in a campfire."""
+        endpoint = f'buckets/{project_id}/chats/{campfire_id}/lines.json'
+        response = self.post(endpoint, {"content": content})
+        if response.status_code == 201:
+            return response.json()
+        raise Exception(f"Failed to create campfire line: {response.status_code} - {response.text}")
+
+    def delete_campfire_line(self, project_id, campfire_id, line_id):
+        """Permanently delete a campfire line."""
+        endpoint = f'buckets/{project_id}/chats/{campfire_id}/lines/{line_id}.json'
+        response = self.delete(endpoint)
+        if response.status_code == 204:
+            return True
+        raise Exception(f"Failed to delete campfire line: {response.status_code} - {response.text}")
 
     # Message board methods
     def get_message_board(self, project_id):
@@ -685,6 +1787,40 @@ class BasecampClient:
         else:
             raise Exception(f"Failed to get message categories: {response.status_code} - {response.text}")
 
+    def get_message_category(self, project_id, category_id):
+        """Get one message type/category."""
+        response = self.get(f"buckets/{project_id}/categories/{category_id}.json")
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to get message category: {response.status_code} - {response.text}")
+
+    def create_message_category(self, project_id, name, icon):
+        """Create a message type/category."""
+        response = self.post(
+            f"buckets/{project_id}/categories.json",
+            {"name": name, "icon": icon},
+        )
+        if response.status_code == 201:
+            return response.json()
+        raise Exception(f"Failed to create message category: {response.status_code} - {response.text}")
+
+    def update_message_category(self, project_id, category_id, name, icon):
+        """Update a message type/category."""
+        response = self.put(
+            f"buckets/{project_id}/categories/{category_id}.json",
+            {"name": name, "icon": icon},
+        )
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to update message category: {response.status_code} - {response.text}")
+
+    def delete_message_category(self, project_id, category_id):
+        """Delete a message type/category."""
+        response = self.delete(f"buckets/{project_id}/categories/{category_id}.json")
+        if response.status_code == 204:
+            return True
+        raise Exception(f"Failed to delete message category: {response.status_code} - {response.text}")
+
     def create_message(self, project_id, subject, content, message_board_id=None, category_id=None, status="active"):
         """Create a new message on a project's message board.
 
@@ -716,6 +1852,41 @@ class BasecampClient:
             return response.json()
         else:
             raise Exception(f"Failed to create message: {response.status_code} - {response.text}")
+
+    def update_message(self, project_id, message_id, subject=None, content=None,
+                       category_id=None):
+        """Update one or more fields on a message."""
+        data = {}
+        if subject is not None:
+            data["subject"] = subject
+        if content is not None:
+            data["content"] = content
+        if category_id is not None:
+            data["category_id"] = category_id
+        if not data:
+            raise ValueError("At least one message field must be provided")
+
+        endpoint = f"buckets/{project_id}/messages/{message_id}.json"
+        response = self.put(endpoint, data)
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to update message: {response.status_code} - {response.text}")
+
+    def pin_message(self, project_id, message_id):
+        """Pin a message to the top of its message board."""
+        endpoint = f"buckets/{project_id}/recordings/{message_id}/pin.json"
+        response = self.post(endpoint)
+        if response.status_code == 204:
+            return True
+        raise Exception(f"Failed to pin message: {response.status_code} - {response.text}")
+
+    def unpin_message(self, project_id, message_id):
+        """Remove a message from the top of its message board."""
+        endpoint = f"buckets/{project_id}/recordings/{message_id}/pin.json"
+        response = self.delete(endpoint)
+        if response.status_code == 204:
+            return True
+        raise Exception(f"Failed to unpin message: {response.status_code} - {response.text}")
 
     # Inbox methods (Email Forwards)
     def get_inbox(self, project_id):
@@ -871,8 +2042,18 @@ class BasecampClient:
 
     # Schedule methods
     def get_schedule(self, project_id):
-        """Get the schedule for a project."""
-        response = self.get(f'projects/{project_id}/schedule.json')
+        """Get the schedule resource discovered from the project dock."""
+        project = self.get_project(project_id)
+        try:
+            schedule_item = next(
+                item for item in project["dock"] if item["name"] == "schedule"
+            )
+        except (IndexError, TypeError, StopIteration):
+            raise Exception(f"No schedule found for project: {project_id}")
+
+        response = self.get(
+            f'buckets/{project_id}/schedules/{schedule_item["id"]}.json'
+        )
         if response.status_code == 200:
             return response.json()
         else:
@@ -889,17 +2070,103 @@ class BasecampClient:
             list: Schedule entries
         """
         try:
-            endpoint = f"buckets/{project_id}/schedules.json"
-            schedule = self.get(endpoint)
-
-            if isinstance(schedule, list) and len(schedule) > 0:
-                schedule_id = schedule[0]['id']
-                entries_endpoint = f"buckets/{project_id}/schedules/{schedule_id}/entries.json"
-                return self.get(entries_endpoint)
-            else:
-                return []
+            schedule = self.get_schedule(project_id)
+            schedule_id = schedule["id"]
+            entries_endpoint = (
+                f"buckets/{project_id}/schedules/{schedule_id}/entries.json"
+            )
+            return self._get_paginated_collection(entries_endpoint)
         except Exception as e:
-            raise Exception(f"Failed to get schedule: {str(e)}")
+            raise Exception(f"Failed to get schedule entries: {str(e)}")
+
+    def get_schedule_entry(self, project_id, entry_id):
+        """Get one schedule entry by ID."""
+        response = self.get(f"buckets/{project_id}/schedule_entries/{entry_id}.json")
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to get schedule entry: {response.status_code} - {response.text}")
+
+    def get_schedule_entry_occurrence(self, project_id, entry_id, date):
+        """Get one occurrence of a recurring schedule entry."""
+        response = self.get(
+            f"buckets/{project_id}/schedule_entries/{entry_id}/occurrences/{date}.json"
+        )
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(
+            f"Failed to get schedule entry occurrence: {response.status_code} - {response.text}"
+        )
+
+    def create_schedule_entry(
+        self,
+        project_id,
+        summary,
+        starts_at,
+        ends_at,
+        description=None,
+        participant_ids=None,
+        all_day=None,
+        notify=None,
+    ):
+        """Create a schedule entry under the project's schedule."""
+        schedule = self.get_schedule(project_id)
+        data = {
+            "summary": summary,
+            "starts_at": starts_at,
+            "ends_at": ends_at,
+        }
+        for key, value in (
+            ("description", description),
+            ("participant_ids", participant_ids),
+            ("all_day", all_day),
+            ("notify", notify),
+        ):
+            if value is not None:
+                data[key] = value
+
+        response = self.post(
+            f"buckets/{project_id}/schedules/{schedule['id']}/entries.json",
+            data,
+        )
+        if response.status_code == 201:
+            return response.json()
+        raise Exception(f"Failed to create schedule entry: {response.status_code} - {response.text}")
+
+    def update_schedule_entry(
+        self,
+        project_id,
+        entry_id,
+        summary=None,
+        starts_at=None,
+        ends_at=None,
+        description=None,
+        participant_ids=None,
+        all_day=None,
+        notify=None,
+    ):
+        """Update fields on an existing schedule entry."""
+        data = {}
+        for key, value in (
+            ("summary", summary),
+            ("starts_at", starts_at),
+            ("ends_at", ends_at),
+            ("description", description),
+            ("participant_ids", participant_ids),
+            ("all_day", all_day),
+            ("notify", notify),
+        ):
+            if value is not None:
+                data[key] = value
+        if not data:
+            raise ValueError("at least one schedule entry field must be provided")
+
+        response = self.put(
+            f"buckets/{project_id}/schedule_entries/{entry_id}.json",
+            data,
+        )
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to update schedule entry: {response.status_code} - {response.text}")
 
     # Comments methods
     def get_comments(self, project_id, recording_id, page=1):
@@ -1023,20 +2290,61 @@ class BasecampClient:
         else:
             raise Exception(f"Failed to delete comment: {response.status_code} - {response.text}")
 
-    def get_daily_check_ins(self, project_id, page=1):
+    def _get_questionnaire_id(self, project_id):
+        """Resolve the automatic check-ins questionnaire from the project dock."""
         project = self.get_project(project_id)
-        questionnaire = next(_ for _ in project["dock"] if _["name"] == "questionnaire")
-        endpoint = f"buckets/{project_id}/questionnaires/{questionnaire['id']}/questions.json"
-        response = self.get(endpoint, params={"page": page})
+        questionnaire = next(
+            (item for item in project.get("dock", []) if item.get("name") == "questionnaire"),
+            None,
+        )
+        if not questionnaire:
+            raise Exception(f"No automatic check-ins questionnaire found for project: {project_id}")
+        return questionnaire["id"]
+
+    def get_questionnaire(self, project_id, questionnaire_id=None):
+        """Get an automatic check-ins questionnaire."""
+        questionnaire_id = questionnaire_id or self._get_questionnaire_id(project_id)
+        response = self.get(f"buckets/{project_id}/questionnaires/{questionnaire_id}.json")
         if response.status_code != 200:
-            raise Exception("Failed to read questions")
+            raise Exception(f"Failed to get questionnaire: {response.status_code} - {response.text}")
         return response.json()
 
-    def get_question_answers(self, project_id, question_id, page=1):
-        endpoint = f"buckets/{project_id}/questions/{question_id}/answers.json"
-        response = self.get(endpoint, params={"page": page})
+    def get_questions(self, project_id, questionnaire_id=None, page=None):
+        """Get all questions in an automatic check-ins questionnaire."""
+        questionnaire_id = questionnaire_id or self._get_questionnaire_id(project_id)
+        endpoint = f"buckets/{project_id}/questionnaires/{questionnaire_id}/questions.json"
+        if page is not None:
+            response = self.get(endpoint, params={"page": page})
+            if response.status_code != 200:
+                raise Exception(f"Failed to get questions: {response.status_code} - {response.text}")
+            return response.json()
+        return self._get_paginated_collection(endpoint)
+
+    def get_question(self, project_id, question_id):
+        """Get one automatic check-in question."""
+        response = self.get(f"buckets/{project_id}/questions/{question_id}.json")
         if response.status_code != 200:
-            raise Exception("Failed to read question answers")
+            raise Exception(f"Failed to get question: {response.status_code} - {response.text}")
+        return response.json()
+
+    def get_daily_check_ins(self, project_id, page=None):
+        """Compatibility alias for listing automatic check-in questions."""
+        return self.get_questions(project_id, page=page)
+
+    def get_question_answers(self, project_id, question_id, page=None):
+        endpoint = f"buckets/{project_id}/questions/{question_id}/answers.json"
+        if page is not None:
+            response = self.get(endpoint, params={"page": page})
+            if response.status_code != 200:
+                raise Exception(f"Failed to get question answers: {response.status_code} - {response.text}")
+            return response.json()
+        return self._get_paginated_collection(endpoint)
+
+    def get_question_answer(self, project_id, answer_id):
+        """Get one automatic check-in answer."""
+        response = self.get(f"buckets/{project_id}/question_answers/{answer_id}.json")
+        if response.status_code != 200:
+            raise Exception(f"Failed to get question answer: {response.status_code} - {response.text}")
         return response.json()
 
     # Card Table methods
@@ -1202,14 +2510,58 @@ class BasecampClient:
         else:
             raise Exception(f"Failed to update card: {response.status_code} - {response.text}")
 
-    def move_card(self, project_id, card_id, column_id):
-        """Move a card to a new column."""
+    def move_card(self, project_id, card_id, column_id, position=None):
+        """Move a card to a column or linked cross-project wormhole."""
+        if position is not None:
+            if isinstance(position, bool) or not isinstance(position, int) or position < 1:
+                raise ValueError("position must be a positive integer")
         data = {"column_id": column_id}
+        if position is not None:
+            data["position"] = position
         response = self.post(f'buckets/{project_id}/card_tables/cards/{card_id}/moves.json', data)
         if response.status_code == 204:
             return True
         else:
             raise Exception(f"Failed to move card: {response.status_code} - {response.text}")
+
+    def create_card_table_wormhole(self, project_id, card_table_id, destination_recording_id):
+        """Create a wormhole to a column on another card table."""
+        if not destination_recording_id:
+            raise ValueError("destination_recording_id is required")
+        response = self.post(
+            f"buckets/{project_id}/card_tables/{card_table_id}/wormholes.json",
+            {"destination_recording_id": destination_recording_id},
+        )
+        if response.status_code == 201:
+            return response.json()
+        raise Exception(
+            f"Failed to create card table wormhole: {response.status_code} - {response.text}"
+        )
+
+    def update_card_table_wormhole(self, project_id, wormhole_id, destination_recording_id):
+        """Change a wormhole's destination column."""
+        if not destination_recording_id:
+            raise ValueError("destination_recording_id is required")
+        response = self.put(
+            f"buckets/{project_id}/card_tables/wormholes/{wormhole_id}.json",
+            {"destination_recording_id": destination_recording_id},
+        )
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(
+            f"Failed to update card table wormhole: {response.status_code} - {response.text}"
+        )
+
+    def delete_card_table_wormhole(self, project_id, wormhole_id):
+        """Delete a card table wormhole."""
+        response = self.delete(
+            f"buckets/{project_id}/card_tables/wormholes/{wormhole_id}.json"
+        )
+        if response.status_code == 204:
+            return True
+        raise Exception(
+            f"Failed to delete card table wormhole: {response.status_code} - {response.text}"
+        )
 
     def complete_card(self, project_id, card_id):
         """Mark a card as complete."""
@@ -1311,8 +2663,14 @@ class BasecampClient:
         headers["Content-Type"] = content_type
         headers["Content-Length"] = str(len(data))
 
-        endpoint = f"attachments.json?name={name}"
-        response = requests.post(f"{self.base_url}/{endpoint}", auth=self.auth, headers=headers, data=data)
+        response = requests.post(
+            f"{self.base_url}/attachments.json",
+            auth=self.auth,
+            headers=headers,
+            params={"name": name},
+            data=data,
+            timeout=DEFAULT_REQUEST_TIMEOUT,
+        )
         if response.status_code == 201:
             return response.json()
         else:
@@ -1329,15 +2687,11 @@ class BasecampClient:
 
     def get_webhooks(self, project_id):
         """List webhooks for a project."""
-        endpoint = f"buckets/{project_id}/webhooks.json"
-        response = self.get(endpoint)
-        if response.status_code == 200:
-            return response.json()
-        else:
-            raise Exception(f"Failed to get webhooks: {response.status_code} - {response.text}")
+        return self._get_paginated_collection(f"buckets/{project_id}/webhooks.json")
 
     def create_webhook(self, project_id, payload_url, types=None):
         """Create a webhook for a project."""
+        self._validate_webhook_url(payload_url)
         data = {"payload_url": payload_url}
         if types:
             data["types"] = types
@@ -1348,6 +2702,34 @@ class BasecampClient:
         else:
             raise Exception(f"Failed to create webhook: {response.status_code} - {response.text}")
 
+    def get_webhook(self, project_id, webhook_id):
+        """Get one webhook and its recent delivery records."""
+        endpoint = f"buckets/{project_id}/webhooks/{webhook_id}.json"
+        response = self.get(endpoint)
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to get webhook: {response.status_code} - {response.text}")
+
+    def update_webhook(self, project_id, webhook_id, payload_url, types=None, active=None):
+        """Update a webhook destination, event types, or active state."""
+        self._validate_webhook_url(payload_url)
+        data = {"payload_url": payload_url}
+        if types is not None:
+            data["types"] = types
+        if active is not None:
+            data["active"] = active
+        endpoint = f"buckets/{project_id}/webhooks/{webhook_id}.json"
+        response = self.put(endpoint, data)
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to update webhook: {response.status_code} - {response.text}")
+
+    @staticmethod
+    def _validate_webhook_url(payload_url):
+        parsed = urlparse(payload_url or "")
+        if parsed.scheme != "https" or not parsed.netloc:
+            raise ValueError("payload_url must be an HTTPS URL")
+
     def delete_webhook(self, project_id, webhook_id):
         """Delete a webhook."""
         endpoint = f"buckets/{project_id}/webhooks/{webhook_id}.json"
@@ -1357,14 +2739,101 @@ class BasecampClient:
         else:
             raise Exception(f"Failed to delete webhook: {response.status_code} - {response.text}")
 
+    def get_vaults(self, project_id, vault_id):
+        """List child vaults in a vault."""
+        endpoint = f"buckets/{project_id}/vaults/{vault_id}/vaults.json"
+        return self._get_paginated_collection(endpoint)
+
+    def get_recordings(self, recording_type, project_id=None, status="active",
+                       sort="created_at", direction="desc"):
+        """List recordings of one supported type across a project or account."""
+        if status not in {"active", "archived", "trashed"}:
+            raise ValueError("status must be active, archived, or trashed")
+        if sort not in {"created_at", "updated_at"}:
+            raise ValueError("sort must be created_at or updated_at")
+        if direction not in {"asc", "desc"}:
+            raise ValueError("direction must be asc or desc")
+        endpoint = "projects/recordings.json"
+        params = {
+            "type": recording_type,
+            "status": status,
+            "sort": sort,
+            "direction": direction,
+        }
+        if project_id is not None:
+            params["bucket"] = project_id
+        return self._get_paginated_collection(endpoint, params=params)
+
+    def get_search_metadata(self):
+        """Get the account's current valid full-text search filters."""
+        response = self.get("searches/metadata.json")
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to get search metadata: {response.status_code} - {response.text}")
+
+    def search_recordings(
+        self,
+        query,
+        type_names=None,
+        bucket_ids=None,
+        creator_ids=None,
+        file_type=None,
+        exclude_chat=False,
+        since=None,
+        sort=None,
+        per_page=None,
+    ):
+        """Search account content through Basecamp's native Search API."""
+        if not query or not query.strip():
+            raise ValueError("query must not be empty")
+        if per_page is not None and per_page < 1:
+            raise ValueError("per_page must be >= 1")
+
+        params = {"q": query}
+        if type_names:
+            params["type_names[]"] = type_names
+        if bucket_ids:
+            params["bucket_ids[]"] = bucket_ids
+        if creator_ids:
+            params["creator_ids[]"] = creator_ids
+        if file_type is not None:
+            params["file_type"] = file_type
+        if exclude_chat:
+            params["exclude_chat"] = 1
+        if since is not None:
+            params["since"] = since
+        if sort is not None:
+            params["sort"] = sort
+        if per_page is not None:
+            params["per_page"] = per_page
+        return self._get_paginated_collection("search.json", params=params)
+
+    def update_recording_status(self, project_id, recording_id, status):
+        """Set a recording status using Basecamp's generic recording endpoint."""
+        if status not in {"active", "archived", "trashed"}:
+            raise ValueError("status must be active, archived, or trashed")
+        endpoint = f"buckets/{project_id}/recordings/{recording_id}/status/{status}.json"
+        response = self.put(endpoint)
+        if response.status_code == 204:
+            return True
+        raise Exception(f"Failed to set recording status: {response.status_code} - {response.text}")
+
+    def trash_recording(self, project_id, recording_id):
+        """Move a recording to the trash."""
+        return self.update_recording_status(project_id, recording_id, "trashed")
+
+    def archive_recording(self, project_id, recording_id):
+        """Archive a recording."""
+        return self.update_recording_status(project_id, recording_id, "archived")
+
+    def restore_recording(self, project_id, recording_id):
+        """Restore an archived recording to active status."""
+        return self.update_recording_status(project_id, recording_id, "active")
+
     def get_documents(self, project_id, vault_id):
         """List documents in a vault."""
         endpoint = f"buckets/{project_id}/vaults/{vault_id}/documents.json"
-        response = self.get(endpoint)
-        if response.status_code == 200:
-            return response.json()
-        else:
-            raise Exception(f"Failed to get documents: {response.status_code} - {response.text}")
+        return self._get_paginated_collection(endpoint)
 
     def get_document(self, project_id, document_id):
         """Get a single document."""
@@ -1417,11 +2886,7 @@ class BasecampClient:
             endpoint = f"buckets/{project_id}/vaults/{vault_id}/uploads.json"
         else:
             endpoint = f"buckets/{project_id}/uploads.json"
-        response = self.get(endpoint)
-        if response.status_code == 200:
-            return response.json()
-        else:
-            raise Exception(f"Failed to get uploads: {response.status_code} - {response.text}")
+        return self._get_paginated_collection(endpoint)
 
     def get_upload(self, project_id, upload_id):
         """Get a single upload."""
@@ -1431,6 +2896,81 @@ class BasecampClient:
             return response.json()
         else:
             raise Exception(f"Failed to get upload: {response.status_code} - {response.text}")
+
+    def update_upload(self, upload_id, description=None, base_name=None):
+        """Update upload metadata using the canonical flat route."""
+        data = {}
+        if description is not None:
+            data["description"] = description
+        if base_name is not None:
+            data["base_name"] = base_name
+        if not data:
+            raise ValueError("description or base_name is required")
+        response = self.put(f"uploads/{upload_id}.json", data)
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(
+            f"Failed to update upload: {response.status_code} - {response.text}"
+        )
+
+    def get_upload_versions(self, upload_id, action=None):
+        """Get raw upload version events, optionally filtered by action."""
+        versions = self._get_paginated_collection(f"uploads/{upload_id}/versions.json")
+        if action is not None:
+            valid_actions = {"created", "active", "blob_changed"}
+            if action not in valid_actions:
+                raise ValueError(
+                    "action must be created, active, or blob_changed"
+                )
+            versions = [version for version in versions if version.get("action") == action]
+        return versions
+
+    def create_upload_version(
+        self,
+        upload_id,
+        attachable_sgid,
+        base_name=None,
+        description=None,
+        notify=None,
+        subscriptions=None,
+    ):
+        """Replace an upload's file while preserving its recording URL."""
+        if not attachable_sgid:
+            raise ValueError("attachable_sgid is required")
+        if notify is not None and notify not in {"default", "everyone", "custom"}:
+            raise ValueError("notify must be default, everyone, or custom")
+        if notify == "custom" and not subscriptions:
+            raise ValueError("subscriptions are required when notify is custom")
+        data = {"attachable_sgid": attachable_sgid}
+        if base_name is not None:
+            data["base_name"] = base_name
+        if description is not None:
+            data["description"] = description
+        if notify is not None:
+            data["notify"] = notify
+        if subscriptions is not None:
+            data["subscriptions"] = subscriptions
+        response = self.post(f"uploads/{upload_id}/versions.json", data)
+        if response.status_code == 201:
+            return response.json()
+        raise Exception(
+            f"Failed to create upload version: {response.status_code} - {response.text}"
+        )
+
+    def update_recording_visibility(self, recording_id, visible_to_clients):
+        """Toggle client visibility for a recording."""
+        if not isinstance(visible_to_clients, bool):
+            raise ValueError("visible_to_clients must be a boolean")
+        response = self.put(
+            f"recordings/{recording_id}/client_visibility.json",
+            {"visible_to_clients": visible_to_clients},
+        )
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(
+            "Failed to update recording visibility: "
+            f"{response.status_code} - {response.text}"
+        )
 
     def download_upload(self, project_id, upload_id, max_bytes=None):
         """Download the binary content of an upload (e.g. PDF, image, doc).
@@ -1447,6 +2987,17 @@ class BasecampClient:
         if not download_url:
             raise Exception(
                 f"Upload {upload_id} has no download_url; not a downloadable file"
+            )
+
+        parsed_download_url = urlparse(download_url)
+        if (
+            parsed_download_url.scheme != "https"
+            or not parsed_download_url.hostname
+            or not _is_basecamp_api_host(parsed_download_url.hostname)
+        ):
+            raise Exception(
+                "Refusing to download upload from non-basecampapi host: "
+                f"{parsed_download_url.hostname!r}"
             )
 
         byte_size = meta.get("byte_size")
@@ -1475,7 +3026,7 @@ class BasecampClient:
             headers=request_headers,
             allow_redirects=True,
             stream=True,
-            timeout=(10, 300),
+            timeout=DEFAULT_REQUEST_TIMEOUT,
         )
         if response.status_code != 200:
             body_preview = response.text[:200] if response.text else ""
@@ -1570,7 +3121,7 @@ class BasecampClient:
                 headers=request_headers,
                 allow_redirects=False,
                 stream=True,
-                timeout=(10, 300),
+                timeout=DEFAULT_REQUEST_TIMEOUT,
             )
 
             if response.status_code in (301, 302, 303, 307, 308):
