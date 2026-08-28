@@ -3,6 +3,8 @@ python-dotenv==1.0.0
 flask==2.3.3
 flask-cors==4.0.0
 pytest==7.4.0
+# FastMCP's public list_tools/call_tool APIs are used by both transports.
+# Keep the upper bound until MCP 2.x compatibility is verified.
 mcp[cli]>=1.28.1,<2
 httpx>=0.25.0
 anyio>=4.0.0

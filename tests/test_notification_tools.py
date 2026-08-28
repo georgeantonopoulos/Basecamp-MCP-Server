@@ -26,6 +26,23 @@ def test_notification_client_uses_documented_endpoints():
     put.assert_called_once_with("my/unreads.json", {"readables": ["sgid-1"]})
 
 
+def test_notification_mutations_accept_no_content_without_parsing_json():
+    client = BasecampClient.__new__(BasecampClient)
+    no_content = MagicMock(status_code=204)
+
+    with patch.object(client, "put", return_value=no_content):
+        assert client.mark_notifications_read(["sgid-1"]) is True
+        assert client.update_subscription(
+            "project-1", "recording-1", subscriptions=["person-1"]
+        ) == {"updated": True}
+    with patch.object(client, "post", return_value=no_content):
+        assert client.subscribe_to_recording(
+            "project-1", "recording-1"
+        ) == {"subscribed": True}
+
+    no_content.json.assert_not_called()
+
+
 def test_bubble_ups_use_collection_pagination():
     client = BasecampClient.__new__(BasecampClient)
     with patch.object(client, "_get_paginated_collection", return_value=[{"id": "bubble-1"}]) as collect:

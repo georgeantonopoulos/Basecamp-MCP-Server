@@ -21,6 +21,8 @@ def test_store_token_expands_configured_token_path(configured_path, tmp_path, mo
 
     monkeypatch.chdir(working_dir)
     monkeypatch.setenv("HOME", str(home_dir))
+    # Windows resolves "~" via USERPROFILE instead of HOME.
+    monkeypatch.setenv("USERPROFILE", str(home_dir))
     monkeypatch.setenv("BASECAMP_MCP_TOKEN_FILE", configured_path)
 
     reloaded_token_storage = importlib.reload(token_storage)

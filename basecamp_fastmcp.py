@@ -12,7 +12,7 @@ import json
 import logging
 import os
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 import anyio
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -617,6 +617,44 @@ async def get_due_assignments(scope: str = "overdue") -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error getting due assignments: {e}")
         return _error_response("Execution error", str(e))
+
+@mcp.tool()
+async def get_assignable_people() -> Dict[str, Any]:
+    """Get the account-wide list of people who can receive to-do assignments."""
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+    try:
+        people = await _run_sync(client.get_assignable_people)
+        return {"status": "success", "people": people, "count": len(people)}
+    except Exception as exc:
+        logger.error("Error getting assignable people: %s", exc)
+        return _error_response("Execution error", str(exc))
+
+
+@mcp.tool()
+async def get_person_assignments(
+    person_id: str,
+    group_by: Optional[Literal["bucket", "date"]] = None,
+) -> Dict[str, Any]:
+    """Get one person's active to-do assignments across all projects."""
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+    try:
+        report = await _run_sync(client.get_person_assignments, person_id, group_by)
+        todos = report.get("todos") or []
+        return {
+            "status": "success",
+            "person": report.get("person"),
+            "grouped_by": report.get("grouped_by"),
+            "todos": todos,
+            "count": len(todos),
+        }
+    except Exception as exc:
+        logger.error("Error getting assignments for person %s: %s", person_id, exc)
+        return _error_response("Execution error", str(exc))
+
 
 @mcp.tool()
 async def get_overdue_todos() -> Dict[str, Any]:

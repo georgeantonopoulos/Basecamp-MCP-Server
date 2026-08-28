@@ -7,7 +7,7 @@
 
 An MCP server for Basecamp 3. It lets MCP-capable clients such as Codex, Cursor, and Claude Desktop read and manage Basecamp projects through OAuth-authenticated Basecamp API calls.
 
-The main server is [`basecamp_fastmcp.py`](basecamp_fastmcp.py). It uses the official `mcp.server.fastmcp` Python SDK and exposes 208 tools covering projects, people, todos, message boards, campfires, schedules, card tables, inbox forwards, documents, uploads, comments, events, webhooks, templates, reports, timesheets, gauges, Hill Charts, account administration, dock-tool management, client visibility, notifications, subscriptions, personal surfaces, account-wide feeds, timelines, Lineup markers, and search. The legacy JSON-RPC entry point advertises the same tool catalog for clients that still use it.
+The main server is [`basecamp_fastmcp.py`](basecamp_fastmcp.py). It uses the official `mcp.server.fastmcp` Python SDK and exposes 210 tools covering projects, people, todos, message boards, campfires, schedules, card tables, inbox forwards, documents, uploads, comments, events, webhooks, templates, reports, timesheets, gauges, Hill Charts, account administration, dock-tool management, client visibility, notifications, subscriptions, personal surfaces, account-wide feeds, timelines, Lineup markers, and search. The legacy JSON-RPC entry point advertises the same tool catalog for clients that still use it.
 
 ## What It Can Do
 
@@ -148,7 +148,7 @@ python -m pytest tests/ -v
 
 ## Available Tools
 
-The FastMCP server exposes 208 tools. The legacy JSON-RPC server exposes the same catalog and routes all tools through the FastMCP definitions, preserving one implementation path.
+The FastMCP server exposes 210 tools. The legacy JSON-RPC server exposes the same catalog and routes all tools through the FastMCP definitions, preserving one implementation path.
 
 ### Projects And Search
 

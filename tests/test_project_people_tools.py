@@ -45,14 +45,22 @@ def test_people_client_uses_project_and_profile_endpoints():
     response = MagicMock(status_code=200)
     response.json.return_value = {"people": [{"id": "person-1"}]}
 
+    with patch.object(
+        client,
+        "_get_paginated_collection",
+        return_value=[{"id": "person-1"}, {"id": "person-2"}],
+    ) as collect:
+        assert client.get_project_people("project-1") == [
+            {"id": "person-1"},
+            {"id": "person-2"},
+        ]
     with patch.object(client, "get", return_value=response) as get:
-        assert client.get_project_people("project-1") == {"people": [{"id": "person-1"}]}
         assert client.get_pingable_people() == {"people": [{"id": "person-1"}]}
         assert client.get_person("person-1") == {"people": [{"id": "person-1"}]}
         assert client.get_my_profile() == {"people": [{"id": "person-1"}]}
 
+    collect.assert_called_once_with("projects/project-1/people.json")
     assert [call.args[0] for call in get.call_args_list] == [
-        "projects/project-1/people.json",
         "circles/people.json",
         "people/person-1.json",
         "my/profile.json",

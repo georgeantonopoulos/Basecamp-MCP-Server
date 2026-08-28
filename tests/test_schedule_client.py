@@ -23,9 +23,11 @@ def test_get_schedule_resolves_schedule_from_project_dock():
 
 def test_get_schedule_entries_uses_schedule_id_and_paginates():
     client = BasecampClient.__new__(BasecampClient)
-    client.get_schedule = MagicMock(return_value={"id": "schedule-1"})
+    client.get_project = MagicMock(return_value={
+        "dock": [{"name": "schedule", "id": "schedule-1"}],
+    })
 
-    with patch.object(client, "_get_paginated_collection", return_value=[
+    with patch.object(client, "get_all_pages", return_value=[
         {"id": "entry-1"},
         {"id": "entry-2"},
     ]) as get_entries:
@@ -33,7 +35,8 @@ def test_get_schedule_entries_uses_schedule_id_and_paginates():
 
     assert result == [{"id": "entry-1"}, {"id": "entry-2"}]
     get_entries.assert_called_once_with(
-        "buckets/project-1/schedules/schedule-1/entries.json"
+        "buckets/project-1/schedules/schedule-1/entries.json",
+        error_label="schedule entries",
     )
 
 

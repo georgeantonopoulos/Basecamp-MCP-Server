@@ -70,6 +70,10 @@ class BasecampClient:
     Client for interacting with Basecamp 3 API using Basic Authentication or OAuth 2.0.
     """
 
+    # Upper bound for page-number pagination; guards against malformed Link
+    # headers that advertise a next page forever.
+    MAX_PAGES = 1000
+
     def __init__(self, username=None, password=None, account_id=None, user_agent=None,
                  access_token=None, auth_mode="basic"):
         """
@@ -141,6 +145,57 @@ class BasecampClient:
             params=params,
             timeout=DEFAULT_REQUEST_TIMEOUT,
         )
+
+    def get_all_pages(self, endpoint, params=None, error_label="items"):
+        """Fetch every page from a list endpoint using Basecamp's Link header."""
+        all_items = []
+        page = 1
+        next_url = None
+
+        while True:
+            if page > self.MAX_PAGES:
+                raise Exception(
+                    f"Failed to get {error_label}: pagination exceeded "
+                    f"{self.MAX_PAGES} pages for endpoint {endpoint}"
+                )
+            if next_url:
+                response = requests.get(
+                    next_url,
+                    auth=self.auth,
+                    headers=self.headers,
+                    timeout=DEFAULT_REQUEST_TIMEOUT,
+                )
+            else:
+                page_params = dict(params or {}, page=page)
+                response = self.get(endpoint, params=page_params)
+            if response.status_code != 200:
+                raise Exception(
+                    f"Failed to get {error_label}: {response.status_code} - {response.text}"
+                )
+
+            page_items = response.json() or []
+            if not isinstance(page_items, list):
+                raise Exception(
+                    f"Failed to get {error_label}: expected a list, "
+                    f"got {type(page_items).__name__}"
+                )
+            all_items.extend(page_items)
+
+            links = response.links if isinstance(response.links, dict) else {}
+            next_url = links.get("next", {}).get("url")
+            link_header = response.headers.get("Link", "")
+            if not page_items or (not next_url and 'rel="next"' not in link_header):
+                return all_items
+            if next_url:
+                next_url_parts = urlparse(next_url)
+                if (
+                    next_url_parts.scheme != "https"
+                    or not _is_basecamp_api_host(next_url_parts.hostname or "")
+                ):
+                    raise Exception(
+                        "Refusing to follow pagination link outside Basecamp API"
+                    )
+            page += 1
 
     def _get_paginated_collection(self, endpoint, params=None, limit=None, page=None):
         """Return a Basecamp collection, following RFC 5988 ``Link`` pages."""
@@ -233,8 +288,8 @@ class BasecampClient:
 
     # Project methods
     def get_projects(self):
-        """Get all projects."""
-        return self._get_paginated_collection("projects.json")
+        """Get all projects, handling pagination."""
+        return self.get_all_pages("projects.json", error_label="projects")
 
     def get_project(self, project_id):
         """Get a specific project by ID."""
@@ -243,6 +298,18 @@ class BasecampClient:
             return response.json()
         else:
             raise Exception(f"Failed to get project: {response.status_code} - {response.text}")
+
+    @staticmethod
+    def _find_dock_item(project, name):
+        """Return a named dock item, tolerating missing or malformed dock data."""
+        dock = project.get("dock") if isinstance(project, dict) else None
+        try:
+            for item in dock or []:
+                if isinstance(item, dict) and item.get("name") == name:
+                    return item
+        except TypeError:
+            return None
+        return None
 
     def get_dock_tool(self, tool_id):
         """Get one project dock tool."""
@@ -432,29 +499,39 @@ class BasecampClient:
         raise Exception(f"Failed to get project construction: {response.status_code} - {response.text}")
 
     # To-do list methods
-    def get_todoset(self, project_id):
-        """Get the todoset for a project (Basecamp 3 has one todoset per project)."""
+    def get_todosets(self, project_id):
+        """Get every enabled to-do set, falling back to all to-do sets."""
         project = self.get_project(project_id)
-        try:
-            return next(_ for _ in project["dock"] if _["name"] == "todoset")
-        except (IndexError, TypeError, StopIteration):
-            raise Exception(
-                f"Failed to get todoset for project: {project_id}. "
-                f"Project response: {project}"
-            )
+        dock = project.get("dock") if isinstance(project, dict) else None
+        todosets = [
+            item for item in (dock or [])
+            if isinstance(item, dict) and item.get("name") == "todoset"
+        ]
+        if not todosets:
+            raise Exception(f"Failed to get todoset for project: {project_id}")
+        enabled = [item for item in todosets if item.get("enabled")]
+        return enabled or todosets
+
+    def get_todoset(self, project_id):
+        """Get the primary enabled to-do set for single-target operations."""
+        return self.get_todosets(project_id)[0]
     
     def get_todolists(self, project_id):
-        """Get all todolists for a project."""
-        # First get the todoset ID for this project
-        todoset = self.get_todoset(project_id)
-        todoset_id = todoset['id']
-
-        # Then get all todolists in this todoset
-        response = self.get(f'buckets/{project_id}/todosets/{todoset_id}/todolists.json')
-        if response.status_code == 200:
-            return response.json()
-        else:
-            raise Exception(f"Failed to get todolists: {response.status_code} - {response.text}")
+        """Get paginated to-do lists across all enabled to-do sets."""
+        seen_ids = set()
+        todolists = []
+        for todoset in self.get_todosets(project_id):
+            page_items = self.get_all_pages(
+                f"buckets/{project_id}/todosets/{todoset['id']}/todolists.json",
+                error_label="todolists",
+            )
+            for todolist in page_items:
+                todolist_id = todolist.get("id")
+                if todolist_id in seen_ids:
+                    continue
+                seen_ids.add(todolist_id)
+                todolists.append(todolist)
+        return todolists
 
     def get_todolist(self, project_id, todolist_id):
         """Get a specific todolist."""
@@ -527,37 +604,22 @@ class BasecampClient:
             raise Exception(f"Failed to trash todolist: {response.status_code} - {response.text}")
 
     # To-do methods
-    def get_todos(self, project_id, todolist_id):
-        """Get all todos in a todolist, handling pagination.
-
-        Basecamp paginates list endpoints (commonly 15 items per page). This
-        implementation follows pagination via the `page` query parameter and
-        the HTTP `Link` header if present, aggregating all pages before
-        returning the combined list.
-        """
-        endpoint = f'buckets/{project_id}/todolists/{todolist_id}/todos.json'
-
-        all_todos = []
-        page = 1
-
-        while True:
-            response = self.get(endpoint, params={"page": page})
-            if response.status_code != 200:
-                raise Exception(f"Failed to get todos: {response.status_code} - {response.text}")
-
-            page_items = response.json() or []
-            all_todos.extend(page_items)
-
-            # Check for next page using Link header or by empty result
-            link_header = response.headers.get("Link", "")
-            has_next = 'rel="next"' in link_header if link_header else False
-
-            if not page_items or not has_next:
-                break
-
-            page += 1
-
-        return all_todos
+    def get_todos(self, project_id, todolist_id, completed=None, status=None):
+        """Get todos in a list, with completion/status filters and pagination."""
+        params = {}
+        if completed:
+            params["completed"] = "true"
+        if status is not None:
+            if status not in ("archived", "trashed"):
+                raise ValueError(
+                    "status must be 'archived' or 'trashed', got " f"{status!r}"
+                )
+            params["status"] = status
+        return self.get_all_pages(
+            f"buckets/{project_id}/todolists/{todolist_id}/todos.json",
+            params=params or None,
+            error_label="todos",
+        )
 
     def get_todo(self, project_id, todo_id):
         """Get a specific todo.
@@ -619,49 +681,57 @@ class BasecampClient:
 
     def update_todo(self, project_id, todo_id, content=None, description=None, assignee_ids=None,
                     completion_subscriber_ids=None, notify=None, due_on=None, starts_on=None):
-        """
-        Update an existing todo item.
-        
-        Args:
-            project_id (str): Project ID
-            todo_id (str): Todo ID
-            content (str, optional): The todo item's text
-            description (str, optional): HTML description
-            assignee_ids (list, optional): List of person IDs to assign
-            completion_subscriber_ids (list, optional): List of person IDs to notify on completion
-            notify (bool, optional): Whether to notify assignees
-            due_on (str, optional): Due date in YYYY-MM-DD format
-            starts_on (str, optional): Start date in YYYY-MM-DD format
-            
-        Returns:
-            dict: The updated todo
-        """
-        endpoint = f'buckets/{project_id}/todos/{todo_id}.json'
-        data = {}
-        
-        if content is not None:
-            data['content'] = content
-        if description is not None:
-            data['description'] = description
-        if assignee_ids is not None:
-            data['assignee_ids'] = assignee_ids
-        if completion_subscriber_ids is not None:
-            data['completion_subscriber_ids'] = completion_subscriber_ids
-        if notify is not None:
-            data['notify'] = notify
-        if due_on is not None:
-            data['due_on'] = due_on
-        if starts_on is not None:
-            data['starts_on'] = starts_on
+        """Update a to-do without clearing fields omitted by the caller.
 
-        if not data:
+        Basecamp's PUT treats missing parameters as values to clear, so this
+        method first reads the recording and sends its current persistent
+        values alongside the requested changes.
+        """
+        if all(value is None for value in (
+            content,
+            description,
+            assignee_ids,
+            completion_subscriber_ids,
+            notify,
+            due_on,
+            starts_on,
+        )):
             raise ValueError("No fields provided to update")
-            
+
+        endpoint = f'buckets/{project_id}/todos/{todo_id}.json'
+        current = self.get_todo(project_id, todo_id)
+        current_assignee_ids = [
+            assignee["id"] for assignee in current.get("assignees") or []
+        ]
+        current_subscriber_ids = [
+            subscriber["id"]
+            for subscriber in current.get("completion_subscribers") or []
+        ]
+        data = {
+            "content": content if content is not None else current.get("content", ""),
+            "description": (
+                description
+                if description is not None
+                else current.get("description") or ""
+            ),
+            "assignee_ids": (
+                assignee_ids if assignee_ids is not None else current_assignee_ids
+            ),
+            "completion_subscriber_ids": (
+                completion_subscriber_ids
+                if completion_subscriber_ids is not None
+                else current_subscriber_ids
+            ),
+            "due_on": due_on if due_on is not None else current.get("due_on"),
+            "starts_on": starts_on if starts_on is not None else current.get("starts_on"),
+        }
+        if notify is not None:
+            data["notify"] = notify
+
         response = self.put(endpoint, data)
         if response.status_code == 200:
             return response.json()
-        else:
-            raise Exception(f"Failed to update todo: {response.status_code} - {response.text}")
+        raise Exception(f"Failed to update todo: {response.status_code} - {response.text}")
 
     def delete_todo(self, project_id, todo_id):
         """
@@ -831,15 +901,53 @@ class BasecampClient:
 
     # People methods
     def get_people(self):
-        """Get all people in the account."""
-        return self._get_paginated_collection("people.json")
+        """Get all people in the account, handling pagination."""
+        return self.get_all_pages("people.json", error_label="people")
 
     def get_project_people(self, project_id):
         """Get active people on a project."""
-        response = self.get(f"projects/{project_id}/people.json")
-        if response.status_code == 200:
-            return response.json()
-        raise Exception(f"Failed to get project people: {response.status_code} - {response.text}")
+        return self._get_paginated_collection(f"projects/{project_id}/people.json")
+
+    # Report methods
+    def get_assignable_people(self):
+        """Get every person who can have to-dos assigned to them."""
+        return self.get_all_pages(
+            "reports/todos/assigned.json", error_label="assignable people"
+        )
+
+    def get_person_assignments(self, person_id, group_by=None):
+        """Get one person's active assignments across all projects."""
+        endpoint = f"reports/todos/assigned/{person_id}.json"
+        params = {"group_by": group_by} if group_by else None
+        result = None
+        page_number = 1
+
+        while True:
+            if page_number > self.MAX_PAGES:
+                raise Exception(
+                    "Failed to get person assignments: pagination exceeded "
+                    f"{self.MAX_PAGES} pages for endpoint {endpoint}"
+                )
+            page_params = (
+                dict(params or {}, page=page_number) if page_number > 1 else params
+            )
+            response = self.get(endpoint, params=page_params)
+            if response.status_code != 200:
+                raise Exception(
+                    "Failed to get person assignments: "
+                    f"{response.status_code} - {response.text}"
+                )
+
+            payload = response.json() or {}
+            if result is None:
+                result = payload
+            else:
+                result.setdefault("todos", []).extend(payload.get("todos") or [])
+
+            link_header = response.headers.get("Link", "")
+            if not payload.get("todos") or 'rel="next"' not in link_header:
+                return result
+            page_number += 1
 
     def update_project_people(self, project_id, grant=None, revoke=None, create=None):
         """Grant, revoke, or create people on a project."""
@@ -1104,8 +1212,8 @@ class BasecampClient:
                 raise Exception(
                     f"Failed to get person timeline: {response.status_code} - {response.text}"
                 )
-            page = response.json()
-            events.extend(page.get("events", []))
+            page_payload = response.json()
+            events.extend(page_payload.get("events", []))
 
     def get_timesheet_report(
         self, start_date=None, end_date=None, person_id=None, bucket_id=None
@@ -1570,7 +1678,7 @@ class BasecampClient:
         if not readables:
             raise ValueError("readables must contain at least one readable SGID")
         response = self.put("my/unreads.json", {"readables": readables})
-        if response.status_code == 200:
+        if response.status_code in {200, 204}:
             return True
         raise Exception(f"Failed to mark notifications read: {response.status_code} - {response.text}")
 
@@ -1586,6 +1694,8 @@ class BasecampClient:
         """Subscribe the current user to a recording."""
         endpoint = f"buckets/{project_id}/recordings/{recording_id}/subscription.json"
         response = self.post(endpoint)
+        if response.status_code == 204:
+            return {"subscribed": True}
         if response.status_code == 200:
             return response.json()
         raise Exception(f"Failed to subscribe to recording: {response.status_code} - {response.text}")
@@ -1609,6 +1719,8 @@ class BasecampClient:
             raise ValueError("subscriptions or unsubscriptions is required")
         endpoint = f"buckets/{project_id}/recordings/{recording_id}/subscription.json"
         response = self.put(endpoint, data)
+        if response.status_code == 204:
+            return {"updated": True}
         if response.status_code == 200:
             return response.json()
         raise Exception(f"Failed to update subscription: {response.status_code} - {response.text}")
@@ -1699,16 +1811,17 @@ class BasecampClient:
             dict: Message board details including id, title, messages_count, etc.
         """
         project = self.get_project(project_id)
-        try:
-            dock_item = next(_ for _ in project["dock"] if _["name"] == "message_board")
-            board_id = dock_item['id']
-            response = self.get(f'buckets/{project_id}/message_boards/{board_id}.json')
-            if response.status_code == 200:
-                return response.json()
-            else:
-                raise Exception(f"Failed to get message board: {response.status_code} - {response.text}")
-        except (IndexError, TypeError, StopIteration):
+        dock_item = self._find_dock_item(project, "message_board")
+        if dock_item is None:
             raise Exception(f"No message board found for project: {project_id}")
+        response = self.get(
+            f"buckets/{project_id}/message_boards/{dock_item['id']}.json"
+        )
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(
+            f"Failed to get message board: {response.status_code} - {response.text}"
+        )
 
     def get_messages(self, project_id, message_board_id=None):
         """Get all messages from a message board, handling pagination.
@@ -1902,16 +2015,13 @@ class BasecampClient:
             dict: Inbox details including forwards_count, forwards_url, etc.
         """
         project = self.get_project(project_id)
-        try:
-            dock_item = next(_ for _ in project["dock"] if _["name"] == "inbox")
-            inbox_id = dock_item['id']
-            response = self.get(f'buckets/{project_id}/inboxes/{inbox_id}.json')
-            if response.status_code == 200:
-                return response.json()
-            else:
-                raise Exception(f"Failed to get inbox: {response.status_code} - {response.text}")
-        except (IndexError, TypeError, StopIteration):
+        dock_item = self._find_dock_item(project, "inbox")
+        if dock_item is None:
             raise Exception(f"No inbox found for project: {project_id}")
+        response = self.get(f"buckets/{project_id}/inboxes/{dock_item['id']}.json")
+        if response.status_code == 200:
+            return response.json()
+        raise Exception(f"Failed to get inbox: {response.status_code} - {response.text}")
 
     def get_forwards(self, project_id, inbox_id=None):
         """Get all forwards from an inbox, handling pagination.
@@ -2069,15 +2179,14 @@ class BasecampClient:
         Returns:
             list: Schedule entries
         """
-        try:
-            schedule = self.get_schedule(project_id)
-            schedule_id = schedule["id"]
-            entries_endpoint = (
-                f"buckets/{project_id}/schedules/{schedule_id}/entries.json"
-            )
-            return self._get_paginated_collection(entries_endpoint)
-        except Exception as e:
-            raise Exception(f"Failed to get schedule entries: {str(e)}")
+        project = self.get_project(project_id)
+        dock_item = self._find_dock_item(project, "schedule")
+        if dock_item is None:
+            return []
+        return self.get_all_pages(
+            f"buckets/{project_id}/schedules/{dock_item['id']}/entries.json",
+            error_label="schedule entries",
+        )
 
     def get_schedule_entry(self, project_id, entry_id):
         """Get one schedule entry by ID."""
@@ -2463,12 +2572,11 @@ class BasecampClient:
 
     # Card Table Card methods
     def get_cards(self, project_id, column_id):
-        """Get all cards in a column."""
-        response = self.get(f'buckets/{project_id}/card_tables/lists/{column_id}/cards.json')
-        if response.status_code == 200:
-            return response.json()
-        else:
-            raise Exception(f"Failed to get cards: {response.status_code} - {response.text}")
+        """Get all cards in a column, handling pagination."""
+        return self.get_all_pages(
+            f"buckets/{project_id}/card_tables/lists/{column_id}/cards.json",
+            error_label="cards",
+        )
 
     def get_card(self, project_id, card_id):
         """Get a specific card."""
@@ -2915,13 +3023,14 @@ class BasecampClient:
 
     def get_upload_versions(self, upload_id, action=None):
         """Get raw upload version events, optionally filtered by action."""
-        versions = self._get_paginated_collection(f"uploads/{upload_id}/versions.json")
         if action is not None:
             valid_actions = {"created", "active", "blob_changed"}
             if action not in valid_actions:
                 raise ValueError(
                     "action must be created, active, or blob_changed"
                 )
+        versions = self._get_paginated_collection(f"uploads/{upload_id}/versions.json")
+        if action is not None:
             versions = [version for version in versions if version.get("action") == action]
         return versions
 

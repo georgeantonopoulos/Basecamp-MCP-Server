@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format is based on 
 
 ### Added
 
+- Reports API tools ([bc-api sections/reports.md](https://github.com/basecamp/bc-api/blob/master/sections/reports.md)): `get_assignable_people` (`GET /reports/todos/assigned.json`), `get_person_assignments` (`GET /reports/todos/assigned/{person_id}.json` with optional `group_by: bucket|date`) and `get_overdue_todos` (`GET /reports/todos/overdue.json`). `get_person_assignments` returns one person's active, pending to-dos across all projects in a single call — previously this required iterating every project and todolist, which was slow and easy to get wrong (missed projects read as "no assignments"). The embedded `todos` list follows `Link`-header pagination defensively and merges pages into one report. All three tools are also exposed by the legacy `mcp_server_cli.py` server for compatibility.
+- `completed` and `status` parameters for `get_todos`. The Basecamp to-dos
+  endpoint returns only the active (incomplete) to-dos by default; callers can
+  now pass `completed: true` to fetch the completed to-dos, or
+  `status: "archived"`/`"trashed"` to fetch by recording status. The params are
+  threaded through the existing `get_all_pages()` pagination, so completed sets
+  are returned in full rather than only the first page.
 - `publish` option for `create_message` and `create_document`. The tools still
   publish immediately by default, and callers can pass `publish: false` to omit
   `status: "active"` and create a Basecamp draft instead.
@@ -16,6 +23,20 @@ All notable changes to this project are documented here. The format is based on 
 
 ### Fixed
 
+- Project dock lookups for to-do sets, message boards, inboxes, and schedules
+  now share consistent handling for missing or malformed dock data.
+- All list helpers now follow Basecamp's `Link` header pagination via a shared
+  `get_all_pages()` helper. Previously only `get_todos`, `get_todolist_groups`,
+  `get_messages`, `get_forwards`, and `get_inbox_replies` paginated; the other
+  list endpoints (`get_projects`, `get_todolists`, `get_people`, `get_campfires`,
+  `get_campfire_lines`, `get_message_categories`, `get_schedule_entries`,
+  `get_cards`, `get_events`, `get_webhooks`, `get_documents`, `get_uploads`)
+  silently returned only the first page (15 items) — accounts with more than
+  15 projects saw a truncated project list. Same root cause as #12, applied
+  across the board.
+- `get_schedule_entries` now discovers the schedule ID from the project dock
+  (like `get_todoset`). It previously compared a `requests.Response` object
+  against `list` and therefore always returned an empty list.
 - Todo and card completion helpers now treat Basecamp's successful `204 No Content`
   responses as completed instead of raising an error.
 - Card-step completion now uses Basecamp's documented card-table step completions

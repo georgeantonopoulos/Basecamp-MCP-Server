@@ -11,7 +11,8 @@ from mcp_server_cli import MCPServer, _tool_result_content
 def test_cli_advertises_every_fastmcp_tool():
     server = MCPServer()
 
-    fastmcp_names = set(basecamp_fastmcp.mcp._tool_manager._tools)
+    public_tools = asyncio.run(basecamp_fastmcp.mcp.list_tools())
+    fastmcp_names = {tool.name for tool in public_tools}
     cli_names = {tool["name"] for tool in server.tools}
 
     assert cli_names == fastmcp_names
@@ -19,37 +20,54 @@ def test_cli_advertises_every_fastmcp_tool():
         {
             "name": tool.name,
             "description": tool.description or "",
-            "inputSchema": tool.parameters,
+            "inputSchema": tool.inputSchema,
         }
-        for tool in basecamp_fastmcp.mcp._tool_manager._tools.values()
+        for tool in public_tools
     ]
 
 
 def test_cli_routes_new_tools_through_fastmcp_validation():
     server = MCPServer()
-    tool = server._fastmcp_tools["get_message_board"]
     expected = {"status": "success", "message_board": {"id": "board-1"}}
 
-    with patch.object(type(tool), "run", new=AsyncMock(return_value=expected)) as run:
+    with patch.object(
+        basecamp_fastmcp.mcp,
+        "call_tool",
+        new=AsyncMock(return_value=([], {"result": expected})),
+    ) as call_tool:
         result = server._execute_tool(
             "get_message_board",
             {"project_id": "project-1"},
         )
 
     assert result == expected
-    run.assert_awaited_once_with({"project_id": "project-1"})
+    call_tool.assert_awaited_once_with(
+        "get_message_board", {"project_id": "project-1"}
+    )
 
 
 def test_cli_routes_original_tools_through_fastmcp_too():
     server = MCPServer()
-    tool = server._fastmcp_tools["get_projects"]
     expected = {"status": "success", "projects": [], "count": 0}
 
-    with patch.object(type(tool), "run", new=AsyncMock(return_value=expected)) as run:
+    with patch.object(
+        basecamp_fastmcp.mcp,
+        "call_tool",
+        new=AsyncMock(return_value=([], {"result": expected})),
+    ) as call_tool:
         result = server._execute_tool("get_projects", {})
 
     assert result == expected
-    run.assert_awaited_once_with({})
+    call_tool.assert_awaited_once_with("get_projects", {})
+
+
+def test_cli_uses_real_fastmcp_argument_validation():
+    server = MCPServer()
+
+    result = server._execute_tool("get_message_board", {})
+
+    assert result["error"] == "Execution error"
+    assert "project_id" in result["message"]
 
 
 def test_account_and_project_context_tools_return_counted_results():

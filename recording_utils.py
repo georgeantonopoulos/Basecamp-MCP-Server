@@ -57,13 +57,12 @@ def compact_recording(recording, query=None):
         ]
 
     content = recording.get("content") or recording.get("description") or ""
-    if content:
+    if content and query:
         plain_text = _SPACE_RE.sub(" ", unescape(_TAG_RE.sub(" ", content))).strip()
-        if query:
-            match_at = plain_text.casefold().find(query.casefold())
-            if match_at >= 0:
-                start = max(0, match_at - 180)
-                end = min(len(plain_text), match_at + len(query) + 220)
-                summary["query_context"] = plain_text[start:end]
+        match_at = plain_text.casefold().find(query.casefold())
+        if match_at >= 0:
+            start = max(0, match_at - 180)
+            end = min(len(plain_text), match_at + len(query) + 220)
+            summary["query_context"] = plain_text[start:end]
 
     return summary

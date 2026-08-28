@@ -85,21 +85,20 @@ class MCPServer:
     """Expose the FastMCP server through the legacy JSON-RPC line protocol."""
 
     def __init__(self):
-        self._fastmcp_tools = fastmcp_server._tool_manager._tools
-        self._fastmcp_tool_names = set(self._fastmcp_tools)
-        self.tools = self._get_available_tools()
+        public_tools = asyncio.run(fastmcp_server.list_tools())
+        self._fastmcp_tool_names = {tool.name for tool in public_tools}
+        self.tools = self._get_available_tools(public_tools)
         logger.info("MCP CLI Server initialized with %d tools", len(self.tools))
 
-    def _get_available_tools(self) -> List[Dict[str, Any]]:
+    def _get_available_tools(self, public_tools) -> List[Dict[str, Any]]:
         """Derive the compatibility catalog from registered FastMCP tools."""
-        self._fastmcp_tool_names = set(self._fastmcp_tools)
         return [
             {
                 "name": tool.name,
                 "description": tool.description or "",
-                "inputSchema": tool.parameters,
+                "inputSchema": tool.inputSchema,
             }
-            for tool in self._fastmcp_tools.values()
+            for tool in public_tools
         ]
 
     def _execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
@@ -110,7 +109,15 @@ class MCPServer:
                 "message": f"Tool '{tool_name}' is not supported",
             }
         try:
-            return asyncio.run(self._fastmcp_tools[tool_name].run(arguments))
+            result = asyncio.run(fastmcp_server.call_tool(tool_name, arguments))
+            if isinstance(result, tuple) and len(result) == 2:
+                content, structured = result
+                if isinstance(structured, dict):
+                    if set(structured) == {"result"}:
+                        return structured["result"]
+                    return structured
+                return content
+            return result
         except Exception as exc:
             logger.error("Error executing FastMCP tool %s: %s", tool_name, exc)
             return {"error": "Execution error", "message": str(exc)}

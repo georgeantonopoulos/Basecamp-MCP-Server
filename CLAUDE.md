@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-This is a **Basecamp 3 MCP (Model Context Protocol) Server** that allows AI assistants (Cursor, Claude Desktop) to interact with Basecamp directly. It uses OAuth 2.0 for authentication and provides 208 tools for Basecamp operations.
+This is a **Basecamp 3 MCP (Model Context Protocol) Server** that allows AI assistants (Cursor, Claude Desktop) to interact with Basecamp directly. It uses OAuth 2.0 for authentication and provides 210 tools for Basecamp operations.
 
 ## Development Commands
 
@@ -42,7 +42,7 @@ python generate_claude_desktop_config.py   # For Claude Desktop
 
 | File | Purpose |
 | ------ | --------- |
-         | `basecamp_fastmcp.py` | **Main MCP server** using official Anthropic FastMCP framework (208 tools) |
+| `basecamp_fastmcp.py` | **Main MCP server** using official Anthropic FastMCP framework (210 tools) |
 | `mcp_server_cli.py` | Legacy JSON-RPC transport deriving catalog and dispatch from the FastMCP registry |
 | `basecamp_client.py` | Basecamp 3 API client - all HTTP methods and endpoints |
 | `basecamp_oauth.py` | OAuth 2.0 client for 37signals Launchpad |
@@ -72,7 +72,7 @@ Basecamp 3 API (https://3.basecampapi.com/{account_id})
 3. Callback stores tokens in `oauth_tokens.json` (600 permissions — location configurable via `BASECAMP_MCP_TOKEN_FILE`)
 4. MCP server uses `auth_manager.ensure_authenticated()` to auto-refresh expired tokens
 
-### Tool Categories (208 total)
+### Tool Categories (210 total)
 
 - **Projects**: `get_projects`, `get_project`, `create_project`, `update_project`, `trash_project`
 - **Templates**: `get_templates`, `get_template`, `create_template`, `update_template`, `trash_template`, `create_project_from_template`, `get_project_construction`
@@ -86,7 +86,7 @@ Basecamp 3 API (https://3.basecampapi.com/{account_id})
 - **Campfire (Chat)**: `get_campfire_lines`, `get_campfires`, `get_campfire_line`, `create_campfire_line`, `delete_campfire_line`
 - **Automatic Check-ins**: `get_daily_check_ins`, `get_questionnaire`, `get_questions`, `get_question`, `get_question_answers`, `get_question_answer`, `create_question`, `update_question`, `pause_question`, `resume_question`, `update_question_notification_settings`, `get_question_answerers`
 - **People**: `get_people`, `get_project_people`, `update_project_people`, `get_pingable_people`, `get_person`, `get_my_profile`
-- **Reports**: `get_my_assignments`, `get_completed_assignments`, `get_due_assignments`, `get_overdue_todos`, `get_upcoming_schedule`, `get_question_reminders`, `prioritize_assignment`, `deprioritize_assignment`, `reorder_priority`
+- **Reports**: `get_assignable_people`, `get_person_assignments`, `get_my_assignments`, `get_completed_assignments`, `get_due_assignments`, `get_overdue_todos`, `get_upcoming_schedule`, `get_question_reminders`, `prioritize_assignment`, `deprioritize_assignment`, `reorder_priority`
 - **Timesheets**: `get_timesheet_report`, `get_project_timesheet`, `get_recording_timesheet`, `get_timesheet_entry`, `create_timesheet_entry`, `update_timesheet_entry`, `delete_timesheet_entry`
 - **Gauges**: `get_gauges`, `get_gauge_needles`, `get_gauge_needle`, `create_gauge_needle`, `update_gauge_needle`, `delete_gauge_needle`, `toggle_gauge`
 - **Hill Charts**: `get_hill_chart`, `get_project_hill_chart`, `update_hill_chart_settings`
@@ -106,7 +106,7 @@ Basecamp 3 API (https://3.basecampapi.com/{account_id})
 - **Inbox (Email Forwards)**: `get_inbox`, `get_forwards`, `get_forward`, `get_inbox_replies`, `get_inbox_reply`, `trash_forward`
 - **Search**: `search_basecamp`, `global_search`, `get_search_metadata`, `search_recordings`
 - **Webhooks**: `get_webhooks`, `get_webhook`, `create_webhook`, `update_webhook`, `delete_webhook`
-- **Other**: `get_daily_check_ins`, `get_question_answers`, `get_events`, `create_attachment`, `get_uploads`
+- **Other**: `get_events`, `create_attachment`, `get_uploads`
 
 ## Key Patterns
 

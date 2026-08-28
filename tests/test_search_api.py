@@ -53,7 +53,9 @@ def test_search_metadata_uses_documented_endpoint():
 
 
 def test_native_search_tools_are_registered_in_both_servers():
-    fastmcp_names = set(basecamp_fastmcp.mcp._tool_manager._tools)
+    fastmcp_names = {
+        tool.name for tool in asyncio.run(basecamp_fastmcp.mcp.list_tools())
+    }
     cli_names = {tool["name"] for tool in MCPServer().tools}
     assert {"get_search_metadata", "search_recordings"} <= fastmcp_names
     assert fastmcp_names == cli_names
