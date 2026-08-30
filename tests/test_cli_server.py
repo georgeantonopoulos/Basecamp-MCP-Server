@@ -293,10 +293,15 @@ def test_report_tools_registered_in_tools_list():
     # two API-supported values (parity with the FastMCP Literal type).
     schema = tools_by_name["get_person_assignments"]["inputSchema"]
     assert schema["required"] == ["person_id"]
-    assert schema["properties"]["group_by"]["enum"] == ["bucket", "date"]
+    group_by_schema = schema["properties"]["group_by"]
+    enum_schema = next(
+        option for option in group_by_schema.get("anyOf", [group_by_schema])
+        if "enum" in option
+    )
+    assert enum_schema["enum"] == ["bucket", "date"]
 
 
-@patch.object(MCPServer, "_get_basecamp_client")
+@patch("basecamp_fastmcp._get_basecamp_client")
 def test_dispatch_get_assignable_people(mock_get_client):
     """get_assignable_people dispatches and returns people + count."""
     client = Mock()
@@ -311,7 +316,7 @@ def test_dispatch_get_assignable_people(mock_get_client):
     assert result["count"] == 2
 
 
-@patch.object(MCPServer, "_get_basecamp_client")
+@patch("basecamp_fastmcp._get_basecamp_client")
 def test_dispatch_get_person_assignments(mock_get_client):
     """get_person_assignments passes person_id + group_by and unpacks report."""
     client = Mock()
@@ -334,7 +339,7 @@ def test_dispatch_get_person_assignments(mock_get_client):
     assert result["count"] == 2
 
 
-@patch.object(MCPServer, "_get_basecamp_client")
+@patch("basecamp_fastmcp._get_basecamp_client")
 def test_dispatch_get_person_assignments_without_group_by(mock_get_client):
     """group_by defaults to None when the argument is omitted."""
     client = Mock()
@@ -348,7 +353,7 @@ def test_dispatch_get_person_assignments_without_group_by(mock_get_client):
     assert result["count"] == 0
 
 
-@patch.object(MCPServer, "_get_basecamp_client")
+@patch("basecamp_fastmcp._get_basecamp_client")
 def test_dispatch_get_overdue_todos(mock_get_client):
     """get_overdue_todos dispatches and wraps the report under 'overdue'."""
     client = Mock()

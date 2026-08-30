@@ -9,6 +9,7 @@ import os
 import requests
 from urllib.parse import urlencode
 from dotenv import load_dotenv
+from basecamp_client import DEFAULT_REQUEST_TIMEOUT
 
 # Load environment variables
 load_dotenv()
@@ -76,7 +77,9 @@ class BasecampOAuth:
             'User-Agent': self.user_agent
         }
 
-        response = requests.post(TOKEN_URL, data=data, headers=headers)
+        response = requests.post(
+            TOKEN_URL, data=data, headers=headers, timeout=DEFAULT_REQUEST_TIMEOUT
+        )
 
         if response.status_code == 200:
             return response.json()
@@ -104,7 +107,9 @@ class BasecampOAuth:
             'User-Agent': self.user_agent
         }
 
-        response = requests.post(TOKEN_URL, data=data, headers=headers)
+        response = requests.post(
+            TOKEN_URL, data=data, headers=headers, timeout=DEFAULT_REQUEST_TIMEOUT
+        )
 
         if response.status_code == 200:
             return response.json()
@@ -126,7 +131,9 @@ class BasecampOAuth:
             'Authorization': f"Bearer {access_token}"
         }
 
-        response = requests.get(IDENTITY_URL, headers=headers)
+        response = requests.get(
+            IDENTITY_URL, headers=headers, timeout=DEFAULT_REQUEST_TIMEOUT
+        )
 
         if response.status_code == 200:
             return response.json()

@@ -63,6 +63,18 @@ def test_download_upload_respects_max_bytes_via_upload_metadata(client):
     mock_get.assert_not_called()
 
 
+def test_download_upload_rejects_external_download_url_before_request(client):
+    client.get_upload = MagicMock(
+        return_value=_upload_meta(download_url="https://evil.example/download")
+    )
+
+    with patch("basecamp_client.requests.get") as mock_get:
+        with pytest.raises(Exception, match="non-basecampapi host"):
+            client.download_upload("project-1", "upload-1")
+
+    mock_get.assert_not_called()
+
+
 def test_download_upload_sanitizes_headers_streams_and_sets_timeout(client):
     body = b"%PDF" + b"\x00" * 32
     client.get_upload = MagicMock(return_value=_upload_meta(byte_size=len(body)))
@@ -85,6 +97,20 @@ def test_download_upload_sanitizes_headers_streams_and_sets_timeout(client):
     assert result["data"] == body
     assert result["byte_size"] == len(body)
     assert result["content_type"] == "application/pdf"
+
+
+def test_create_attachment_encodes_name_as_query_parameter(client, tmp_path):
+    attachment = tmp_path / "payload.bin"
+    attachment.write_bytes(b"payload")
+    response = _make_response(201, body=b'{"attachable_sgid":"sgid-1"}')
+    response.json.return_value = {"attachable_sgid": "sgid-1"}
+
+    with patch("basecamp_client.requests.post", return_value=response) as mock_post:
+        result = client.create_attachment(str(attachment), "a&b?#.bin", "application/octet-stream")
+
+    assert result == {"attachable_sgid": "sgid-1"}
+    assert mock_post.call_args.args[0].endswith("/attachments.json")
+    assert mock_post.call_args.kwargs["params"] == {"name": "a&b?#.bin"}
 
 
 def test_download_upload_respects_max_bytes_via_content_length(client):

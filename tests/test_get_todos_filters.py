@@ -8,14 +8,16 @@ query params through to the paginated request.
 See https://github.com/basecamp/bc3-api/blob/master/sections/todos.md.
 """
 
+import asyncio
 import os
 import sys
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from basecamp_client import BasecampClient
+import basecamp_fastmcp
 
 
 def _client():
@@ -72,6 +74,28 @@ class TestGetTodosFilters(unittest.TestCase):
         with patch.object(client, 'get_all_pages', return_value=[]):
             with self.assertRaises(ValueError):
                 client.get_todos('1', '2', status='bogus')
+
+    def test_fastmcp_threads_filters_to_client(self):
+        client = Mock()
+        client.get_todos.return_value = [{"id": 7}]
+        with patch.object(
+            basecamp_fastmcp, '_get_basecamp_client', return_value=client
+        ):
+            result = asyncio.run(
+                basecamp_fastmcp.get_todos(
+                    '1', '2', completed=True, status='archived'
+                )
+            )
+
+        client.get_todos.assert_called_once_with('1', '2', True, 'archived')
+        self.assertEqual(result['count'], 1)
+
+    def test_fastmcp_schema_keeps_filter_arguments(self):
+        tools = asyncio.run(basecamp_fastmcp.mcp.list_tools())
+        schema = next(tool.inputSchema for tool in tools if tool.name == 'get_todos')
+
+        self.assertIn('completed', schema['properties'])
+        self.assertIn('status', schema['properties'])
 
 
 if __name__ == '__main__':

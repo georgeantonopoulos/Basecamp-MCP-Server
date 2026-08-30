@@ -17,6 +17,7 @@ def test_error_response_includes_status_error():
     }
 
 
+@patch.dict(os.environ, {"USER_AGENT": "test-agent"})
 @patch("basecamp_fastmcp.token_storage.is_token_expired", return_value=False)
 def test_auth_error_response_includes_status_error(mock_is_expired):
     response = basecamp_fastmcp._get_auth_error_response()
@@ -28,6 +29,7 @@ def test_auth_error_response_includes_status_error(mock_is_expired):
     }
 
 
+@patch.dict(os.environ, {"USER_AGENT": "test-agent"})
 @patch("basecamp_fastmcp.token_storage.is_token_expired", return_value=True)
 def test_expired_auth_error_response_includes_status_error(mock_is_expired):
     response = basecamp_fastmcp._get_auth_error_response()

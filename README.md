@@ -7,15 +7,29 @@
 
 An MCP server for Basecamp 3. It lets MCP-capable clients such as Codex, Cursor, and Claude Desktop read and manage Basecamp projects through OAuth-authenticated Basecamp API calls.
 
-The main server is [`basecamp_fastmcp.py`](basecamp_fastmcp.py). It uses the official `mcp.server.fastmcp` Python SDK and exposes 79 tools covering projects, todos, message boards, campfires, card tables, inbox forwards, documents, uploads, comments, events, webhooks, and search.
+The recommended entry point is [`basecamp_retrieval_mcp.py`](basecamp_retrieval_mcp.py). It initially exposes four category, discovery, and dispatch tools, then retrieves only the Basecamp operation schemas relevant to the current task. The canonical [`basecamp_fastmcp.py`](basecamp_fastmcp.py) registry still provides all 210 validated operations, and remains available directly for MCP hosts that perform their own tool retrieval. The legacy JSON-RPC entry point also retains the full catalog for compatibility.
 
 ## What It Can Do
 
 - Browse Basecamp projects and project details.
+- Browse account people and project campfire rooms.
 - Search across projects, todos, messages, campfire lines, comments, uploads, and schedules.
 - Read and manage todolists, todos, todo groups, and completion state.
 - Read and create message board messages, including drafts and categories.
 - Read campfire lines.
+- Read, create, and update project schedule entries, including recurring occurrences.
+- Manage personal bookmarks and drafts, the personal note, and calendar colors.
+- Browse account-wide messages, comments, check-ins, forwards, files, to-dos, and cards with bounded results and filters.
+- Browse account and project activity timelines, including activity created by a specific person.
+- Read account-wide and project/recording timesheets, and create, update, or delete time entries.
+- Read project gauges, inspect needle history, record progress updates, and enable or disable gauges.
+- Read Hill Charts, resolve them from projects, and track or untrack to-do lists.
+- Create, update, pause, resume, and configure notifications for automatic check-in questions.
+- Inspect and administer account metadata, account logos, and recording client visibility.
+- Update upload metadata, replace files through attachment SGIDs, and inspect raw upload version events.
+- Create, rename, reorder, enable, disable, and permanently delete project dock tools.
+- Inspect and manage recording subscriptions and subscriber lists.
+- Create, update, list, and delete account-wide Lineup markers.
 - Read and create comments.
 - Work with card tables, columns, cards, and card steps.
 - Read inbox forwards and replies.
@@ -89,15 +103,17 @@ Useful options:
 
 ```bash
 python generate_codex_config.py --dry-run
+python generate_codex_config.py --full
 python generate_codex_config.py --legacy
 ```
 
-The script writes a `basecamp` server entry to `~/.codex/config.toml` and points it at this checkout's virtual environment and [`basecamp_fastmcp.py`](basecamp_fastmcp.py).
+The script writes a `basecamp` server entry to `~/.codex/config.toml` and uses retrieval-first discovery by default. Pass `--full` to expose all 210 tool schemas up front.
 
 ### Cursor
 
 ```bash
 python generate_cursor_config.py
+python generate_cursor_config.py --full
 ```
 
 Then restart Cursor and check Settings -> MCP. The server should appear as `basecamp`.
@@ -106,6 +122,8 @@ Then restart Cursor and check Settings -> MCP. The server should appear as `base
 
 ```bash
 python generate_claude_desktop_config.py
+python generate_claude_desktop_config.py --full
+python generate_claude_desktop_config.py --legacy
 ```
 
 Then fully quit and reopen Claude Desktop. The generated config is written to:
@@ -116,14 +134,14 @@ Then fully quit and reopen Claude Desktop. The generated config is written to:
 
 ## Verify The Server
 
-Run the FastMCP server through stdio and ask for its tool list:
+Run the retrieval-first FastMCP server through stdio and ask for its compact tool list:
 
 ```bash
 printf '%s\n%s\n%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' \
   '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
-  | python basecamp_fastmcp.py
+  | python basecamp_retrieval_mcp.py
 ```
 
 Run the automated tests:
@@ -134,25 +152,100 @@ python -m pytest tests/ -v
 
 ## Available Tools
 
-The FastMCP server exposes 82 tools.
+The recommended server initially exposes four tools:
+
+- `list_basecamp_categories` — list the 11 functional categories and their tool counts.
+- `discover_basecamp_tools` — retrieve a bounded set of relevant tool schemas by intent, category, and read/write access.
+- `call_basecamp_read_tool` — execute a discovered read operation.
+- `call_basecamp_write_tool` — execute a discovered mutation through a separately annotated safety boundary.
+
+Discovery and dispatch route through the same 210 definitions in `basecamp_fastmcp.py`; no Basecamp capability is removed. The full FastMCP and legacy JSON-RPC entry points continue to advertise all 210 tools.
+
+### Retrieval Categories
+
+- Projects and people
+- Todos and assignments
+- Messages and comments
+- Campfires and check-ins
+- Schedules and calendars
+- Card tables
+- Files and documents
+- Search, activity, and reports
+- Timesheets and progress
+- Notifications and personal tools
+- Administration and integrations
+
+The remainder of this section lists the full canonical catalog available through discovery or `--full` mode.
 
 ### Projects And Search
 
 - `get_projects`
+- `get_people`
+- `get_project_people`
+- `update_project_people`
+- `get_pingable_people`
+- `get_person`
+- `get_my_profile`
+- `get_my_assignments`
+- `get_completed_assignments`
+- `get_due_assignments`
+- `get_overdue_todos`
+- `get_upcoming_schedule`
+- `get_question_reminders`
+- `get_everything_messages`
+- `get_everything_comments`
+- `get_everything_checkins`
+- `get_everything_forwards`
+- `get_everything_files`
+- `get_everything_todos`
+- `get_everything_cards`
+- `get_timeline`
+- `get_project_timeline`
+- `get_person_timeline`
+- `get_lineup_markers`
+- `create_lineup_marker`
+- `update_lineup_marker`
+- `delete_lineup_marker`
+- `get_my_bookmarks`
+- `get_bookmark_status`
+- `create_bookmark`
+- `delete_bookmark`
+- `get_my_drafts`
+- `get_my_note`
+- `update_my_note`
+- `get_calendar`
+- `update_calendar`
+- `prioritize_assignment`
+- `deprioritize_assignment`
+- `reorder_priority`
+- `get_notifications`
+- `get_bubble_ups`
+- `mark_notifications_read`
+- `get_subscription`
+- `subscribe_to_recording`
+- `unsubscribe_from_recording`
+- `update_subscription`
 - `get_project`
+- `create_project`
+- `update_project`
+- `trash_project`
 - `search_basecamp`
 - `global_search`
+- `get_search_metadata`
+- `search_recordings`
 
-### Reports
+Native search uses Basecamp's account-wide Search API and supports type, project,
+creator, date, file-type, relevance/recency, and chat-exclusion filters.
 
-- `get_assignable_people` — all people who can have to-dos assigned to them
-  (`GET /reports/todos/assigned.json`)
-- `get_person_assignments` — all active, pending to-dos assigned to one
-  person across **all** projects (`GET /reports/todos/assigned/{id}.json`,
-  optional `group_by: bucket|date`). Prefer this over iterating projects
-  when you need everything assigned to a single person.
-- `get_overdue_todos` — all overdue to-dos across all projects, grouped by
-  lateness (`GET /reports/todos/overdue.json`)
+### Templates And Project Construction
+
+- `get_templates`
+- `get_template`
+- `create_template`
+- `update_template`
+- `trash_template`
+- `create_project_from_template`
+- `get_project_construction`
 
 ### Todos
 
@@ -181,20 +274,47 @@ The FastMCP server exposes 82 tools.
 - `get_message`
 - `get_message_categories`
 - `create_message`
+- `update_message`
+- `pin_message`
+- `unpin_message`
 - `create_draft_message`
+- `get_message_category`
+- `create_message_category`
+- `update_message_category`
+- `delete_message_category`
 
 Pass `publish: false` to `create_message` to create a draft message instead
 of posting it immediately. Agents can also call `create_draft_message` directly
 when the intended operation is specifically to create a draft.
 
 - `get_campfire_lines`
+- `get_campfires`
+- `get_campfire_line`
+- `create_campfire_line`
+- `delete_campfire_line`
 - `get_daily_check_ins`
 - `get_question_answers`
+- `get_questionnaire`
+- `get_questions`
+- `get_question`
+- `get_question_answer`
 
 ### Comments
 
 - `get_comments`
 - `create_comment`
+- `get_comment`
+- `update_comment`
+- `delete_comment`
+
+### Schedules
+
+- `get_schedule`
+- `get_schedule_entries`
+- `get_schedule_entry`
+- `get_schedule_entry_occurrence`
+- `create_schedule_entry`
+- `update_schedule_entry`
 
 ### Card Tables
 
@@ -239,6 +359,11 @@ when the intended operation is specifically to create a draft.
 - `create_attachment`
 - `get_uploads`
 - `get_upload`
+- `get_vaults`
+- `get_recordings`
+- `trash_recording`
+- `archive_recording`
+- `restore_recording`
 - `download_upload` — download a vault Upload recording (Docs & Files) and
   return its bytes as MCP content (``ImageContent`` for image MIME types,
   ``EmbeddedResource`` / ``BlobResourceContents`` otherwise). The MCP host
@@ -276,7 +401,9 @@ directly when the intended operation is specifically to create a draft.
 - `trash_document`
 - `get_events`
 - `get_webhooks`
+- `get_webhook`
 - `create_webhook`
+- `update_webhook`
 - `delete_webhook`
 
 ## Example Prompts
@@ -294,7 +421,9 @@ directly when the intended operation is specifically to create a draft.
 
 ## Architecture
 
-- [`basecamp_fastmcp.py`](basecamp_fastmcp.py): FastMCP stdio server used by MCP clients.
+- [`basecamp_retrieval_mcp.py`](basecamp_retrieval_mcp.py): Recommended compact MCP entry point with category-based discovery and read/write dispatch.
+- [`basecamp_tool_retrieval.py`](basecamp_tool_retrieval.py): Deterministic category, access, ranking, and schema-projection logic.
+- [`basecamp_fastmcp.py`](basecamp_fastmcp.py): Canonical FastMCP registry containing all 210 validated operations; also the `--full` entry point.
 - [`basecamp_client.py`](basecamp_client.py): Synchronous Basecamp 3 API client.
 - [`search_utils.py`](search_utils.py): Higher-level search helpers across Basecamp resources.
 - [`oauth_app.py`](oauth_app.py): Local Flask OAuth flow for Basecamp authentication.

@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-This is a **Basecamp 3 MCP (Model Context Protocol) Server** that allows AI assistants (Cursor, Claude Desktop) to interact with Basecamp directly. It uses OAuth 2.0 for authentication and provides 79 tools for Basecamp operations.
+This is a **Basecamp 3 MCP (Model Context Protocol) Server** that allows AI assistants (Cursor, Claude Desktop) to interact with Basecamp directly. It uses OAuth 2.0 and provides category-based retrieval over 210 canonical Basecamp operations.
 
 ## Development Commands
 
 ```bash
 # Setup (one-time) - requires Python 3.10+
 # Option 1: Using uv (recommended - auto-downloads Python 3.12)
-uv venv --python 3.12 venv && source venv/bin/activate && uv pip install -r requirements.txt && uv pip install mcp
+uv venv --python 3.12 venv && source venv/bin/activate && uv pip install -r requirements.txt
 
 # Option 2: Using pip (if Python 3.10+ already installed)
 python setup.py                      # Creates venv, installs deps, tests server
@@ -20,12 +20,13 @@ python setup.py                      # Creates venv, installs deps, tests server
 python oauth_app.py                  # Start OAuth server at http://localhost:8000
 
 # Run the MCP server (for testing)
-./venv/bin/python basecamp_fastmcp.py    # FastMCP server (recommended)
+./venv/bin/python basecamp_retrieval_mcp.py # Retrieval-first server (recommended)
+./venv/bin/python basecamp_fastmcp.py    # Full 210-tool FastMCP server
 ./venv/bin/python mcp_server_cli.py      # Legacy CLI server
 
 # Test the server manually
 echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
-{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' | python basecamp_fastmcp.py
+{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' | python basecamp_retrieval_mcp.py
 
 # Run tests
 python -m pytest tests/ -v           # All tests
@@ -42,8 +43,10 @@ python generate_claude_desktop_config.py   # For Claude Desktop
 
 | File | Purpose |
 | ------ | --------- |
-| `basecamp_fastmcp.py` | **Main MCP server** using official Anthropic FastMCP framework (79 tools) |
-| `mcp_server_cli.py` | Legacy JSON-RPC server (same tools, custom implementation) |
+| `basecamp_retrieval_mcp.py` | **Recommended MCP server** exposing four retrieval and dispatch tools |
+| `basecamp_tool_retrieval.py` | Categories, read/write classification, ranking, and schema projection |
+| `basecamp_fastmcp.py` | Canonical FastMCP registry and optional full-catalog server (210 tools) |
+| `mcp_server_cli.py` | Legacy JSON-RPC transport deriving catalog and dispatch from the FastMCP registry |
 | `basecamp_client.py` | Basecamp 3 API client - all HTTP methods and endpoints |
 | `basecamp_oauth.py` | OAuth 2.0 client for 37signals Launchpad |
 | `auth_manager.py` | Automatic token refresh before API calls |
@@ -56,7 +59,9 @@ python generate_claude_desktop_config.py   # For Claude Desktop
 ```
 MCP Client (Cursor/Claude)
     ↓ JSON-RPC via stdio
-basecamp_fastmcp.py (MCP Server)
+basecamp_retrieval_mcp.py (discovery + read/write dispatch)
+    ↓ validates and dispatches through
+basecamp_fastmcp.py (210 canonical tool definitions)
     ↓ calls
 auth_manager.ensure_authenticated() → token_storage → basecamp_oauth.refresh_token()
     ↓ if valid
@@ -72,21 +77,41 @@ Basecamp 3 API (https://3.basecampapi.com/{account_id})
 3. Callback stores tokens in `oauth_tokens.json` (600 permissions — location configurable via `BASECAMP_MCP_TOKEN_FILE`)
 4. MCP server uses `auth_manager.ensure_authenticated()` to auto-refresh expired tokens
 
-### Tool Categories (79 total)
+### Tool Categories (210 total)
 
-- **Projects**: `get_projects`, `get_project`
+- **Projects**: `get_projects`, `get_project`, `create_project`, `update_project`, `trash_project`
+- **Templates**: `get_templates`, `get_template`, `create_template`, `update_template`, `trash_template`, `create_project_from_template`, `get_project_construction`
 - **Todos**: `get_todolists`, `get_todolist`, `create_todolist`, `update_todolist`, `trash_todolist`, `get_todos`, `get_todo`, `create_todo`, `update_todo`, `delete_todo`, `complete_todo`, `uncomplete_todo`, `reposition_todo`, `archive_todo`
 - **Todo List Groups**: `get_todolist_groups`, `create_todolist_group`, `reposition_todolist_group`
 - **Card Tables (Kanban)**: `get_card_table`, `get_columns`, `get_cards`, `create_card`, `move_card`, `complete_card`, etc.
 - **Card Steps**: `get_card_steps`, `create_card_step`, `complete_card_step`, etc.
-- **Comments**: `get_comments`, `create_comment`
-- **Messages**: `get_message_board`, `get_messages`, `get_message`, `get_message_categories`, `create_message`, `create_draft_message`
-- **Campfire (Chat)**: `get_campfire_lines`
+- **Comments**: `get_comments`, `create_comment`, `get_comment`, `update_comment`, `delete_comment`
+- **Messages**: `get_message_board`, `get_messages`, `get_message`, `get_message_categories`, `create_message`, `update_message`, `pin_message`, `unpin_message`, `create_draft_message`
+- **Message Categories**: `get_message_category`, `create_message_category`, `update_message_category`, `delete_message_category`
+- **Campfire (Chat)**: `get_campfire_lines`, `get_campfires`, `get_campfire_line`, `create_campfire_line`, `delete_campfire_line`
+- **Automatic Check-ins**: `get_daily_check_ins`, `get_questionnaire`, `get_questions`, `get_question`, `get_question_answers`, `get_question_answer`, `create_question`, `update_question`, `pause_question`, `resume_question`, `update_question_notification_settings`, `get_question_answerers`
+- **People**: `get_people`, `get_project_people`, `update_project_people`, `get_pingable_people`, `get_person`, `get_my_profile`
+- **Reports**: `get_assignable_people`, `get_person_assignments`, `get_my_assignments`, `get_completed_assignments`, `get_due_assignments`, `get_overdue_todos`, `get_upcoming_schedule`, `get_question_reminders`, `prioritize_assignment`, `deprioritize_assignment`, `reorder_priority`
+- **Timesheets**: `get_timesheet_report`, `get_project_timesheet`, `get_recording_timesheet`, `get_timesheet_entry`, `create_timesheet_entry`, `update_timesheet_entry`, `delete_timesheet_entry`
+- **Gauges**: `get_gauges`, `get_gauge_needles`, `get_gauge_needle`, `create_gauge_needle`, `update_gauge_needle`, `delete_gauge_needle`, `toggle_gauge`
+- **Hill Charts**: `get_hill_chart`, `get_project_hill_chart`, `update_hill_chart_settings`
+- **Account**: `get_account`, `update_account_name`, `update_account_logo`, `remove_account_logo`
+- **Client Visibility**: `update_recording_visibility`
+- **Upload Lifecycle**: `update_upload`, `get_upload_versions`, `create_upload_version`
+- **Dock Tools**: `get_dock_tool`, `create_dock_tool`, `update_dock_tool`, `enable_dock_tool`, `reposition_dock_tool`, `disable_dock_tool`, `trash_dock_tool`
+- **Account-wide**: `get_everything_messages`, `get_everything_comments`, `get_everything_checkins`, `get_everything_forwards`, `get_everything_files`, `get_everything_todos`, `get_everything_cards`
+- **Timelines**: `get_timeline`, `get_project_timeline`, `get_person_timeline`
+- **Lineup**: `get_lineup_markers`, `create_lineup_marker`, `update_lineup_marker`, `delete_lineup_marker`
+- **Personal**: `get_my_bookmarks`, `get_bookmark_status`, `create_bookmark`, `delete_bookmark`, `get_my_drafts`, `get_my_note`, `update_my_note`, `get_calendar`, `update_calendar`
+- **Notifications**: `get_notifications`, `get_bubble_ups`, `mark_notifications_read`
+- **Subscriptions**: `get_subscription`, `subscribe_to_recording`, `unsubscribe_from_recording`, `update_subscription`
+- **Recordings**: `get_recordings`, `trash_recording`, `archive_recording`, `restore_recording`
+- **Schedules**: `get_schedule`, `get_schedule_entries`, `get_schedule_entry`, `get_schedule_entry_occurrence`, `create_schedule_entry`, `update_schedule_entry`
 - **Documents**: `get_documents`, `create_document`, `create_draft_document`, `update_document`, `trash_document`
 - **Inbox (Email Forwards)**: `get_inbox`, `get_forwards`, `get_forward`, `get_inbox_replies`, `get_inbox_reply`, `trash_forward`
-- **Search**: `search_basecamp`, `global_search`
-- **Webhooks**: `get_webhooks`, `create_webhook`, `delete_webhook`
-- **Other**: `get_daily_check_ins`, `get_question_answers`, `get_events`, `create_attachment`, `get_uploads`
+- **Search**: `search_basecamp`, `global_search`, `get_search_metadata`, `search_recordings`
+- **Webhooks**: `get_webhooks`, `get_webhook`, `create_webhook`, `update_webhook`, `delete_webhook`
+- **Other**: `get_events`, `create_attachment`, `get_uploads`
 
 ## Key Patterns
 
