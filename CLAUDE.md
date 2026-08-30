@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-This is a **Basecamp 3 MCP (Model Context Protocol) Server** that allows AI assistants (Cursor, Claude Desktop) to interact with Basecamp directly. It uses OAuth 2.0 for authentication and provides 210 tools for Basecamp operations.
+This is a **Basecamp 3 MCP (Model Context Protocol) Server** that allows AI assistants (Cursor, Claude Desktop) to interact with Basecamp directly. It uses OAuth 2.0 and provides category-based retrieval over 210 canonical Basecamp operations.
 
 ## Development Commands
 
@@ -20,12 +20,13 @@ python setup.py                      # Creates venv, installs deps, tests server
 python oauth_app.py                  # Start OAuth server at http://localhost:8000
 
 # Run the MCP server (for testing)
-./venv/bin/python basecamp_fastmcp.py    # FastMCP server (recommended)
+./venv/bin/python basecamp_retrieval_mcp.py # Retrieval-first server (recommended)
+./venv/bin/python basecamp_fastmcp.py    # Full 210-tool FastMCP server
 ./venv/bin/python mcp_server_cli.py      # Legacy CLI server
 
 # Test the server manually
 echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
-{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' | python basecamp_fastmcp.py
+{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' | python basecamp_retrieval_mcp.py
 
 # Run tests
 python -m pytest tests/ -v           # All tests
@@ -42,7 +43,9 @@ python generate_claude_desktop_config.py   # For Claude Desktop
 
 | File | Purpose |
 | ------ | --------- |
-| `basecamp_fastmcp.py` | **Main MCP server** using official Anthropic FastMCP framework (210 tools) |
+| `basecamp_retrieval_mcp.py` | **Recommended MCP server** exposing four retrieval and dispatch tools |
+| `basecamp_tool_retrieval.py` | Categories, read/write classification, ranking, and schema projection |
+| `basecamp_fastmcp.py` | Canonical FastMCP registry and optional full-catalog server (210 tools) |
 | `mcp_server_cli.py` | Legacy JSON-RPC transport deriving catalog and dispatch from the FastMCP registry |
 | `basecamp_client.py` | Basecamp 3 API client - all HTTP methods and endpoints |
 | `basecamp_oauth.py` | OAuth 2.0 client for 37signals Launchpad |
@@ -56,7 +59,9 @@ python generate_claude_desktop_config.py   # For Claude Desktop
 ```
 MCP Client (Cursor/Claude)
     ↓ JSON-RPC via stdio
-basecamp_fastmcp.py (MCP Server)
+basecamp_retrieval_mcp.py (discovery + read/write dispatch)
+    ↓ validates and dispatches through
+basecamp_fastmcp.py (210 canonical tool definitions)
     ↓ calls
 auth_manager.ensure_authenticated() → token_storage → basecamp_oauth.refresh_token()
     ↓ if valid

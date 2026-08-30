@@ -1906,19 +1906,28 @@ async def get_todolists(project_id: str) -> Dict[str, Any]:
         }
 
 @mcp.tool()
-async def get_todos(project_id: str, todolist_id: str) -> Dict[str, Any]:
+async def get_todos(
+    project_id: str,
+    todolist_id: str,
+    completed: bool = False,
+    status: Optional[str] = None,
+) -> Dict[str, Any]:
     """Get todos from a todo list.
 
     Args:
         project_id: Project ID
         todolist_id: The todo list ID
+        completed: Return completed todos instead of the default active set
+        status: Optional recording status filter: archived or trashed
     """
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
 
     try:
-        todos = await _run_sync(client.get_todos, project_id, todolist_id)
+        todos = await _run_sync(
+            client.get_todos, project_id, todolist_id, completed, status
+        )
         return {
             "status": "success",
             "todos": todos,

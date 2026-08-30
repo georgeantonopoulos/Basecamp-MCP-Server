@@ -7,7 +7,7 @@
 
 An MCP server for Basecamp 3. It lets MCP-capable clients such as Codex, Cursor, and Claude Desktop read and manage Basecamp projects through OAuth-authenticated Basecamp API calls.
 
-The main server is [`basecamp_fastmcp.py`](basecamp_fastmcp.py). It uses the official `mcp.server.fastmcp` Python SDK and exposes 210 tools covering projects, people, todos, message boards, campfires, schedules, card tables, inbox forwards, documents, uploads, comments, events, webhooks, templates, reports, timesheets, gauges, Hill Charts, account administration, dock-tool management, client visibility, notifications, subscriptions, personal surfaces, account-wide feeds, timelines, Lineup markers, and search. The legacy JSON-RPC entry point advertises the same tool catalog for clients that still use it.
+The recommended entry point is [`basecamp_retrieval_mcp.py`](basecamp_retrieval_mcp.py). It initially exposes four category, discovery, and dispatch tools, then retrieves only the Basecamp operation schemas relevant to the current task. The canonical [`basecamp_fastmcp.py`](basecamp_fastmcp.py) registry still provides all 210 validated operations, and remains available directly for MCP hosts that perform their own tool retrieval. The legacy JSON-RPC entry point also retains the full catalog for compatibility.
 
 ## What It Can Do
 
@@ -103,15 +103,17 @@ Useful options:
 
 ```bash
 python generate_codex_config.py --dry-run
+python generate_codex_config.py --full
 python generate_codex_config.py --legacy
 ```
 
-The script writes a `basecamp` server entry to `~/.codex/config.toml` and points it at this checkout's virtual environment and [`basecamp_fastmcp.py`](basecamp_fastmcp.py).
+The script writes a `basecamp` server entry to `~/.codex/config.toml` and uses retrieval-first discovery by default. Pass `--full` to expose all 210 tool schemas up front.
 
 ### Cursor
 
 ```bash
 python generate_cursor_config.py
+python generate_cursor_config.py --full
 ```
 
 Then restart Cursor and check Settings -> MCP. The server should appear as `basecamp`.
@@ -120,6 +122,8 @@ Then restart Cursor and check Settings -> MCP. The server should appear as `base
 
 ```bash
 python generate_claude_desktop_config.py
+python generate_claude_desktop_config.py --full
+python generate_claude_desktop_config.py --legacy
 ```
 
 Then fully quit and reopen Claude Desktop. The generated config is written to:
@@ -130,14 +134,14 @@ Then fully quit and reopen Claude Desktop. The generated config is written to:
 
 ## Verify The Server
 
-Run the FastMCP server through stdio and ask for its tool list:
+Run the retrieval-first FastMCP server through stdio and ask for its compact tool list:
 
 ```bash
 printf '%s\n%s\n%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' \
   '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
-  | python basecamp_fastmcp.py
+  | python basecamp_retrieval_mcp.py
 ```
 
 Run the automated tests:
@@ -148,7 +152,30 @@ python -m pytest tests/ -v
 
 ## Available Tools
 
-The FastMCP server exposes 210 tools. The legacy JSON-RPC server exposes the same catalog and routes all tools through the FastMCP definitions, preserving one implementation path.
+The recommended server initially exposes four tools:
+
+- `list_basecamp_categories` — list the 11 functional categories and their tool counts.
+- `discover_basecamp_tools` — retrieve a bounded set of relevant tool schemas by intent, category, and read/write access.
+- `call_basecamp_read_tool` — execute a discovered read operation.
+- `call_basecamp_write_tool` — execute a discovered mutation through a separately annotated safety boundary.
+
+Discovery and dispatch route through the same 210 definitions in `basecamp_fastmcp.py`; no Basecamp capability is removed. The full FastMCP and legacy JSON-RPC entry points continue to advertise all 210 tools.
+
+### Retrieval Categories
+
+- Projects and people
+- Todos and assignments
+- Messages and comments
+- Campfires and check-ins
+- Schedules and calendars
+- Card tables
+- Files and documents
+- Search, activity, and reports
+- Timesheets and progress
+- Notifications and personal tools
+- Administration and integrations
+
+The remainder of this section lists the full canonical catalog available through discovery or `--full` mode.
 
 ### Projects And Search
 
@@ -394,7 +421,9 @@ directly when the intended operation is specifically to create a draft.
 
 ## Architecture
 
-- [`basecamp_fastmcp.py`](basecamp_fastmcp.py): FastMCP stdio server used by MCP clients.
+- [`basecamp_retrieval_mcp.py`](basecamp_retrieval_mcp.py): Recommended compact MCP entry point with category-based discovery and read/write dispatch.
+- [`basecamp_tool_retrieval.py`](basecamp_tool_retrieval.py): Deterministic category, access, ranking, and schema-projection logic.
+- [`basecamp_fastmcp.py`](basecamp_fastmcp.py): Canonical FastMCP registry containing all 210 validated operations; also the `--full` entry point.
 - [`basecamp_client.py`](basecamp_client.py): Synchronous Basecamp 3 API client.
 - [`search_utils.py`](search_utils.py): Higher-level search helpers across Basecamp resources.
 - [`oauth_app.py`](oauth_app.py): Local Flask OAuth flow for Basecamp authentication.
