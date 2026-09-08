@@ -11,6 +11,7 @@ import sys
 import logging
 from typing import Any, Dict, List, Optional
 from basecamp_client import BasecampClient
+import payload_shaping as _shape
 from search_utils import BasecampSearch
 import token_storage
 import auth_manager
@@ -61,7 +62,12 @@ class MCPServer:
                 "description": "Get all Basecamp projects",
                 "inputSchema": {
                     "type": "object",
-                    "properties": {},
+                    "properties": {
+                        "detail": {"type": "string", "enum": ["summary", "full"], "description": "Response detail. Defaults to summary unless BASECAMP_MCP_FULL_RESPONSES=1."},
+                        "query": {"type": "string", "description": "Case-insensitive substring match on the project name."},
+                        "status": {"type": "string", "description": "Filter by project status, e.g. active or archived."},
+                        "limit": {"type": "integer", "description": "Return at most this many projects."}
+                    },
                     "required": []
                 }
             },
@@ -97,6 +103,7 @@ class MCPServer:
                         "todolist_id": {"type": "string", "description": "The todo list ID"},
                         "completed": {"type": "boolean", "description": "When true, return completed to-dos instead of the default active set"},
                         "status": {"type": "string", "enum": ["archived", "trashed"], "description": "Optional recording-status filter"},
+                        "detail": {"type": "string", "enum": ["summary", "full"], "description": "Response detail. Defaults to summary unless BASECAMP_MCP_FULL_RESPONSES=1."}
                     },
                     "required": ["project_id", "todolist_id"]
                 }
@@ -206,7 +213,8 @@ class MCPServer:
                     "properties": {
                         "recording_id": {"type": "string", "description": "The item ID"},
                         "project_id": {"type": "string", "description": "The project ID"},
-                        "page": {"type": "integer", "description": "Page number for pagination (default: 1). Basecamp uses geared pagination: page 1 has 15 results, page 2 has 30, page 3 has 50, page 4+ has 100.", "default": 1}
+                        "page": {"type": "integer", "description": "Page number for pagination (default: 1). Basecamp uses geared pagination: page 1 has 15 results, page 2 has 30, page 3 has 50, page 4+ has 100.", "default": 1},
+                        "detail": {"type": "string", "enum": ["summary", "full"], "description": "Response detail. Defaults to summary unless BASECAMP_MCP_FULL_RESPONSES=1."}
                     },
                     "required": ["recording_id", "project_id"]
                 }
@@ -299,7 +307,8 @@ class MCPServer:
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "project_id": {"type": "string", "description": "The project ID"}
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "detail": {"type": "string", "enum": ["summary", "full"], "description": "Response detail. Defaults to summary unless BASECAMP_MCP_FULL_RESPONSES=1."}
                     },
                     "required": ["project_id"]
                 }
@@ -310,7 +319,8 @@ class MCPServer:
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "project_id": {"type": "string", "description": "The project ID"}
+                        "project_id": {"type": "string", "description": "The project ID"},
+                        "detail": {"type": "string", "enum": ["summary", "full"], "description": "Response detail. Defaults to summary unless BASECAMP_MCP_FULL_RESPONSES=1."}
                     },
                     "required": ["project_id"]
                 }
@@ -322,7 +332,8 @@ class MCPServer:
                     "type": "object",
                     "properties": {
                         "project_id": {"type": "string", "description": "The project ID"},
-                        "card_table_id": {"type": "string", "description": "The card table ID"}
+                        "card_table_id": {"type": "string", "description": "The card table ID"},
+                        "detail": {"type": "string", "enum": ["summary", "full"], "description": "Response detail. Defaults to summary unless BASECAMP_MCP_FULL_RESPONSES=1."}
                     },
                     "required": ["project_id", "card_table_id"]
                 }
@@ -447,7 +458,8 @@ class MCPServer:
                     "type": "object",
                     "properties": {
                         "project_id": {"type": "string", "description": "The project ID"},
-                        "column_id": {"type": "string", "description": "The column ID"}
+                        "column_id": {"type": "string", "description": "The column ID"},
+                        "detail": {"type": "string", "enum": ["summary", "full"], "description": "Response detail. Defaults to summary unless BASECAMP_MCP_FULL_RESPONSES=1."}
                     },
                     "required": ["project_id", "column_id"]
                 }
@@ -768,7 +780,10 @@ class MCPServer:
                 "description": "Get all people who can have to-dos assigned to them (account-wide). Use a person's id with get_person_assignments to fetch their to-dos across all projects.",
                 "inputSchema": {
                     "type": "object",
-                    "properties": {},
+                    "properties": {
+                        "detail": {"type": "string", "enum": ["summary", "full"], "description": "Response detail. Defaults to summary unless BASECAMP_MCP_FULL_RESPONSES=1."},
+                        "query": {"type": "string", "description": "Case-insensitive substring match on name or email address"}
+                    },
                     "required": []
                 }
             },
@@ -783,7 +798,8 @@ class MCPServer:
                             "type": "string",
                             "enum": ["bucket", "date"],
                             "description": "Optional grouping — 'bucket' (by project, API default) or 'date' (by due date)"
-                        }
+                        },
+                        "detail": {"type": "string", "enum": ["summary", "full"], "description": "Response detail. Defaults to summary unless BASECAMP_MCP_FULL_RESPONSES=1."}
                     },
                     "required": ["person_id"]
                 }
@@ -793,7 +809,10 @@ class MCPServer:
                 "description": "Get all overdue to-dos across all projects, grouped by lateness (under_a_week_late, over_a_week_late, over_a_month_late, over_three_months_late).",
                 "inputSchema": {
                     "type": "object",
-                    "properties": {},
+                    "properties": {
+                        "detail": {"type": "string", "enum": ["summary", "full"], "description": "Response detail. Defaults to summary unless BASECAMP_MCP_FULL_RESPONSES=1."},
+                        "assignee_id": {"type": "string", "description": "Optional — return only to-dos assigned to this person ID (see get_assignable_people)"}
+                    },
                     "required": []
                 }
             }
@@ -963,19 +982,23 @@ class MCPServer:
 
         try:
             if tool_name == "get_projects":
-                projects = client.get_projects()
-                return {
-                    "status": "success",
-                    "projects": projects,
-                    "count": len(projects)
-                }
+                # Filtering, capping and the response envelope come from
+                # payload_shaping so this path answers identically to
+                # basecamp_fastmcp.
+                return _shape.projects_response(
+                    client.get_projects(),
+                    _shape.resolve_detail(arguments.get("detail")),
+                    query=arguments.get("query"),
+                    status=arguments.get("status"),
+                    limit=arguments.get("limit"),
+                )
 
             elif tool_name == "get_project":
                 project_id = arguments.get("project_id")
                 project = client.get_project(project_id)
                 return {
                     "status": "success",
-                    "project": project
+                    "project": _shape.project_full(_shape.prune(project))
                 }
 
             elif tool_name == "get_todolists":
@@ -992,11 +1015,13 @@ class MCPServer:
                 project_id = arguments.get("project_id")
                 completed = arguments.get("completed", False)
                 status = arguments.get("status")
+                detail = _shape.resolve_detail(arguments.get("detail"))
                 todos = client.get_todos(project_id, todolist_id, completed, status)
                 return {
                     "status": "success",
-                    "todos": todos,
-                    "count": len(todos)
+                    "todos": _shape.shape_todos(todos, detail),
+                    "count": len(todos),
+                    "detail": detail,
                 }
 
             elif tool_name == "create_todo":
@@ -1120,7 +1145,9 @@ class MCPServer:
                 result = client.get_comments(project_id, recording_id, page)
                 return {
                     "status": "success",
-                    "comments": result["comments"],
+                    "comments": _shape.shape_records(
+                        result["comments"], _shape.resolve_detail(
+                            arguments.get("detail")), _shape.comment_summary),
                     "count": len(result["comments"]),
                     "page": page,
                     "total_count": result["total_count"],
@@ -1215,10 +1242,14 @@ class MCPServer:
             # Card Table tools implementation
             elif tool_name == "get_card_tables":
                 project_id = arguments.get("project_id")
+                detail = _shape.resolve_detail(arguments.get("detail"))
                 card_tables = client.get_card_tables(project_id)
                 return {
                     "status": "success",
-                    "card_tables": card_tables,
+                    "card_tables": [_shape.shape_card_table(t, detail)
+                                    for t in card_tables]
+                    if isinstance(card_tables, list) else _shape.prune(card_tables),
+                    "detail": detail,
                     "count": len(card_tables)
                 }
 
@@ -1229,7 +1260,9 @@ class MCPServer:
                     card_table_details = client.get_card_table_details(project_id, card_table['id'])
                     return {
                         "status": "success",
-                        "card_table": card_table_details
+                        "card_table": _shape.shape_card_table(
+                            card_table_details,
+                            _shape.resolve_detail(arguments.get("detail")))
                     }
                 except Exception as e:
                     error_msg = str(e)
@@ -1242,10 +1275,13 @@ class MCPServer:
             elif tool_name == "get_columns":
                 project_id = arguments.get("project_id")
                 card_table_id = arguments.get("card_table_id")
+                detail = _shape.resolve_detail(arguments.get("detail"))
                 columns = client.get_columns(project_id, card_table_id)
                 return {
                     "status": "success",
-                    "columns": columns,
+                    "columns": _shape.shape_records(
+                        columns, detail, _shape.column_summary),
+                    "detail": detail,
                     "count": len(columns)
                 }
 
@@ -1255,7 +1291,7 @@ class MCPServer:
                 column = client.get_column(project_id, column_id)
                 return {
                     "status": "success",
-                    "column": column
+                    "column": _shape.prune(column)
                 }
 
             elif tool_name == "create_column":
@@ -1341,10 +1377,12 @@ class MCPServer:
             elif tool_name == "get_cards":
                 project_id = arguments.get("project_id")
                 column_id = arguments.get("column_id")
+                detail = _shape.resolve_detail(arguments.get("detail"))
                 cards = client.get_cards(project_id, column_id)
                 return {
                     "status": "success",
-                    "cards": cards,
+                    "cards": _shape.shape_cards(cards, detail),
+                    "detail": detail,
                     "count": len(cards)
                 }
 
@@ -1354,7 +1392,7 @@ class MCPServer:
                 card = client.get_card(project_id, card_id)
                 return {
                     "status": "success",
-                    "card": card
+                    "card": _shape.prune(card)
                 }
 
             elif tool_name == "create_card":
@@ -1613,37 +1651,41 @@ class MCPServer:
                 }
 
             elif tool_name == "get_assignable_people":
-                people = client.get_assignable_people()
-                return {
-                    "status": "success",
-                    "people": people,
-                    "count": len(people)
-                }
+                return _shape.people_response(
+                    client.get_assignable_people(),
+                    _shape.resolve_detail(arguments.get("detail")),
+                    query=arguments.get("query"),
+                )
 
             elif tool_name == "get_person_assignments":
-                person_id = arguments.get("person_id")
-                group_by = arguments.get("group_by")
-                report = client.get_person_assignments(person_id, group_by)
-                return {
-                    "status": "success",
-                    "person": report.get("person"),
-                    "grouped_by": report.get("grouped_by"),
-                    "todos": report.get("todos", []),
-                    "count": len(report.get("todos") or [])
-                }
+                return _shape.person_assignments_response(
+                    client.get_person_assignments(
+                        arguments.get("person_id"), arguments.get("group_by")),
+                    _shape.resolve_detail(arguments.get("detail")),
+                )
 
             elif tool_name == "get_overdue_todos":
-                report = client.get_overdue_todos()
-                return {
-                    "status": "success",
-                    "overdue": report
-                }
+                return _shape.overdue_response(
+                    client.get_overdue_todos(),
+                    _shape.resolve_detail(arguments.get("detail")),
+                    assignee_id=arguments.get("assignee_id"),
+                )
 
             else:
                 return {
                     "error": "Unknown tool",
                     "message": f"Tool '{tool_name}' is not supported"
                 }
+
+        except _shape.InvalidArgument as e:
+            # This dispatch is hand-rolled, so inputSchema is advisory: a bad
+            # argument type reaches the handler. Name the argument rather than
+            # letting it read as a server fault.
+            logger.warning(f"Invalid argument for tool {tool_name}: {e}")
+            return {
+                "error": "Invalid argument",
+                "message": str(e)
+            }
 
         except Exception as e:
             logger.error(f"Error executing tool {tool_name}: {e}")
