@@ -1,7 +1,7 @@
 requests==2.31.0
 python-dotenv==1.0.0
 flask==2.3.3
-flask-cors==4.0.0
+flask-cors==4.0.2
 pytest==7.4.0
 # Upper bound: mcp 2.0.0 removed `mcp.server.fastmcp`, which basecamp_fastmcp.py
 # imports. Without `<2` a fresh install resolves 2.x and the server fails to
@@ -12,3 +12,4 @@ pytest==7.4.0
 mcp[cli]>=1.28.1,<2
 httpx>=0.25.0
 anyio>=4.0.0
+
