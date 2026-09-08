@@ -2,12 +2,15 @@
 
 import asyncio
 import json
-import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from datetime import timedelta
+
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
 from mcp.types import ImageContent, TextContent
 from mcp.server.fastmcp.exceptions import ToolError
 
@@ -171,48 +174,27 @@ def test_canonical_error_envelope_becomes_tool_error():
 
 def test_stdio_marks_dispatch_rejection_as_mcp_error():
     project_root = Path(__file__).resolve().parents[1]
-    requests = "\n".join(
-        [
-            json.dumps({
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "initialize",
-                "params": {
-                    "protocolVersion": "2025-06-18",
-                    "capabilities": {},
-                    "clientInfo": {"name": "test", "version": "1.0"},
-                },
-            }),
-            json.dumps({
-                "jsonrpc": "2.0",
-                "method": "notifications/initialized",
-                "params": {},
-            }),
-            json.dumps({
-                "jsonrpc": "2.0",
-                "id": 2,
-                "method": "tools/call",
-                "params": {
-                    "name": "call_basecamp_read_tool",
-                    "arguments": {"name": "create_project", "arguments": {"name": "Example"}},
-                },
-            }),
-        ]
-    ) + "\n"
+    async def exercise():
+        # Keep stdin open until the response arrives; sending EOF immediately
+        # can cancel an in-flight tool call during server shutdown.
+        params = StdioServerParameters(
+            command=sys.executable,
+            args=[str(project_root / "basecamp_retrieval_mcp.py")],
+            cwd=str(project_root),
+        )
+        async with stdio_client(params) as (read, write):
+            async with ClientSession(
+                read, write, read_timeout_seconds=timedelta(seconds=15)
+            ) as session:
+                await session.initialize()
+                return await session.call_tool(
+                    "call_basecamp_read_tool",
+                    {"name": "create_project", "arguments": {"name": "Example"}},
+                )
 
-    completed = subprocess.run(
-        [sys.executable, str(project_root / "basecamp_retrieval_mcp.py")],
-        cwd=project_root,
-        input=requests,
-        text=True,
-        capture_output=True,
-        check=True,
-    )
-    responses = [json.loads(line) for line in completed.stdout.splitlines()]
-    tool_response = next(response for response in responses if response.get("id") == 2)
-
-    assert tool_response["result"]["isError"] is True
-    assert "Wrong executor" in tool_response["result"]["content"][0]["text"]
+    result = _run(exercise())
+    assert result.isError is True
+    assert "Wrong executor" in result.content[0].text
 
 
 def test_dispatch_preserves_typed_content_from_canonical_tool():
