@@ -121,7 +121,7 @@ def get_oauth_client():
         redirect_uri = os.getenv('BASECAMP_REDIRECT_URI')
         user_agent = os.getenv('USER_AGENT')
 
-        logger.info("Creating OAuth client with config: %s, %s, %s", client_id, redirect_uri, user_agent)
+        logger.info("Creating OAuth client for redirect URI: %s", redirect_uri)
 
         return BasecampOAuth(
             client_id=client_id,
@@ -240,7 +240,7 @@ def home():
 @app.route('/auth/callback')
 def auth_callback():
     """Handle the OAuth callback from Basecamp."""
-    logger.info("OAuth callback called with args: %s", request.args)
+    logger.info("OAuth callback received")
 
     code = request.args.get('code')
     error = request.args.get('error')
@@ -268,7 +268,10 @@ def auth_callback():
         oauth_client = get_oauth_client()
         logger.info("Exchanging code for token")
         token_data = oauth_client.exchange_code_for_token(code)
-        logger.info(f"Raw token data from Basecamp exchange: {token_data}")
+        logger.info(
+            "Token exchange succeeded (refresh token present: %s)",
+            bool(token_data.get("refresh_token")),
+        )
 
         # Store the token in our secure storage
         access_token = token_data.get('access_token')
@@ -345,7 +348,7 @@ def get_token_api():
     Secure API endpoint for the MCP server to get the token.
     This should only be accessible by the MCP server.
     """
-    logger.info("Token API called with headers: %s", request.headers)
+    logger.info("Token API called")
 
     # In production, implement proper authentication for this endpoint
     # For now, we'll use a simple API key check
