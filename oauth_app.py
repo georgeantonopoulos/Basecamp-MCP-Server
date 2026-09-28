@@ -246,7 +246,7 @@ def auth_callback():
     error = request.args.get('error')
 
     if error:
-        logger.error("OAuth callback error: %s", error)
+        logger.error("OAuth callback error")
         return render_template_string(
             RESULTS_TEMPLATE,
             title="Authentication Error",
@@ -449,7 +449,7 @@ if __name__ == '__main__':
         is_debug = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
 
         logger.info("Running in %s mode", "debug" if is_debug else "production")
-        app.run(host='0.0.0.0', port=port, debug=is_debug, use_reloader=is_debug)
+        app.run(host='127.0.0.1', port=port, debug=is_debug, use_reloader=is_debug)
     except Exception as e:
         logger.error("Fatal error: %s", str(e), exc_info=True)
         sys.exit(1)

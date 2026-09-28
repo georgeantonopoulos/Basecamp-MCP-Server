@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-This is a **Basecamp 3 MCP (Model Context Protocol) Server** that allows AI assistants (Cursor, Claude Desktop) to interact with Basecamp directly. It uses OAuth 2.0 for authentication and provides 63 tools for Basecamp operations.
+This is a **Basecamp 3 MCP (Model Context Protocol) Server** that allows AI assistants (Cursor, Claude Desktop) to interact with Basecamp directly. It uses OAuth 2.0 for authentication and provides 79 tools for Basecamp operations.
 
 ## Development Commands
 
@@ -42,12 +42,12 @@ python generate_claude_desktop_config.py   # For Claude Desktop
 
 | File | Purpose |
 | ------ | --------- |
-| `basecamp_fastmcp.py` | **Main MCP server** using official Anthropic FastMCP framework (63 tools) |
+| `basecamp_fastmcp.py` | **Main MCP server** using official Anthropic FastMCP framework (79 tools) |
 | `mcp_server_cli.py` | Legacy JSON-RPC server (same tools, custom implementation) |
 | `basecamp_client.py` | Basecamp 3 API client - all HTTP methods and endpoints |
 | `basecamp_oauth.py` | OAuth 2.0 client for 37signals Launchpad |
 | `auth_manager.py` | Automatic token refresh before API calls |
-| `token_storage.py` | Thread-safe OAuth token persistence (`oauth_tokens.json`) |
+| `token_storage.py` | Thread-safe OAuth token persistence. Path defaults to `<project>/oauth_tokens.json`; override with `BASECAMP_MCP_TOKEN_FILE` env var |
 | `search_utils.py` | Cross-project search functionality |
 | `oauth_app.py` | Flask app for OAuth flow (browser-based login) |
 
@@ -69,19 +69,20 @@ Basecamp 3 API (https://3.basecampapi.com/{account_id})
 
 1. User runs `python oauth_app.py` and visits `http://localhost:8000`
 2. Redirected to 37signals for authorization
-3. Callback stores tokens in `oauth_tokens.json` (600 permissions)
+3. Callback stores tokens in `oauth_tokens.json` (600 permissions — location configurable via `BASECAMP_MCP_TOKEN_FILE`)
 4. MCP server uses `auth_manager.ensure_authenticated()` to auto-refresh expired tokens
 
-### Tool Categories (63 total)
+### Tool Categories (79 total)
 
 - **Projects**: `get_projects`, `get_project`
-- **Todos**: `get_todolists`, `get_todos`, `create_todo`, `update_todo`, `delete_todo`, `complete_todo`, `uncomplete_todo`
+- **Todos**: `get_todolists`, `get_todolist`, `create_todolist`, `update_todolist`, `trash_todolist`, `get_todos`, `get_todo`, `create_todo`, `update_todo`, `delete_todo`, `complete_todo`, `uncomplete_todo`, `reposition_todo`, `archive_todo`
+- **Todo List Groups**: `get_todolist_groups`, `create_todolist_group`, `reposition_todolist_group`
 - **Card Tables (Kanban)**: `get_card_table`, `get_columns`, `get_cards`, `create_card`, `move_card`, `complete_card`, etc.
 - **Card Steps**: `get_card_steps`, `create_card_step`, `complete_card_step`, etc.
 - **Comments**: `get_comments`, `create_comment`
-- **Messages**: `get_message_board`, `get_messages`, `get_message`
+- **Messages**: `get_message_board`, `get_messages`, `get_message`, `get_message_categories`, `create_message`, `create_draft_message`
 - **Campfire (Chat)**: `get_campfire_lines`
-- **Documents**: `get_documents`, `create_document`, `update_document`, `trash_document`
+- **Documents**: `get_documents`, `create_document`, `create_draft_document`, `update_document`, `trash_document`
 - **Inbox (Email Forwards)**: `get_inbox`, `get_forwards`, `get_forward`, `get_inbox_replies`, `get_inbox_reply`, `trash_forward`
 - **Search**: `search_basecamp`, `global_search`
 - **Webhooks**: `get_webhooks`, `create_webhook`, `delete_webhook`

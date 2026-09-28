@@ -81,7 +81,7 @@ class BasecampOAuth:
         if response.status_code == 200:
             return response.json()
         else:
-            raise Exception(f"Failed to exchange code for token: {response.status_code} - {response.text}")
+            raise Exception(f"Failed to exchange code for token: HTTP {response.status_code}")
 
     def refresh_token(self, refresh_token):
         """
@@ -109,7 +109,7 @@ class BasecampOAuth:
         if response.status_code == 200:
             return response.json()
         else:
-            raise Exception(f"Failed to refresh token: {response.status_code} - {response.text}")
+            raise Exception(f"Failed to refresh token: HTTP {response.status_code}")
 
     def get_identity(self, access_token):
         """
@@ -131,4 +131,4 @@ class BasecampOAuth:
         if response.status_code == 200:
             return response.json()
         else:
-            raise Exception(f"Failed to get identity: {response.status_code} - {response.text}")
+            raise Exception(f"Failed to get identity: HTTP {response.status_code}")

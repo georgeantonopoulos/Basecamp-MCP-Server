@@ -6,13 +6,20 @@ This server implements the MCP (Model Context Protocol) using the official
 Anthropic FastMCP framework, replacing the custom JSON-RPC implementation.
 """
 
+import base64
 import logging
 import os
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 import anyio
 import httpx
 from mcp.server.fastmcp import FastMCP
+from mcp.types import (
+    BlobResourceContents,
+    EmbeddedResource,
+    ImageContent,
+    TextContent,
+)
 
 # Import existing business logic
 from basecamp_client import BasecampClient
@@ -46,7 +53,13 @@ def _get_basecamp_client() -> Optional[BasecampClient]:
     """Get authenticated Basecamp client (sync version from original server)."""
     try:
         token_data = token_storage.get_token()
-        logger.debug(f"Token data retrieved: {token_data}")
+        logger.debug(
+            "Token data retrieved: has_access_token=%s has_refresh_token=%s account_id=%s expires_at=%s",
+            bool(token_data and token_data.get('access_token')),
+            bool(token_data and token_data.get('refresh_token')),
+            token_data.get('account_id') if token_data else None,
+            token_data.get('expires_at') if token_data else None,
+        )
 
         if not token_data or not token_data.get('access_token'):
             logger.error("No OAuth token available")
@@ -65,7 +78,11 @@ def _get_basecamp_client() -> Optional[BasecampClient]:
         user_agent = os.getenv('USER_AGENT') or "Basecamp MCP Server (cursor@example.com)"
 
         if not account_id:
-            logger.error(f"Missing account_id. Token data: {token_data}, Env BASECAMP_ACCOUNT_ID: {os.getenv('BASECAMP_ACCOUNT_ID')}")
+            logger.error(
+                "Missing account_id. token_account_id=%s env_BASECAMP_ACCOUNT_ID=%s",
+                token_data.get('account_id') if token_data else None,
+                os.getenv('BASECAMP_ACCOUNT_ID'),
+            )
             return None
 
         logger.debug(f"Creating Basecamp client with account_id: {account_id}, user_agent: {user_agent}")
@@ -80,39 +97,174 @@ def _get_basecamp_client() -> Optional[BasecampClient]:
         logger.error(f"Error creating Basecamp client: {e}")
         return None
 
+def _error_response(error: str, message: str) -> Dict[str, Any]:
+    """Return a consistent MCP tool error response."""
+    return {
+        "status": "error",
+        "error": error,
+        "message": message,
+    }
+
+
 def _get_auth_error_response() -> Dict[str, Any]:
     """Return consistent auth error response."""
     if token_storage.is_token_expired():
-        return {
-            "error": "OAuth token expired",
-            "message": "Your Basecamp OAuth token has expired. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
-        }
-    else:
-        return {
-            "error": "Authentication required", 
-            "message": "Please authenticate with Basecamp first. Visit http://localhost:8000 to log in."
-        }
+        return _error_response(
+            "OAuth token expired",
+            "Your Basecamp OAuth token has expired. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again.",
+        )
+    return _error_response(
+        "Authentication required",
+        "Please authenticate with Basecamp first. Visit http://localhost:8000 to log in.",
+    )
 
 async def _run_sync(func, *args, **kwargs):
     """Wrapper to run synchronous functions in thread pool."""
     return await anyio.to_thread.run_sync(func, *args, **kwargs)
 
+
+# --------------------------------------------------------------------------
+# Payload shaping
+#
+# Lives in payload_shaping.py so that this server and the compatibility CLI
+# (mcp_server_cli.py) cannot return different shapes for the same tool. The
+# module-level aliases below keep the call sites in this file unchanged.
+# --------------------------------------------------------------------------
+import payload_shaping as _shape
+
+_NOISE_KEYS = _shape.NOISE_KEYS
+_PROJECT_SUMMARY_KEYS = _shape.PROJECT_SUMMARY_KEYS
+_TODO_SUMMARY_KEYS = _shape.TODO_SUMMARY_KEYS
+_MESSAGE_SUMMARY_KEYS = _shape.MESSAGE_SUMMARY_KEYS
+_COMMENT_SUMMARY_KEYS = _shape.COMMENT_SUMMARY_KEYS
+_CARD_SUMMARY_KEYS = _shape.CARD_SUMMARY_KEYS
+_COLUMN_SUMMARY_KEYS = _shape.COLUMN_SUMMARY_KEYS
+_BRIEF_NESTED_KEYS = _shape.BRIEF_NESTED_KEYS
+_FULL_DETAIL_DEFAULT_LIMIT = _shape.FULL_DETAIL_DEFAULT_LIMIT
+
+_prune = _shape.prune
+_person_brief = _shape.person_brief
+_brief_nested = _shape.brief_nested
+_project_summary = _shape.project_summary
+_project_full = _shape.project_full
+_trim_dock = _shape.trim_dock
+_trim_people_sample = _shape.trim_people_sample
+_todo_summary = _shape.todo_summary
+_card_summary = _shape.card_summary
+_column_summary = _shape.column_summary
+_message_summary = _shape.message_summary
+_comment_summary = _shape.comment_summary
+_shape_records = _shape.shape_records
+_shape_todos = _shape.shape_todos
+_shape_cards = _shape.shape_cards
+_shape_card_table = _shape.shape_card_table
+_resolve_detail = _shape.resolve_detail
+
+
+
+
+def _handle_download_error(e: Exception, kind: str) -> Dict[str, Any]:
+    """Map a BasecampClient download exception to an MCP error response."""
+    logger.error(f"Error downloading {kind}: {e}")
+    if "401" in str(e) and "expired" in str(e).lower():
+        return _error_response(
+            "OAuth token expired",
+            "Your Basecamp OAuth token expired during the API call. Re-authenticate via this server's OAuth endpoint.",
+        )
+    return _error_response("Execution error", str(e))
+
+
+def _serialize_blob_for_mcp(
+    data: bytes,
+    content_type: str,
+    filename: str,
+    summary: str,
+    resource_uri: str,
+) -> List[Any]:
+    """Pack a downloaded file into MCP content blocks.
+
+    ``image/*`` MIME types come back as ``ImageContent`` (the MCP host can
+    render them); everything else as an ``EmbeddedResource`` with
+    ``BlobResourceContents`` so the MCP host forwards the bytes to the model
+    and PDFs/docs are read natively.
+    """
+    b64 = base64.b64encode(data).decode("ascii")
+    blocks: List[Any] = [TextContent(type="text", text=summary)]
+    if content_type.startswith("image/"):
+        blocks.append(
+            ImageContent(type="image", data=b64, mimeType=content_type)
+        )
+    else:
+        blocks.append(
+            EmbeddedResource(
+                type="resource",
+                resource=BlobResourceContents(
+                    uri=resource_uri,
+                    mimeType=content_type,
+                    blob=b64,
+                ),
+            )
+        )
+    return blocks
+
+
 # Core MCP Tools - Starting with essential ones from original server
 
 @mcp.tool()
-async def get_projects() -> Dict[str, Any]:
-    """Get all Basecamp projects."""
+async def get_projects(
+    detail: Optional[Literal["summary", "full"]] = None,
+    query: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: Optional[int] = None,
+) -> Dict[str, Any]:
+    """List Basecamp projects. Returns a compact summary by default.
+
+    Use this to discover projects and find the ID you need. Pass `query` to
+    search by name rather than listing everything.
+
+    detail="summary" (the default) returns only id, name, status, purpose,
+    description, app_url, created_at, updated_at and tools — a few hundred
+    characters per project. `tools` lists the names of the project's enabled
+    dock entries (e.g. ["message_board", "todoset", "kanban_board"]), which
+    answers "does this project have a card table?" without the dock's bulk.
+
+    Set BASECAMP_MCP_FULL_RESPONSES=1 in the environment to make "full" the
+    default for list tools deployment-wide; an explicit `detail` argument
+    overrides it either way.
+
+    detail="full" returns Basecamp's complete project records, including the
+    `people` sample and the `dock`. Those run ~2,700 characters each, so a
+    whole account would overflow the tool-result limit — **detail="full" is
+    therefore capped at 5 projects unless you pass an explicit `limit`.** When
+    the cap or a limit applies, the response carries `truncated: true` and
+    `matched: <n>` so you can see how many were held back, and you can narrow
+    with `query`/`status` or page with `limit`.
+
+    **Dock IDs (todoset, message_board, kanban_board, vault, schedule, …) are
+    not in either view. Call get_project(project_id) for those** — you need
+    them only for a project you have already chosen, and including them for
+    every project is what makes the full payload unmanageable.
+
+    Args:
+        detail: "summary" (the default) or "full". Omit it to take the
+            deployment default, which is "summary" unless
+            BASECAMP_MCP_FULL_RESPONSES=1 is set in the environment.
+        query: Case-insensitive substring match on the project name.
+        status: Filter by project status, e.g. "active" or "archived".
+        limit: Return at most this many projects (applied after filtering).
+    """
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
-    
+
+    detail = _resolve_detail(detail)
+
     try:
         projects = await _run_sync(client.get_projects)
-        return {
-            "status": "success",
-            "projects": projects,
-            "count": len(projects)
-        }
+        # Filtering, capping and the response envelope all live in
+        # payload_shaping so mcp_server_cli answers identically.
+        return _shape.projects_response(
+            projects, detail, query=query, status=status, limit=limit)
     except Exception as e:
         logger.error(f"Error getting projects: {e}")
         if "401" in str(e) and "expired" in str(e).lower():
@@ -127,17 +279,24 @@ async def get_projects() -> Dict[str, Any]:
 
 @mcp.tool()
 async def get_project(project_id: str) -> Dict[str, Any]:
-    """Get details for a specific project.
-    
+    """Get one project's details, including its dock IDs.
+
+    This is where the dock lives: the IDs of the project's enabled tools
+    (todoset, message_board, kanban_board, vault, schedule, chat, inbox,
+    questionnaire). Those IDs are what the per-tool calls need — e.g. the
+    todoset ID for get_todolists, the kanban_board ID for get_cards.
+
+    Use get_projects to find the project_id, then this call for the dock.
+
     Args:
         project_id: The project ID
     """
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
-    
+
     try:
-        project = await _run_sync(client.get_project, project_id)
+        project = _project_full(_prune(await _run_sync(client.get_project, project_id)))
         return {
             "status": "success",
             "project": project
@@ -198,6 +357,158 @@ async def search_basecamp(query: str, project_id: Optional[str] = None) -> Dict[
         }
 
 @mcp.tool()
+async def get_assignable_people(
+    query: Optional[str] = None,
+    detail: Optional[Literal["summary", "full"]] = None,
+) -> Dict[str, Any]:
+    """Get all people who can have to-dos assigned to them.
+
+    Account-wide list. Use a person's id with get_person_assignments to fetch
+    their to-dos across all projects. Pass `query` to look someone up by name
+    or email instead of retrieving the whole roster.
+
+    **The authenticated user is not in this list** — Basecamp excludes you from
+    the assignable report, so you cannot find your own person ID here. Use
+    get_my_profile / the /my/profile endpoint for that, or take the `creator`
+    id from any record you authored.
+
+    Note that `email_address` is often returned partially masked by Basecamp
+    (e.g. "m•••@•••••.••"), so it is unreliable for matching.
+
+    detail="summary" (the default) returns id, name, email_address, title and
+    company name. detail="full" returns complete person records.
+
+    Args:
+        query: Case-insensitive substring match on name or email address.
+        detail: "summary" (the default) or "full". Omit it to take the
+            deployment default, which is "summary" unless
+            BASECAMP_MCP_FULL_RESPONSES=1 is set in the environment.
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    detail = _resolve_detail(detail)
+
+    try:
+        people = await _run_sync(client.get_assignable_people)
+        # Filtering, projection and envelope live in payload_shaping so
+        # mcp_server_cli answers identically.
+        return _shape.people_response(people, detail, query=query)
+    except Exception as e:
+        logger.error(f"Error getting assignable people: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {
+                "error": "OAuth token expired",
+                "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
+            }
+        return {
+            "error": "Execution error",
+            "message": str(e)
+        }
+
+@mcp.tool()
+async def get_person_assignments(
+    person_id: str,
+    group_by: Optional[Literal["bucket", "date"]] = None,
+    detail: Optional[Literal["summary", "full"]] = None,
+) -> Dict[str, Any]:
+    """Get all active, pending to-dos assigned to a specific person.
+
+    Cross-project report: returns the person's assignments across ALL
+    projects in one call (API counterpart of the web report at
+    /reports/todos/assigned/{person_id}). Prefer this over iterating
+    projects when you need everything assigned to one person.
+
+    Each to-do includes `due_on` (may be null) and `bucket.name`, so overdue
+    and upcoming items can be identified by comparing against today's date.
+
+    detail="summary" (the default) returns identity and scheduling fields with
+    people reduced to id+name. It omits the `description` body — check
+    `has_description` and call get_todo(project_id, todo_id) when you need it.
+    detail="full" returns complete records; on an account with many
+    assignments that can exceed the tool-result limit.
+
+    Args:
+        person_id: The person's ID (see get_assignable_people)
+        group_by: Optional grouping — 'bucket' (by project, API default)
+            or 'date' (by due date)
+        detail: "summary" (the default) or "full". Omit it to take the
+            deployment default, which is "summary" unless
+            BASECAMP_MCP_FULL_RESPONSES=1 is set in the environment.
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    detail = _resolve_detail(detail)
+
+    try:
+        report = await _run_sync(client.get_person_assignments, person_id, group_by)
+        return _shape.person_assignments_response(report, detail)
+    except Exception as e:
+        logger.error(f"Error getting assignments for person {person_id}: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {
+                "error": "OAuth token expired",
+                "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
+            }
+        return {
+            "error": "Execution error",
+            "message": str(e)
+        }
+
+@mcp.tool()
+async def get_overdue_todos(
+    detail: Optional[Literal["summary", "full"]] = None,
+    assignee_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Get overdue to-dos for the WHOLE ACCOUNT, grouped by how late they are.
+
+    **This is account-wide — everyone's overdue to-dos, not just yours.** On a
+    team account that is usually dozens of items belonging to other people. To
+    find one person's overdue work, either pass `assignee_id`, or use
+    get_person_assignments and compare `due_on` against today.
+
+    The result is grouped, not a flat list: `under_a_week_late`,
+    `over_a_week_late`, `over_a_month_late`, `over_three_months_late`. Code
+    expecting a list, or a `todos` key, will read zero items.
+
+    detail="summary" (the default) trims each to-do to identity and scheduling
+    fields and omits the `description` body. detail="full" returns complete
+    records — on a busy account that runs to hundreds of thousands of
+    characters and will exceed the tool-result limit.
+
+    Args:
+        detail: "summary" (the default) or "full". Omit it to take the
+            deployment default, which is "summary" unless
+            BASECAMP_MCP_FULL_RESPONSES=1 is set in the environment.
+        assignee_id: Optionally return only to-dos assigned to this person ID.
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    detail = _resolve_detail(detail)
+
+    try:
+        report = await _run_sync(client.get_overdue_todos)
+        # Bucket shaping and the envelope live in payload_shaping so
+        # mcp_server_cli answers identically.
+        return _shape.overdue_response(report, detail, assignee_id=assignee_id)
+    except Exception as e:
+        logger.error(f"Error getting overdue todos: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {
+                "error": "OAuth token expired",
+                "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
+            }
+        return {
+            "error": "Execution error",
+            "message": str(e)
+        }
+
+@mcp.tool()
 async def get_todolists(project_id: str) -> Dict[str, Any]:
     """Get todo lists for a project.
     
@@ -228,26 +539,82 @@ async def get_todolists(project_id: str) -> Dict[str, Any]:
         }
 
 @mcp.tool()
-async def get_todos(project_id: str, todolist_id: str) -> Dict[str, Any]:
+async def get_todos(
+    project_id: str,
+    todolist_id: str,
+    completed: bool = False,
+    status: Optional[str] = None,
+    detail: Optional[Literal["summary", "full"]] = None,
+) -> Dict[str, Any]:
     """Get todos from a todo list.
-    
+
+    By default only the active (incomplete) to-dos are returned. Set
+    ``completed=True`` to fetch the completed to-dos instead (useful for
+    reporting delivered work by title rather than an open/closed ratio), or
+    ``status='archived'``/``'trashed'`` to fetch by recording status.
+
+    detail="summary" (the default) returns identity and scheduling fields with
+    people reduced to id+name, and omits the `description` body — check the
+    `has_description` flag and call get_todo for the text. A full to-do record
+    averages ~7,900 characters, so a long list overflows the tool-result limit;
+    a summary is roughly a tenth of that.
+
     Args:
         project_id: Project ID
         todolist_id: The todo list ID
+        completed: When True, return completed to-dos (Basecamp ?completed=true)
+        status: Optional recording-status filter: 'archived' or 'trashed'
+        detail: "summary" (the default) or "full". Omit it to take the
+            deployment default, which is "summary" unless
+            BASECAMP_MCP_FULL_RESPONSES=1 is set in the environment.
     """
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
-    
+
+    detail = _resolve_detail(detail)
+
     try:
-        todos = await _run_sync(client.get_todos, project_id, todolist_id)
+        todos = await _run_sync(
+            client.get_todos, project_id, todolist_id, completed, status)
         return {
             "status": "success",
-            "todos": todos,
-            "count": len(todos)
+            "todos": _shape_todos(todos, detail),
+            "count": len(todos),
+            "detail": detail,
         }
     except Exception as e:
         logger.error(f"Error getting todos: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {
+                "error": "OAuth token expired",
+                "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
+            }
+        return {
+            "error": "Execution error",
+            "message": str(e)
+        }
+
+@mcp.tool()
+async def get_todo(project_id: str, todo_id: str) -> Dict[str, Any]:
+    """Get a single todo item by its ID.
+
+    Args:
+        project_id: Project ID
+        todo_id: The todo ID
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        todo = await _run_sync(client.get_todo, project_id, todo_id)
+        return {
+            "status": "success",
+            "todo": todo
+        }
+    except Exception as e:
+        logger.error(f"Error getting todo {todo_id}: {e}")
         if "401" in str(e) and "expired" in str(e).lower():
             return {
                 "error": "OAuth token expired",
@@ -331,6 +698,9 @@ async def update_todo(project_id: str, todo_id: str,
         description: HTML description of the todo
         assignee_ids: List of person IDs to assign
         completion_subscriber_ids: List of person IDs to notify on completion
+        notify: When true, Basecamp emails the assignees about this change.
+            Transient — it is not stored on the to-do. Omit it unless the
+            caller has actually asked for people to be notified.
         due_on: Due date in YYYY-MM-DD format
         starts_on: Start date in YYYY-MM-DD format
     """
@@ -379,8 +749,10 @@ async def update_todo(project_id: str, todo_id: str,
 
 @mcp.tool()
 async def delete_todo(project_id: str, todo_id: str) -> Dict[str, Any]:
-    """Delete a todo item.
-    
+    """Move a todo item to the trash.
+
+    Trashed todos can be recovered from the Basecamp web UI within 30 days.
+
     Args:
         project_id: Project ID
         todo_id: The todo ID
@@ -388,15 +760,15 @@ async def delete_todo(project_id: str, todo_id: str) -> Dict[str, Any]:
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
-    
+
     try:
         await _run_sync(client.delete_todo, project_id, todo_id)
         return {
             "status": "success",
-            "message": "Todo deleted successfully"
+            "message": "Todo moved to trash"
         }
     except Exception as e:
-        logger.error(f"Error deleting todo: {e}")
+        logger.error(f"Error trashing todo: {e}")
         if "401" in str(e) and "expired" in str(e).lower():
             return {
                 "error": "OAuth token expired",
@@ -469,6 +841,66 @@ async def uncomplete_todo(project_id: str, todo_id: str) -> Dict[str, Any]:
         }
 
 @mcp.tool()
+async def archive_todo(project_id: str, todo_id: str) -> Dict[str, Any]:
+    """Archive a todo item.
+
+    Archived todos are hidden from the active list but remain accessible
+    via the Basecamp web UI.
+
+    Args:
+        project_id: Project ID
+        todo_id: The todo ID
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        await _run_sync(client.archive_todo, project_id, todo_id)
+        return {"status": "success", "message": f"Todo {todo_id} archived"}
+    except Exception as e:
+        logger.error(f"Error archiving todo {todo_id}: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {"error": "OAuth token expired", "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."}
+        return {"error": "Execution error", "message": str(e)}
+
+
+@mcp.tool()
+async def reposition_todo(
+    project_id: str,
+    todo_id: str,
+    position: int,
+    parent_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Reposition a todo within its list, or move it to another list or group.
+
+    Args:
+        project_id: The project ID
+        todo_id: The todo ID
+        position: New 1-based position within the target list
+        parent_id: ID of the target todolist or group to move the todo into.
+                   Omit to keep the todo in its current list and only change position.
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    if position < 1:
+        return {"error": "Invalid input", "message": "position must be >= 1"}
+
+    try:
+        await _run_sync(
+            lambda: client.reposition_todo(project_id, todo_id, position, parent_id)
+        )
+        return {"status": "success", "message": f"Todo {todo_id} moved to position {position}"}
+    except Exception as e:
+        logger.error(f"Error repositioning todo {todo_id}: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {"error": "OAuth token expired", "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."}
+        return {"error": "Execution error", "message": str(e)}
+
+
+@mcp.tool()
 async def global_search(query: str) -> Dict[str, Any]:
     """Search projects, todos and campfire messages across all projects.
     
@@ -500,28 +932,48 @@ async def global_search(query: str) -> Dict[str, Any]:
         }
 
 @mcp.tool()
-async def get_comments(recording_id: str, project_id: str, page: int = 1) -> Dict[str, Any]:
+async def get_comments(
+    recording_id: str,
+    project_id: str,
+    page: int = 1,
+    detail: Optional[Literal["summary", "full"]] = None,
+) -> Dict[str, Any]:
     """Get comments for a Basecamp item.
+
+    detail="summary" (the default) keeps each comment's `content` in full —
+    the discussion is the point — and trims the metadata around it, reducing
+    `creator` to id+name and dropping `content_attachments`. Use
+    detail="full" when you need attachment download URLs.
+
+    Note that `content` itself is the bulk of this payload (~3,700 characters
+    per comment on a busy thread), so a long thread can still be large even in
+    summary; use `page` to walk it rather than pulling everything at once.
 
     Args:
         recording_id: The item ID
         project_id: The project ID
         page: Page number for pagination (default: 1). Basecamp uses geared pagination:
               page 1 has 15 results, page 2 has 30, page 3 has 50, page 4+ has 100.
+        detail: "summary" (the default) or "full". Omit it to take the
+            deployment default, which is "summary" unless
+            BASECAMP_MCP_FULL_RESPONSES=1 is set in the environment.
     """
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
 
+    detail = _resolve_detail(detail)
+
     try:
         result = await _run_sync(client.get_comments, project_id, recording_id, page)
         return {
             "status": "success",
-            "comments": result["comments"],
+            "comments": _shape_records(result["comments"], detail, _comment_summary),
             "count": len(result["comments"]),
             "page": page,
             "total_count": result["total_count"],
-            "next_page": result["next_page"]
+            "next_page": result["next_page"],
+            "detail": detail,
         }
     except Exception as e:
         logger.error(f"Error getting comments: {e}")
@@ -628,23 +1080,38 @@ async def get_message_board(project_id: str) -> Dict[str, Any]:
         }
 
 @mcp.tool()
-async def get_messages(project_id: str, message_board_id: Optional[str] = None) -> Dict[str, Any]:
+async def get_messages(
+    project_id: str,
+    message_board_id: Optional[str] = None,
+    detail: Optional[Literal["summary", "full"]] = None,
+) -> Dict[str, Any]:
     """Get all messages from a project's message board.
+
+    detail="summary" (the default) keeps each message's `content` in full —
+    that is what you came for — and trims the surrounding metadata, reducing
+    `creator` to id+name. A full person record is ~900 characters repeated on
+    every row, which is the single largest cost in this payload.
 
     Args:
         project_id: The project ID
         message_board_id: Optional message board ID. If not provided, will be auto-discovered from the project.
+        detail: "summary" (the default) or "full". Omit it to take the
+            deployment default, which is "summary" unless
+            BASECAMP_MCP_FULL_RESPONSES=1 is set in the environment.
     """
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
 
+    detail = _resolve_detail(detail)
+
     try:
         messages = await _run_sync(client.get_messages, project_id, message_board_id)
         return {
             "status": "success",
-            "messages": messages,
-            "count": len(messages)
+            "messages": _shape_records(messages, detail, _message_summary),
+            "count": len(messages),
+            "detail": detail,
         }
     except Exception as e:
         logger.error(f"Error getting messages: {e}")
@@ -687,6 +1154,103 @@ async def get_message(project_id: str, message_id: str) -> Dict[str, Any]:
             "error": "Execution error",
             "message": str(e)
         }
+
+
+@mcp.tool()
+async def get_message_categories(project_id: str) -> Dict[str, Any]:
+    """Get message categories (types) for a project.
+
+    Args:
+        project_id: The project ID
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        categories = await _run_sync(client.get_message_categories, project_id)
+        return {
+            "status": "success",
+            "categories": categories,
+            "count": len(categories)
+        }
+    except Exception as e:
+        logger.error(f"Error getting message categories: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {
+                "error": "OAuth token expired",
+                "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
+            }
+        return {
+            "error": "Execution error",
+            "message": str(e)
+        }
+
+
+@mcp.tool()
+async def create_message(project_id: str, subject: str, content: str,
+                         message_board_id: Optional[str] = None,
+                         category_id: Optional[str] = None,
+                         publish: bool = True) -> Dict[str, Any]:
+    """Create a new message on a project's message board.
+
+    Args:
+        project_id: The project ID
+        subject: Message title/subject
+        content: Message body in HTML format
+        message_board_id: Optional message board ID. If not provided, will be auto-discovered from the project.
+        category_id: Optional message type/category ID
+        publish: When true, publish immediately. When false, create a draft.
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        message = await _run_sync(
+            lambda: client.create_message(
+                project_id, subject, content,
+                message_board_id=message_board_id,
+                category_id=category_id,
+                status="active" if publish else None
+            )
+        )
+        return {
+            "status": "success",
+            "message": message,
+            "result": f"Message '{subject}' {'published' if publish else 'drafted'} successfully"
+        }
+    except Exception as e:
+        logger.error(f"Error creating message: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return _error_response(
+                "OAuth token expired",
+                "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again.",
+            )
+        return _error_response("Execution error", str(e))
+
+
+@mcp.tool()
+async def create_draft_message(project_id: str, subject: str, content: str,
+                               message_board_id: Optional[str] = None,
+                               category_id: Optional[str] = None) -> Dict[str, Any]:
+    """Create a draft message on a project's message board without publishing it.
+
+    Args:
+        project_id: The project ID
+        subject: Message title/subject
+        content: Message body in HTML format
+        message_board_id: Optional message board ID. If not provided, will be auto-discovered from the project.
+        category_id: Optional message type/category ID
+    """
+    return await create_message(
+        project_id,
+        subject,
+        content,
+        message_board_id=message_board_id,
+        category_id=category_id,
+        publish=False,
+    )
 
 
 # Inbox Tools (Email Forwards)
@@ -879,22 +1443,36 @@ async def trash_forward(project_id: str, forward_id: str) -> Dict[str, Any]:
 
 
 @mcp.tool()
-async def get_card_tables(project_id: str) -> Dict[str, Any]:
+async def get_card_tables(
+    project_id: str,
+    detail: Optional[Literal["summary", "full"]] = None,
+) -> Dict[str, Any]:
     """Get all card tables for a project.
-    
+
+    detail="summary" (the default) summarises each table's embedded columns as
+    it does in get_card_table.
+
     Args:
         project_id: The project ID
+        detail: "summary" (the default) or "full". Omit it to take the
+            deployment default, which is "summary" unless
+            BASECAMP_MCP_FULL_RESPONSES=1 is set in the environment.
     """
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
-    
+
+    detail = _resolve_detail(detail)
+
     try:
         card_tables = await _run_sync(client.get_card_tables, project_id)
+        shaped = ([_shape_card_table(t, detail) for t in card_tables]
+                  if isinstance(card_tables, list) else _prune(card_tables))
         return {
             "status": "success",
-            "card_tables": card_tables,
-            "count": len(card_tables)
+            "card_tables": shaped,
+            "count": len(card_tables),
+            "detail": detail,
         }
     except Exception as e:
         logger.error(f"Error getting card tables: {e}")
@@ -909,22 +1487,36 @@ async def get_card_tables(project_id: str) -> Dict[str, Any]:
         }
 
 @mcp.tool()
-async def get_card_table(project_id: str) -> Dict[str, Any]:
-    """Get the card table details for a project.
-    
+async def get_card_table(
+    project_id: str,
+    detail: Optional[Literal["summary", "full"]] = None,
+) -> Dict[str, Any]:
+    """Get the card table details for a project, including its columns.
+
+    detail="summary" (the default) summarises the embedded columns, keeping a
+    card count per column instead of their `subscribers` and `creator` records.
+    An empty five-column board measures ~19,000 characters at full detail, of
+    which the columns are ~85% — so ask for "full" only when you need it.
+
     Args:
         project_id: The project ID
+        detail: "summary" (the default) or "full". Omit it to take the
+            deployment default, which is "summary" unless
+            BASECAMP_MCP_FULL_RESPONSES=1 is set in the environment.
     """
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
-    
+
+    detail = _resolve_detail(detail)
+
     try:
         card_table = await _run_sync(client.get_card_table, project_id)
         card_table_details = await _run_sync(client.get_card_table_details, project_id, card_table['id'])
         return {
             "status": "success",
-            "card_table": card_table_details
+            "card_table": _shape_card_table(card_table_details, detail),
+            "detail": detail,
         }
     except Exception as e:
         logger.error(f"Error getting card table: {e}")
@@ -941,23 +1533,39 @@ async def get_card_table(project_id: str) -> Dict[str, Any]:
         }
 
 @mcp.tool()
-async def get_columns(project_id: str, card_table_id: str) -> Dict[str, Any]:
+async def get_columns(
+    project_id: str,
+    card_table_id: str,
+    detail: Optional[Literal["summary", "full"]] = None,
+) -> Dict[str, Any]:
     """Get all columns in a card table.
-    
+
+    detail="summary" (the default) keeps each column's identity, position,
+    colour, on-hold state and card count, and drops its `subscribers` list and
+    full `creator` record. Those two are the bulk of this payload — a column
+    costs ~3,300 characters at full detail even when it holds no cards, because
+    the same person objects repeat in every column.
+
     Args:
         project_id: The project ID
         card_table_id: The card table ID
+        detail: "summary" (the default) or "full". Omit it to take the
+            deployment default, which is "summary" unless
+            BASECAMP_MCP_FULL_RESPONSES=1 is set in the environment.
     """
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
-    
+
+    detail = _resolve_detail(detail)
+
     try:
         columns = await _run_sync(client.get_columns, project_id, card_table_id)
         return {
             "status": "success",
-            "columns": columns,
-            "count": len(columns)
+            "columns": _shape_records(columns, detail, _column_summary),
+            "count": len(columns),
+            "detail": detail,
         }
     except Exception as e:
         logger.error(f"Error getting columns: {e}")
@@ -972,23 +1580,39 @@ async def get_columns(project_id: str, card_table_id: str) -> Dict[str, Any]:
         }
 
 @mcp.tool()
-async def get_cards(project_id: str, column_id: str) -> Dict[str, Any]:
+async def get_cards(
+    project_id: str,
+    column_id: str,
+    detail: Optional[Literal["summary", "full"]] = None,
+) -> Dict[str, Any]:
     """Get all cards in a column.
-    
+
+    detail="summary" (the default) returns identity and scheduling fields with
+    assignees reduced to id+name, and omits the `description` body — check
+    `has_description` and call get_card for the text. Card records carry the
+    same person-object weight as to-dos, so a busy column overflows the
+    tool-result limit at full detail.
+
     Args:
         project_id: The project ID
         column_id: The column ID
+        detail: "summary" (the default) or "full". Omit it to take the
+            deployment default, which is "summary" unless
+            BASECAMP_MCP_FULL_RESPONSES=1 is set in the environment.
     """
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
-    
+
+    detail = _resolve_detail(detail)
+
     try:
         cards = await _run_sync(client.get_cards, project_id, column_id)
         return {
             "status": "success",
-            "cards": cards,
-            "count": len(cards)
+            "cards": _shape_cards(cards, detail),
+            "count": len(cards),
+            "detail": detail,
         }
     except Exception as e:
         logger.error(f"Error getting cards: {e}")
@@ -1053,7 +1677,7 @@ async def get_column(project_id: str, column_id: str) -> Dict[str, Any]:
         column = await _run_sync(client.get_column, project_id, column_id)
         return {
             "status": "success",
-            "column": column
+            "column": _prune(column),
         }
     except Exception as e:
         logger.error(f"Error getting column: {e}")
@@ -1176,7 +1800,7 @@ async def get_card(project_id: str, card_id: str) -> Dict[str, Any]:
         card = await _run_sync(client.get_card, project_id, card_id)
         return {
             "status": "success",
-            "card": card
+            "card": _prune(card),
         }
     except Exception as e:
         logger.error(f"Error getting card: {e}")
@@ -1977,7 +2601,8 @@ async def get_document(project_id: str, document_id: str) -> Dict[str, Any]:
         }
 
 @mcp.tool()
-async def create_document(project_id: str, vault_id: str, title: str, content: str) -> Dict[str, Any]:
+async def create_document(project_id: str, vault_id: str, title: str, content: str,
+                          publish: bool = True) -> Dict[str, Any]:
     """Create a document in a vault.
     
     Args:
@@ -1985,28 +2610,53 @@ async def create_document(project_id: str, vault_id: str, title: str, content: s
         vault_id: Vault ID
         title: Document title
         content: Document HTML content
+        publish: When true, publish immediately. When false, create a draft.
     """
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
     
     try:
-        doc = await _run_sync(client.create_document, project_id, vault_id, title, content)
+        doc = await _run_sync(
+            client.create_document,
+            project_id,
+            vault_id,
+            title,
+            content,
+            "active" if publish else None,
+        )
         return {
             "status": "success",
-            "document": doc
+            "document": doc,
+            "result": f"Document '{title}' {'published' if publish else 'drafted'} successfully"
         }
     except Exception as e:
         logger.error(f"Error creating document: {e}")
         if "401" in str(e) and "expired" in str(e).lower():
-            return {
-                "error": "OAuth token expired",
-                "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
-            }
-        return {
-            "error": "Execution error",
-            "message": str(e)
-        }
+            return _error_response(
+                "OAuth token expired",
+                "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again.",
+            )
+        return _error_response("Execution error", str(e))
+
+
+@mcp.tool()
+async def create_draft_document(project_id: str, vault_id: str, title: str, content: str) -> Dict[str, Any]:
+    """Create a draft document in a vault without publishing it.
+
+    Args:
+        project_id: Project ID
+        vault_id: Vault ID
+        title: Document title
+        content: Document HTML content
+    """
+    return await create_document(
+        project_id,
+        vault_id,
+        title,
+        content,
+        publish=False,
+    )
 
 @mcp.tool()
 async def update_document(project_id: str, document_id: str, title: Optional[str] = None, content: Optional[str] = None) -> Dict[str, Any]:
@@ -2105,7 +2755,7 @@ async def get_uploads(project_id: str, vault_id: Optional[str] = None) -> Dict[s
 @mcp.tool()
 async def get_upload(project_id: str, upload_id: str) -> Dict[str, Any]:
     """Get details for a specific upload.
-    
+
     Args:
         project_id: Project ID
         upload_id: Upload ID
@@ -2113,7 +2763,7 @@ async def get_upload(project_id: str, upload_id: str) -> Dict[str, Any]:
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
-    
+
     try:
         upload = await _run_sync(client.get_upload, project_id, upload_id)
         return {
@@ -2132,9 +2782,328 @@ async def get_upload(project_id: str, upload_id: str) -> Dict[str, Any]:
             "message": str(e)
         }
 
+@mcp.tool()
+async def download_upload(
+    project_id: str,
+    upload_id: str,
+    max_bytes: int = 25_000_000,
+) -> Any:
+    """Download the binary content of an upload (PDF, image, document, ...).
+
+    Returns MCP content blocks: a text summary plus the file itself as an
+    embedded resource (or ImageContent for image MIME types). The MCP host
+    forwards the blob to the model, so Claude reads PDFs natively (tables,
+    images, OCR).
+
+    Host compatibility: the file is only readable if the MCP host forwards
+    `ImageContent` / `EmbeddedResource` (`BlobResourceContents`) to the
+    model. Claude Code (CLI) supports both, including `application/pdf`.
+    Claude Desktop / claude.ai web currently rejects non-image
+    `EmbeddedResource` blocks ("Resources of type 'application/pdf' are
+    not currently supported"); the bytes arrive at the host but never
+    reach the model.
+
+    Args:
+        project_id: Project ID
+        upload_id: Upload ID
+        max_bytes: Reject files larger than this (default 25 MB). Very large
+            payloads stress the MCP transport and the model context.
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        result = await _run_sync(
+            client.download_upload, project_id, upload_id, max_bytes
+        )
+    except Exception as e:
+        return _handle_download_error(e, "upload")
+
+    filename = result["filename"] or f"upload-{upload_id}"
+    data = result["data"]
+    content_type = result["content_type"]
+    return _serialize_blob_for_mcp(
+        data=data,
+        content_type=content_type,
+        filename=filename,
+        summary=(
+            f"Downloaded '{filename}' ({content_type}, {len(data)} bytes) "
+            f"from upload {upload_id} in project {project_id}."
+        ),
+        resource_uri=(
+            f"basecamp://buckets/{project_id}/uploads/{upload_id}/{filename}"
+        ),
+    )
+
+@mcp.tool()
+async def download_attachment(
+    project_id: str,
+    download_url: str,
+    max_bytes: int = 25_000_000,
+    expected_byte_size: Optional[int] = None,
+) -> Any:
+    """Download an inline comment/message attachment as MCP content.
+
+    Use this for files embedded into a comment or message body — the entries
+    found in ``content_attachments[]`` on comments, messages, etc. Pass the
+    entry's ``download_url`` verbatim.
+
+    For files that are their own ``Upload`` recording in a vault ("Docs &
+    Files"), use ``download_upload`` instead. Inline attachments are
+    ``Attachment`` objects with their own IDs and cannot be resolved through
+    the uploads endpoint.
+
+    Returns MCP content blocks: a text summary plus the file itself as
+    ImageContent (for ``image/*`` MIME types) or an EmbeddedResource
+    (BlobResourceContents) for everything else.
+
+    Host compatibility: the file is only readable if the MCP host forwards
+    ``ImageContent`` / ``EmbeddedResource`` (``BlobResourceContents``) to
+    the model. Claude Code (CLI) supports both, including
+    ``application/pdf``. Claude Desktop / claude.ai web currently rejects
+    non-image ``EmbeddedResource`` blocks ("Resources of type
+    'application/pdf' are not currently supported"); the bytes arrive at
+    the host but never reach the model.
+
+    Args:
+        project_id: Project (bucket) ID — used for the resource URI and logs.
+        download_url: ``content_attachments[].download_url`` from the API
+            (must point to ``*.basecampapi.com``).
+        max_bytes: Reject files larger than this (default 25 MB).
+        expected_byte_size: Optional advertised ``byte_size`` from the same
+            ``content_attachments[]`` entry. When provided, lets the server
+            reject oversized files before issuing the download.
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        result = await _run_sync(
+            client.download_attachment,
+            download_url,
+            max_bytes,
+            expected_byte_size,
+        )
+    except Exception as e:
+        return _handle_download_error(e, "attachment")
+
+    filename = result["filename"] or "attachment"
+    data = result["data"]
+    content_type = result["content_type"]
+    return _serialize_blob_for_mcp(
+        data=data,
+        content_type=content_type,
+        filename=filename,
+        summary=(
+            f"Downloaded '{filename}' ({content_type}, {len(data)} bytes) "
+            f"from inline attachment in project {project_id}."
+        ),
+        resource_uri=(
+            f"basecamp://buckets/{project_id}/attachments/{filename}"
+        ),
+    )
+
+@mcp.tool()
+async def get_todolist(project_id: str, todolist_id: str) -> Dict[str, Any]:
+    """Get a specific todo list by ID.
+
+    Args:
+        project_id: The project ID
+        todolist_id: The todo list ID
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        todolist = await _run_sync(client.get_todolist, project_id, todolist_id)
+        return {"status": "success", "todolist": todolist}
+    except Exception as e:
+        logger.error(f"Error getting todolist {todolist_id}: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {"error": "OAuth token expired", "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."}
+        return {"error": "Execution error", "message": str(e)}
+
+
+@mcp.tool()
+async def create_todolist(
+    project_id: str,
+    name: str,
+    description: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Create a new todo list in a project.
+
+    Args:
+        project_id: The project ID
+        name: Todo list name
+        description: Optional HTML description
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        todolist = await _run_sync(
+            lambda: client.create_todolist(project_id, name, description)
+        )
+        return {"status": "success", "todolist": todolist}
+    except Exception as e:
+        logger.error(f"Error creating todolist: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {"error": "OAuth token expired", "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."}
+        return {"error": "Execution error", "message": str(e)}
+
+
+@mcp.tool()
+async def update_todolist(
+    project_id: str,
+    todolist_id: str,
+    name: str,
+    description: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Update an existing todo list.
+
+    The Basecamp API requires the name even when only updating the description.
+
+    Args:
+        project_id: The project ID
+        todolist_id: The todo list ID
+        name: Todo list name (required)
+        description: Optional HTML description
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        todolist = await _run_sync(
+            lambda: client.update_todolist(project_id, todolist_id, name, description)
+        )
+        return {"status": "success", "todolist": todolist}
+    except Exception as e:
+        logger.error(f"Error updating todolist {todolist_id}: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {"error": "OAuth token expired", "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."}
+        return {"error": "Execution error", "message": str(e)}
+
+
+@mcp.tool()
+async def trash_todolist(project_id: str, todolist_id: str) -> Dict[str, Any]:
+    """Move a todo list to the trash.
+
+    Trashed lists can be recovered from the Basecamp web UI within 30 days.
+
+    Args:
+        project_id: The project ID
+        todolist_id: The todo list ID
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        await _run_sync(client.trash_todolist, project_id, todolist_id)
+        return {"status": "success", "message": f"Todolist {todolist_id} moved to trash"}
+    except Exception as e:
+        logger.error(f"Error trashing todolist {todolist_id}: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {"error": "OAuth token expired", "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."}
+        return {"error": "Execution error", "message": str(e)}
+
+
+@mcp.tool()
+async def get_todolist_groups(project_id: str, todolist_id: str) -> Dict[str, Any]:
+    """Get all groups in a todo list.
+
+    Groups are named sections within a todo list (e.g. "Phase 1", "Backlog").
+
+    Args:
+        project_id: The project ID
+        todolist_id: The todo list ID
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        groups = await _run_sync(client.get_todolist_groups, project_id, todolist_id)
+        return {"status": "success", "groups": groups, "count": len(groups)}
+    except Exception as e:
+        logger.error(f"Error getting todolist groups: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {"error": "OAuth token expired", "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."}
+        return {"error": "Execution error", "message": str(e)}
+
+
+@mcp.tool()
+async def create_todolist_group(
+    project_id: str,
+    todolist_id: str,
+    name: str,
+    color: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Create a new group inside a todo list.
+
+    Groups act as named sections to organise todos within a list.
+
+    Args:
+        project_id: The project ID
+        todolist_id: The todo list ID
+        name: Group name
+        color: Optional color – one of: white, red, orange, yellow, green,
+               blue, aqua, purple, gray, pink, brown
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    try:
+        group = await _run_sync(
+            lambda: client.create_todolist_group(project_id, todolist_id, name, color)
+        )
+        return {"status": "success", "group": group}
+    except Exception as e:
+        logger.error(f"Error creating todolist group: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {"error": "OAuth token expired", "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."}
+        return {"error": "Execution error", "message": str(e)}
+
+
+@mcp.tool()
+async def reposition_todolist_group(
+    project_id: str, group_id: str, position: int
+) -> Dict[str, Any]:
+    """Reposition a todo list group to a new location within its list.
+
+    Args:
+        project_id: The project ID
+        group_id: The group ID
+        position: New 1-based position
+    """
+    client = _get_basecamp_client()
+    if not client:
+        return _get_auth_error_response()
+
+    if position < 1:
+        return {"error": "Invalid input", "message": "position must be >= 1"}
+
+    try:
+        await _run_sync(
+            lambda: client.reposition_todolist_group(project_id, group_id, position)
+        )
+        return {"status": "success", "message": f"Group {group_id} repositioned to position {position}"}
+    except Exception as e:
+        logger.error(f"Error repositioning todolist group {group_id}: {e}")
+        if "401" in str(e) and "expired" in str(e).lower():
+            return {"error": "OAuth token expired", "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."}
+        return {"error": "Execution error", "message": str(e)}
+
+
 # 🎉 COMPLETE FastMCP server with ALL tools migrated!
 
 if __name__ == "__main__":
     logger.info("Starting Basecamp FastMCP server")
     # Run using official MCP stdio transport
-    mcp.run(transport='stdio') 
+    mcp.run(transport='stdio')
