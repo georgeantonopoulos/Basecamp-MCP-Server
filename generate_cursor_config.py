@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Generate the correct Cursor MCP configuration for this Basecamp MCP server.
-Supports both the new FastMCP server (default) and legacy server during migration.
+Supports retrieval-first FastMCP (default), the full catalog, and the legacy server.
 """
 
 import json
@@ -26,11 +26,12 @@ def get_python_path():
     # Fallback to system Python
     return sys.executable
 
-def generate_config(use_legacy=False):
+def generate_config(use_legacy=False, use_full=False):
     """Generate the MCP configuration for Cursor.
     
     Args:
-        use_legacy: If True, use the legacy mcp_server_cli.py. If False, use new FastMCP server.
+        use_legacy: Use the legacy mcp_server_cli.py.
+        use_full: Expose every FastMCP tool schema up front.
     """
     project_root = get_project_root()
     python_path = get_python_path()
@@ -40,11 +41,14 @@ def generate_config(use_legacy=False):
         script_path = os.path.join(project_root, "mcp_server_cli.py")
         server_name = "basecamp-legacy"
         print("🔄 Using LEGACY server (mcp_server_cli.py)")
-    else:
-        # Use new FastMCP server (default)
+    elif use_full:
         script_path = os.path.join(project_root, "basecamp_fastmcp.py")
         server_name = "basecamp"
-        print("✨ Using NEW FastMCP server (basecamp_fastmcp.py) - RECOMMENDED")
+        print("📚 Using FULL FastMCP catalog (basecamp_fastmcp.py)")
+    else:
+        script_path = os.path.join(project_root, "basecamp_retrieval_mcp.py")
+        server_name = "basecamp"
+        print("✨ Using RETRIEVAL-FIRST FastMCP server - RECOMMENDED")
 
     # Load .env file from project root to get BASECAMP_ACCOUNT_ID
     dotenv_path = os.path.join(project_root, ".env")
@@ -88,11 +92,16 @@ def get_cursor_config_path():
 def main():
     """Main function."""
     parser = argparse.ArgumentParser(description="Generate Cursor MCP configuration for Basecamp")
-    parser.add_argument("--legacy", action="store_true", 
-                       help="Use legacy mcp_server_cli.py instead of new FastMCP server")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--legacy", action="store_true",
+                      help="Use legacy mcp_server_cli.py")
+    mode.add_argument("--full", action="store_true",
+                      help="Expose all FastMCP tool schemas up front")
     args = parser.parse_args()
 
-    config, server_name = generate_config(use_legacy=args.legacy)
+    config, server_name = generate_config(
+        use_legacy=args.legacy, use_full=args.full
+    )
     config_path = get_cursor_config_path()
 
     print("🔧 Generated Cursor MCP Configuration:")
@@ -163,13 +172,22 @@ def main():
         print("3. Check Cursor Settings → MCP for a green checkmark next to 'basecamp-legacy'")
         print()
         print("💡 TIP: Try the new FastMCP server by running without --legacy flag!")
-    else:
-        print("📋 Next steps (FastMCP Server):")
+    elif args.full:
+        print("📋 Next steps (Full FastMCP Server):")
         print("1. Make sure you've authenticated with Basecamp: python oauth_app.py")
         print("2. Restart Cursor completely (quit and reopen)")
         print("3. Check Cursor Settings → MCP for a green checkmark next to 'basecamp'")
         print()
-        print("🚀 You're using the new FastMCP server - enjoy the improved performance!")
+        print("📚 All Basecamp tool schemas will be loaded up front.")
+        print("💡 Switch to retrieval-first mode by running without --full.")
+    else:
+        print("📋 Next steps (Retrieval-first FastMCP Server):")
+        print("1. Make sure you've authenticated with Basecamp: python oauth_app.py")
+        print("2. Restart Cursor completely (quit and reopen)")
+        print("3. Check Cursor Settings → MCP for a green checkmark next to 'basecamp'")
+        print()
+        print("🚀 Cursor will load four discovery/dispatch tools instead of the full catalog.")
+        print("📚 Use --full if your MCP host already performs its own tool retrieval.")
         print("🔄 If you encounter issues, you can switch back with: python generate_cursor_config.py --legacy")
 
 if __name__ == "__main__":

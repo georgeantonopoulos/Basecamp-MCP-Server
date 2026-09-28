@@ -31,7 +31,7 @@ def check_python_version():
         print("\n💡 Tip: Use 'uv' to auto-download the correct Python version:")
         print("   uv venv --python 3.12 venv")
         print("   source venv/bin/activate")
-        print("   uv pip install -r requirements.txt && uv pip install mcp")
+        print("   uv pip install -r requirements.txt")
         return False
     print(f"✅ Python version: {sys.version.split()[0]}")
     return True
@@ -186,4 +186,4 @@ def main():
 
 if __name__ == "__main__":
     success = main()
-    sys.exit(0 if success else 1) 
+    sys.exit(0 if success else 1)

@@ -95,6 +95,7 @@ def test_cli_schema_exposes_publish_for_draft_tools():
     assert "publish" not in tools["create_draft_document"]["inputSchema"]["properties"]
 
 
+@patch.dict(os.environ, {"USER_AGENT": "test-agent"})
 @patch("mcp_server_cli.auth_manager.ensure_authenticated", return_value=True)
 @patch("mcp_server_cli.token_storage.get_token", return_value={"access_token": "token", "account_id": "12345"})
 def test_cli_create_message_draft_passes_status_none(mock_get_token, mock_auth):
@@ -124,6 +125,7 @@ def test_cli_create_message_draft_passes_status_none(mock_get_token, mock_auth):
     )
 
 
+@patch.dict(os.environ, {"USER_AGENT": "test-agent"})
 @patch("mcp_server_cli.auth_manager.ensure_authenticated", return_value=True)
 @patch("mcp_server_cli.token_storage.get_token", return_value={"access_token": "token", "account_id": "12345"})
 def test_cli_create_message_string_false_publish_drafts(mock_get_token, mock_auth):
@@ -146,6 +148,7 @@ def test_cli_create_message_string_false_publish_drafts(mock_get_token, mock_aut
     assert mock_create.call_args.kwargs["status"] is None
 
 
+@patch.dict(os.environ, {"USER_AGENT": "test-agent"})
 @patch("mcp_server_cli.auth_manager.ensure_authenticated", return_value=True)
 @patch("mcp_server_cli.token_storage.get_token", return_value={"access_token": "token", "account_id": "12345"})
 def test_cli_create_draft_message_passes_status_none(mock_get_token, mock_auth):
@@ -174,6 +177,7 @@ def test_cli_create_draft_message_passes_status_none(mock_get_token, mock_auth):
     )
 
 
+@patch.dict(os.environ, {"USER_AGENT": "test-agent"})
 @patch("mcp_server_cli.auth_manager.ensure_authenticated", return_value=True)
 @patch("mcp_server_cli.token_storage.get_token", return_value={"access_token": "token", "account_id": "12345"})
 def test_cli_create_document_draft_passes_status_none(mock_get_token, mock_auth):
@@ -202,6 +206,7 @@ def test_cli_create_document_draft_passes_status_none(mock_get_token, mock_auth)
     )
 
 
+@patch.dict(os.environ, {"USER_AGENT": "test-agent"})
 @patch("mcp_server_cli.auth_manager.ensure_authenticated", return_value=True)
 @patch("mcp_server_cli.token_storage.get_token", return_value={"access_token": "token", "account_id": "12345"})
 def test_cli_create_document_string_zero_publish_drafts(mock_get_token, mock_auth):
@@ -224,6 +229,7 @@ def test_cli_create_document_string_zero_publish_drafts(mock_get_token, mock_aut
     assert mock_create.call_args.kwargs["status"] is None
 
 
+@patch.dict(os.environ, {"USER_AGENT": "test-agent"})
 @patch("mcp_server_cli.auth_manager.ensure_authenticated", return_value=True)
 @patch("mcp_server_cli.token_storage.get_token", return_value={"access_token": "token", "account_id": "12345"})
 def test_cli_create_draft_document_passes_status_none(mock_get_token, mock_auth):

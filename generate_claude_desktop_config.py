@@ -8,6 +8,7 @@ import os
 import sys
 import json
 import platform
+import argparse
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -27,6 +28,17 @@ def get_python_path():
     # Convert to absolute path
     return os.path.abspath(python_path)
 
+
+def get_server_script(project_root, use_full=False, use_legacy=False):
+    """Return the requested Basecamp MCP entry point."""
+    if use_legacy:
+        script_name = "mcp_server_cli.py"
+    elif use_full:
+        script_name = "basecamp_fastmcp.py"
+    else:
+        script_name = "basecamp_retrieval_mcp.py"
+    return os.path.join(project_root, script_name)
+
 def get_claude_desktop_config_path():
     """Get the Claude Desktop configuration file path."""
     if platform.system() == "Windows":
@@ -36,11 +48,13 @@ def get_claude_desktop_config_path():
     else:  # Linux
         return os.path.expanduser("~/.config/claude-desktop/claude_desktop_config.json")
 
-def generate_config():
+def generate_config(use_full=False, use_legacy=False):
     """Generate the Claude Desktop configuration for Basecamp MCP server."""
     project_root = get_project_root()
     python_path = get_python_path()
-    script_path = os.path.join(project_root, "basecamp_fastmcp.py")
+    script_path = get_server_script(
+        project_root, use_full=use_full, use_legacy=use_legacy
+    )
     
     # Load .env file to get BASECAMP_ACCOUNT_ID
     dotenv_path = os.path.join(project_root, ".env")
@@ -127,11 +141,26 @@ def generate_config():
 
 def main():
     """Main function."""
+    parser = argparse.ArgumentParser(
+        description="Generate Claude Desktop configuration for Basecamp MCP"
+    )
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--full",
+        action="store_true",
+        help="Expose all Basecamp tool schemas instead of retrieval-first discovery",
+    )
+    mode.add_argument(
+        "--legacy",
+        action="store_true",
+        help="Use the legacy mcp_server_cli.py entry point",
+    )
+    args = parser.parse_args()
     print("🚀 Generating Claude Desktop Configuration for Basecamp MCP")
     print("=" * 60)
     
-    if not generate_config():
+    if not generate_config(use_full=args.full, use_legacy=args.legacy):
         sys.exit(1)
 
 if __name__ == "__main__":
-    main() 
+    main()

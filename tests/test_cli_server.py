@@ -293,7 +293,12 @@ def test_report_tools_registered_in_tools_list():
     # two API-supported values (parity with the FastMCP Literal type).
     schema = tools_by_name["get_person_assignments"]["inputSchema"]
     assert schema["required"] == ["person_id"]
-    assert schema["properties"]["group_by"]["enum"] == ["bucket", "date"]
+    group_by_schema = schema["properties"]["group_by"]
+    enum_schema = next(
+        option for option in group_by_schema.get("anyOf", [group_by_schema])
+        if "enum" in option
+    )
+    assert enum_schema["enum"] == ["bucket", "date"]
 
 
 @patch.object(MCPServer, "_get_basecamp_client")

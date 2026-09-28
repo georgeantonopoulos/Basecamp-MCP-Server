@@ -32,7 +32,9 @@ def get_python_path(project_root: Path) -> Path:
     return project_root / "venv" / "bin" / "python"
 
 
-def get_server_details(project_root: Path, use_legacy: bool) -> tuple[str, Path, str]:
+def get_server_details(
+    project_root: Path, use_legacy: bool, use_full: bool = False
+) -> tuple[str, Path, str]:
     """Return server name, script path, and human-readable label."""
     if use_legacy:
         return (
@@ -40,10 +42,16 @@ def get_server_details(project_root: Path, use_legacy: bool) -> tuple[str, Path,
             project_root / "mcp_server_cli.py",
             "Legacy JSON-RPC server (mcp_server_cli.py)",
         )
+    if use_full:
+        return (
+            "basecamp",
+            project_root / "basecamp_fastmcp.py",
+            "Full FastMCP server with all tool schemas loaded up front",
+        )
     return (
         "basecamp",
-        project_root / "basecamp_fastmcp.py",
-        "FastMCP server (basecamp_fastmcp.py)",
+        project_root / "basecamp_retrieval_mcp.py",
+        "Retrieval-first FastMCP server (recommended)",
     )
 
 
@@ -100,10 +108,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Generate Codex MCP configuration for Basecamp"
     )
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--legacy",
         action="store_true",
         help="Use legacy mcp_server_cli.py instead of FastMCP server",
+    )
+    mode.add_argument(
+        "--full",
+        action="store_true",
+        help="Expose all Basecamp tool schemas instead of retrieval-first discovery",
     )
     parser.add_argument(
         "--dry-run",
@@ -118,7 +132,7 @@ def main() -> int:
     project_root = get_project_root()
     python_path = get_python_path(project_root)
     server_name, server_script, server_label = get_server_details(
-        project_root, args.legacy
+        project_root, args.legacy, args.full
     )
     other_server_name = "basecamp" if args.legacy else "basecamp-legacy"
 
