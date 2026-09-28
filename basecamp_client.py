@@ -173,7 +173,7 @@ class BasecampClient:
                     f"Failed to get {error_label}: {response.status_code} - {response.text}"
                 )
 
-            page_items = response.json() or []
+            page_items = response.json()
             if not isinstance(page_items, list):
                 raise Exception(
                     f"Failed to get {error_label}: expected a list, "
@@ -844,19 +844,7 @@ class BasecampClient:
             list: List of group objects
         """
         endpoint = f'buckets/{project_id}/todolists/{todolist_id}/groups.json'
-        all_groups = []
-        page = 1
-        while True:
-            response = self.get(endpoint, params={"page": page})
-            if response.status_code != 200:
-                raise Exception(f"Failed to get todolist groups: {response.status_code} - {response.text}")
-            page_items = response.json() or []
-            all_groups.extend(page_items)
-            link_header = response.headers.get("Link", "")
-            if not page_items or 'rel="next"' not in link_header:
-                break
-            page += 1
-        return all_groups
+        return self.get_all_pages(endpoint, error_label="todolist groups")
 
     def create_todolist_group(self, project_id, todolist_id, name, color=None):
         """Create a new group inside a todolist.
@@ -1842,28 +1830,7 @@ class BasecampClient:
             message_board_id = message_board['id']
 
         endpoint = f'buckets/{project_id}/message_boards/{message_board_id}/messages.json'
-
-        all_messages = []
-        page = 1
-
-        while True:
-            response = self.get(endpoint, params={"page": page})
-            if response.status_code != 200:
-                raise Exception(f"Failed to get messages: {response.status_code} - {response.text}")
-
-            page_items = response.json() or []
-            all_messages.extend(page_items)
-
-            # Check for next page using Link header
-            link_header = response.headers.get("Link", "")
-            has_next = 'rel="next"' in link_header if link_header else False
-
-            if not page_items or not has_next:
-                break
-
-            page += 1
-
-        return all_messages
+        return self.get_all_pages(endpoint, error_label="messages")
 
     def get_message(self, project_id, message_id):
         """Get a specific message.
@@ -2037,28 +2004,7 @@ class BasecampClient:
             inbox_id = inbox['id']
 
         endpoint = f'buckets/{project_id}/inboxes/{inbox_id}/forwards.json'
-
-        all_forwards = []
-        page = 1
-
-        while True:
-            response = self.get(endpoint, params={"page": page})
-            if response.status_code != 200:
-                raise Exception(f"Failed to get forwards: {response.status_code} - {response.text}")
-
-            page_items = response.json() or []
-            all_forwards.extend(page_items)
-
-            # Check for next page using Link header
-            link_header = response.headers.get("Link", "")
-            has_next = 'rel="next"' in link_header if link_header else False
-
-            if not page_items or not has_next:
-                break
-
-            page += 1
-
-        return all_forwards
+        return self.get_all_pages(endpoint, error_label="forwards")
 
     def get_forward(self, project_id, forward_id):
         """Get a specific forward.
@@ -2088,28 +2034,7 @@ class BasecampClient:
             list: All replies to the forward
         """
         endpoint = f'buckets/{project_id}/inbox_forwards/{forward_id}/replies.json'
-
-        all_replies = []
-        page = 1
-
-        while True:
-            response = self.get(endpoint, params={"page": page})
-            if response.status_code != 200:
-                raise Exception(f"Failed to get inbox replies: {response.status_code} - {response.text}")
-
-            page_items = response.json() or []
-            all_replies.extend(page_items)
-
-            # Check for next page using Link header
-            link_header = response.headers.get("Link", "")
-            has_next = 'rel="next"' in link_header if link_header else False
-
-            if not page_items or not has_next:
-                break
-
-            page += 1
-
-        return all_replies
+        return self.get_all_pages(endpoint, error_label="inbox replies")
 
     def get_inbox_reply(self, project_id, forward_id, reply_id):
         """Get a specific inbox reply.
