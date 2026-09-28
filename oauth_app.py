@@ -13,8 +13,10 @@ import sys
 import json
 import secrets
 import logging
+from urllib.parse import urlsplit
 from flask import Flask, request, redirect, url_for, session, render_template_string, jsonify
 from dotenv import load_dotenv
+from werkzeug.serving import WSGIRequestHandler
 from basecamp_oauth import BasecampOAuth
 from basecamp_client import BasecampClient
 from search_utils import BasecampSearch
@@ -45,6 +47,19 @@ if missing_vars:
 # Create Flask app
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(16))
+
+
+class QueryFreeRequestHandler(WSGIRequestHandler):
+    """Keep OAuth codes and other query parameters out of development access logs."""
+
+    def log_request(self, code="-", size="-"):
+        path = urlsplit(getattr(self, "path", "")).path or "/"
+        path = path.translate(self._control_char_table)
+        self.log(
+            "info", '"%s %s %s" %s %s',
+            getattr(self, "command", "?"), path,
+            getattr(self, "request_version", "?"), code, size,
+        )
 
 # HTML template for displaying results
 RESULTS_TEMPLATE = """
@@ -121,7 +136,7 @@ def get_oauth_client():
         redirect_uri = os.getenv('BASECAMP_REDIRECT_URI')
         user_agent = os.getenv('USER_AGENT')
 
-        logger.info("Creating OAuth client with config: %s, %s, %s", client_id, redirect_uri, user_agent)
+        logger.info("Creating OAuth client for redirect URI: %s", redirect_uri)
 
         return BasecampOAuth(
             client_id=client_id,
@@ -240,13 +255,13 @@ def home():
 @app.route('/auth/callback')
 def auth_callback():
     """Handle the OAuth callback from Basecamp."""
-    logger.info("OAuth callback called with args: %s", request.args)
+    logger.info("OAuth callback received")
 
     code = request.args.get('code')
     error = request.args.get('error')
 
     if error:
-        logger.error("OAuth callback error: %s", error)
+        logger.error("OAuth callback error")
         return render_template_string(
             RESULTS_TEMPLATE,
             title="Authentication Error",
@@ -269,10 +284,8 @@ def auth_callback():
         logger.info("Exchanging code for token")
         token_data = oauth_client.exchange_code_for_token(code)
         logger.info(
-            "Token exchange succeeded: has_access_token=%s has_refresh_token=%s expires_in=%s",
-            bool(token_data.get('access_token')),
-            bool(token_data.get('refresh_token')),
-            token_data.get('expires_in'),
+            "Token exchange succeeded (refresh token present: %s)",
+            bool(token_data.get("refresh_token")),
         )
 
         # Store the token in our secure storage
@@ -350,11 +363,7 @@ def get_token_api():
     Secure API endpoint for the MCP server to get the token.
     This should only be accessible by the MCP server.
     """
-    logger.info(
-        "Token API called from %s (has_api_key=%s)",
-        request.remote_addr,
-        bool(request.headers.get('X-API-Key')),
-    )
+    logger.info("Token API called")
 
     # In production, implement proper authentication for this endpoint
     # For now, we'll use a simple API key check
@@ -455,7 +464,10 @@ if __name__ == '__main__':
         is_debug = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
 
         logger.info("Running in %s mode", "debug" if is_debug else "production")
-        app.run(host='127.0.0.1', port=port, debug=is_debug, use_reloader=is_debug)
+        app.run(
+            host='127.0.0.1', port=port, debug=is_debug,
+            use_reloader=is_debug, request_handler=QueryFreeRequestHandler,
+        )
     except Exception as e:
         logger.error("Fatal error: %s", str(e), exc_info=True)
         sys.exit(1)
