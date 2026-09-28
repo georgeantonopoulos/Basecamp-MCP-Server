@@ -208,6 +208,7 @@ class BasecampClient:
             request_params["page"] = page
         response = self.get(endpoint, params=request_params or None)
         items = []
+        pages_fetched = 1
 
         while True:
             if response.status_code != 200:
@@ -228,6 +229,10 @@ class BasecampClient:
             next_url = response.links.get("next", {}).get("url")
             if not next_url:
                 return items
+            if pages_fetched >= self.MAX_PAGES:
+                raise Exception(
+                    f"Failed to get collection: pagination exceeded {self.MAX_PAGES} pages"
+                )
 
             next_url_parts = urlparse(next_url)
             if (
@@ -242,6 +247,7 @@ class BasecampClient:
                 headers=self.headers,
                 timeout=DEFAULT_REQUEST_TIMEOUT,
             )
+            pages_fetched += 1
 
     def post(self, endpoint, data=None):
         """Make a POST request to the Basecamp API."""
@@ -1173,6 +1179,7 @@ class BasecampClient:
             )
         result = response.json()
         events = result.get("events", [])
+        pages_fetched = 1
         if page is not None:
             result["events"] = events if limit is None else events[:limit]
             return result
@@ -1184,6 +1191,10 @@ class BasecampClient:
             if not next_url:
                 result["events"] = events
                 return result
+            if pages_fetched >= self.MAX_PAGES:
+                raise Exception(
+                    f"Failed to get person timeline: pagination exceeded {self.MAX_PAGES} pages"
+                )
             next_url_parts = urlparse(next_url)
             if (
                 next_url_parts.scheme != "https"
@@ -1196,6 +1207,7 @@ class BasecampClient:
                 headers=self.headers,
                 timeout=DEFAULT_REQUEST_TIMEOUT,
             )
+            pages_fetched += 1
             if response.status_code != 200:
                 raise Exception(
                     f"Failed to get person timeline: {response.status_code} - {response.text}"

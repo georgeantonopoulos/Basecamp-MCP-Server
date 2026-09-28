@@ -184,6 +184,52 @@ def test_collection_rejects_non_list_payloads():
             raise AssertionError("non-list collection payload was accepted")
 
 
+def test_collection_stops_repeating_next_pages():
+    client = BasecampClient.__new__(BasecampClient)
+    client.auth = None
+    client.headers = {"User-Agent": "test"}
+    response = MagicMock(
+        status_code=200,
+        links={"next": {"url": "https://3.basecampapi.com/123/messages.json?page=2"}},
+    )
+    response.json.return_value = [{"id": "one"}]
+
+    with patch.object(BasecampClient, "MAX_PAGES", 2):
+        with patch.object(client, "get", return_value=response):
+            with patch("basecamp_client.requests.get", return_value=response) as next_get:
+                try:
+                    client.get_everything_messages(limit=None)
+                except Exception as exc:
+                    assert "pagination exceeded 2 pages" in str(exc)
+                else:
+                    raise AssertionError("collection followed an endless next link")
+
+    next_get.assert_called_once()
+
+
+def test_person_timeline_stops_repeating_next_pages():
+    client = BasecampClient.__new__(BasecampClient)
+    client.auth = None
+    client.headers = {"User-Agent": "test"}
+    response = MagicMock(
+        status_code=200,
+        links={"next": {"url": "https://3.basecampapi.com/123/progress.json?page=2"}},
+    )
+    response.json.return_value = {"events": [{"id": "one"}]}
+
+    with patch.object(BasecampClient, "MAX_PAGES", 2):
+        with patch.object(client, "get", return_value=response):
+            with patch("basecamp_client.requests.get", return_value=response) as next_get:
+                try:
+                    client.get_person_timeline("person-1", limit=None)
+                except Exception as exc:
+                    assert "pagination exceeded 2 pages" in str(exc)
+                else:
+                    raise AssertionError("timeline followed an endless next link")
+
+    next_get.assert_called_once()
+
+
 def test_lineup_marker_clients_use_account_routes():
     client = BasecampClient.__new__(BasecampClient)
     listing = MagicMock(status_code=200, links={})
