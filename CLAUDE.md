@@ -25,8 +25,11 @@ python oauth_app.py                  # Start OAuth server at http://localhost:80
 ./venv/bin/python mcp_server_cli.py      # Legacy CLI server
 
 # Test the server manually
-echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
-{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' | python basecamp_retrieval_mcp.py
+printf '%s\n%s\n%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' \
+  '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+  | python basecamp_retrieval_mcp.py
 
 # Run tests
 python -m pytest tests/ -v           # All tests
