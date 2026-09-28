@@ -13,8 +13,10 @@ import sys
 import json
 import secrets
 import logging
+from urllib.parse import urlsplit
 from flask import Flask, request, redirect, url_for, session, render_template_string, jsonify
 from dotenv import load_dotenv
+from werkzeug.serving import WSGIRequestHandler
 from basecamp_oauth import BasecampOAuth
 from basecamp_client import BasecampClient
 from search_utils import BasecampSearch
@@ -45,6 +47,19 @@ if missing_vars:
 # Create Flask app
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', secrets.token_hex(16))
+
+
+class QueryFreeRequestHandler(WSGIRequestHandler):
+    """Keep OAuth codes and other query parameters out of development access logs."""
+
+    def log_request(self, code="-", size="-"):
+        path = urlsplit(getattr(self, "path", "")).path or "/"
+        path = path.translate(self._control_char_table)
+        self.log(
+            "info", '"%s %s %s" %s %s',
+            getattr(self, "command", "?"), path,
+            getattr(self, "request_version", "?"), code, size,
+        )
 
 # HTML template for displaying results
 RESULTS_TEMPLATE = """
@@ -449,7 +464,10 @@ if __name__ == '__main__':
         is_debug = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
 
         logger.info("Running in %s mode", "debug" if is_debug else "production")
-        app.run(host='127.0.0.1', port=port, debug=is_debug, use_reloader=is_debug)
+        app.run(
+            host='127.0.0.1', port=port, debug=is_debug,
+            use_reloader=is_debug, request_handler=QueryFreeRequestHandler,
+        )
     except Exception as e:
         logger.error("Fatal error: %s", str(e), exc_info=True)
         sys.exit(1)

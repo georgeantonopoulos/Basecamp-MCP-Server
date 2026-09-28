@@ -322,6 +322,8 @@ export BASECAMP_MCP_TOKEN_FILE=/var/lib/basecamp-mcp/oauth_tokens.json
 
 Both the OAuth app and the MCP server read the same variable. `token_storage.py` expands `~` and environment variables in this path, creates the parent directory if needed, and attempts to set the token file permissions to `0o600` when writing. Parent directory permissions are still your responsibility.
 
+The built-in OAuth web server omits query strings from its access log so callback authorization codes are not recorded. If you run it behind another web server or reverse proxy, configure that server's access logs to omit query strings too.
+
 ## Troubleshooting
 
 If tools do not appear in your MCP client:
