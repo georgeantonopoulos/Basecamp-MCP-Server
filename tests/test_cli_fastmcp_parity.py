@@ -1,6 +1,7 @@
 """Regression tests for the shared FastMCP/legacy CLI tool surface."""
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import basecamp_fastmcp
@@ -16,14 +17,18 @@ def test_cli_advertises_every_fastmcp_tool():
     cli_names = {tool["name"] for tool in server.tools}
 
     assert cli_names == fastmcp_names
-    assert server.tools == [
-        {
-            "name": tool.name,
-            "description": tool.description or "",
-            "inputSchema": tool.inputSchema,
-        }
-        for tool in public_tools
-    ]
+    by_name = {tool["name"]: tool for tool in server.tools}
+    for tool in public_tools:
+        if tool.name not in server._legacy_tool_names:
+            assert by_name[tool.name] == {
+                "name": tool.name,
+                "description": tool.description or "",
+                "inputSchema": tool.inputSchema,
+            }
+    # Existing CLI schemas remain stable for clients that already use them.
+    projects = by_name["get_projects"]["inputSchema"]
+    assert projects["required"] == []
+    assert projects["properties"]["detail"]["enum"] == ["summary", "full"]
 
 
 def test_cli_routes_new_tools_through_fastmcp_validation():
@@ -46,19 +51,19 @@ def test_cli_routes_new_tools_through_fastmcp_validation():
     )
 
 
-def test_cli_routes_original_tools_through_fastmcp_too():
+def test_cli_keeps_original_tool_dispatch_and_response_shape():
     server = MCPServer()
-    expected = {"status": "success", "projects": [], "count": 0}
+    client = SimpleNamespace(get_projects=lambda: [])
 
-    with patch.object(
-        basecamp_fastmcp.mcp,
-        "call_tool",
-        new=AsyncMock(return_value=([], {"result": expected})),
-    ) as call_tool:
-        result = server._execute_tool("get_projects", {})
+    with patch.object(server, "_get_basecamp_client", return_value=client):
+        with patch.object(basecamp_fastmcp.mcp, "call_tool", new=AsyncMock()) as call_tool:
+            result = server._execute_tool("get_projects", {})
 
-    assert result == expected
-    call_tool.assert_awaited_once_with("get_projects", {})
+    assert result["status"] == "success"
+    assert result["projects"] == []
+    assert result["count"] == 0
+    assert result["detail"] == "summary"
+    call_tool.assert_not_awaited()
 
 
 def test_cli_uses_real_fastmcp_argument_validation():

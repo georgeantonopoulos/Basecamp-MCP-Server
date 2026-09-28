@@ -46,7 +46,7 @@ python generate_claude_desktop_config.py   # For Claude Desktop
 | `basecamp_retrieval_mcp.py` | **Recommended MCP server** exposing four retrieval and dispatch tools |
 | `basecamp_tool_retrieval.py` | Categories, read/write classification, ranking, and schema projection |
 | `basecamp_fastmcp.py` | Canonical FastMCP registry and optional full-catalog server (210 tools) |
-| `mcp_server_cli.py` | Legacy JSON-RPC transport deriving catalog and dispatch from the FastMCP registry |
+| `mcp_server_cli.py` | Legacy JSON-RPC transport preserving original schemas and handlers, with new tools added from FastMCP |
 | `basecamp_client.py` | Basecamp 3 API client - all HTTP methods and endpoints |
 | `basecamp_oauth.py` | OAuth 2.0 client for 37signals Launchpad |
 | `auth_manager.py` | Automatic token refresh before API calls |

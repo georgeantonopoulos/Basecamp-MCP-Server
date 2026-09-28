@@ -515,7 +515,7 @@ class BasecampClient:
     def get_todoset(self, project_id):
         """Get the primary enabled to-do set for single-target operations."""
         return self.get_todosets(project_id)[0]
-    
+
     def get_todolists(self, project_id):
         """Get paginated to-do lists across all enabled to-do sets."""
         seen_ids = set()
