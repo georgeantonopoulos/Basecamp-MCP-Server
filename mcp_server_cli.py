@@ -16,6 +16,7 @@ from basecamp_client import BasecampClient
 from basecamp_fastmcp import mcp as fastmcp_server
 import payload_shaping as _shape
 from search_utils import BasecampSearch
+import sign_in_messages
 import token_storage
 import auth_manager
 import os
@@ -28,7 +29,8 @@ DOTENV_PATH = os.path.join(PROJECT_ROOT, '.env')
 load_dotenv(DOTENV_PATH)
 
 # Log file in the project directory
-LOG_FILE_PATH = os.path.join(PROJECT_ROOT, 'mcp_cli_server.log')
+# The installed package sets BASECAMP_MCP_HOME so logs stay out of site-packages.
+LOG_FILE_PATH = os.path.join(os.environ.get('BASECAMP_MCP_HOME') or PROJECT_ROOT, 'mcp_cli_server.log')
 # Set up logging to file AND stderr
 logging.basicConfig(
     level=logging.DEBUG,
@@ -1045,15 +1047,16 @@ class MCPServer:
         client = self._get_basecamp_client()
         if not client:
             # Check if it's specifically a token expiration issue
-            if token_storage.is_token_expired():
+            token = token_storage.get_token()
+            if token and token.get("access_token") and token_storage.is_token_expired():
                 return {
                     "error": "OAuth token expired",
-                    "message": "Your Basecamp OAuth token has expired. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
+                    "message": sign_in_messages.expired()
                 }
             else:
                 return {
                     "error": "Authentication required",
-                    "message": "Please authenticate with Basecamp first. Visit http://localhost:8000 to log in."
+                    "message": sign_in_messages.sign_in_required()
                 }
 
         try:
@@ -1769,7 +1772,7 @@ class MCPServer:
             if "401" in str(e) and "expired" in str(e).lower():
                 return {
                     "error": "OAuth token expired",
-                    "message": "Your Basecamp OAuth token expired during the API call. Please re-authenticate by visiting http://localhost:8000 and completing the OAuth flow again."
+                    "message": sign_in_messages.expired_during_call()
                 }
             return {
                 "error": "Execution error",

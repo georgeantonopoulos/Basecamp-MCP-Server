@@ -1,492 +1,507 @@
 # Basecamp MCP Server
 
+[![PyPI](https://img.shields.io/pypi/v/basecamp-mcp-server.svg)](https://pypi.org/project/basecamp-mcp-server/)
+[![Tests](https://github.com/georgeantonopoulos/Basecamp-MCP-Server/actions/workflows/tests.yml/badge.svg)](https://github.com/georgeantonopoulos/Basecamp-MCP-Server/actions/workflows/tests.yml)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
-[![MCP](https://img.shields.io/badge/MCP-FastMCP-111827.svg)](https://modelcontextprotocol.io/)
-[![Basecamp](https://img.shields.io/badge/Basecamp-3-1f8c4c.svg)](https://basecamp.com/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-An MCP server for Basecamp 3. It lets MCP-capable clients such as Codex, Cursor, and Claude Desktop read and manage Basecamp projects through OAuth-authenticated Basecamp API calls.
+Connect Claude, Cursor, Codex and other AI assistants to your **Basecamp 3 or 4** account. Ask in plain language to find, read, create and update projects, to-dos, messages, card tables, schedules, documents and more: 210 Basecamp operations in all.
 
-The recommended entry point is [`basecamp_retrieval_mcp.py`](basecamp_retrieval_mcp.py). It initially exposes four category, discovery, and dispatch tools, then retrieves only the Basecamp operation schemas relevant to the current task. The canonical [`basecamp_fastmcp.py`](basecamp_fastmcp.py) registry still provides all 210 validated operations, and remains available directly for MCP hosts that perform their own tool retrieval. The legacy JSON-RPC entry point also retains the full catalog for compatibility.
+> "What's overdue across all my projects?" · "Summarise this week's messages in the Website project." · "Move this card to Done and comment that it shipped."
 
-## What It Can Do
+## Contents
 
-- Browse Basecamp projects and project details.
-- Browse account people and project campfire rooms.
-- Search across projects, todos, messages, campfire lines, comments, uploads, and schedules.
-- Read and manage todolists, todos, todo groups, and completion state.
-- Read and create message board messages, including drafts and categories.
-- Read campfire lines.
-- Read, create, and update project schedule entries, including recurring occurrences.
-- Manage personal bookmarks and drafts, the personal note, and calendar colors.
-- Browse account-wide messages, comments, check-ins, forwards, files, to-dos, and cards with bounded results and filters.
-- Browse account and project activity timelines, including activity created by a specific person.
-- Read account-wide and project/recording timesheets, and create, update, or delete time entries.
-- Read project gauges, inspect needle history, record progress updates, and enable or disable gauges.
-- Read Hill Charts, resolve them from projects, and track or untrack to-do lists.
-- Create, update, pause, resume, and configure notifications for automatic check-in questions.
-- Inspect and administer account metadata, account logos, and recording client visibility.
-- Update upload metadata, replace files through attachment SGIDs, and inspect raw upload version events.
-- Create, rename, reorder, enable, disable, and permanently delete project dock tools.
-- Inspect and manage recording subscriptions and subscriber lists.
-- Create, update, list, and delete account-wide Lineup markers.
-- Read and create comments.
-- Work with card tables, columns, cards, and card steps.
-- Read inbox forwards and replies.
-- Read daily check-ins and answers.
-- Upload attachments and inspect uploads.
-- Read and manage documents, including drafts.
-- List events and manage webhooks.
-- Generate local MCP configuration for Codex, Cursor, and Claude Desktop.
+- [Quick start](#quick-start)
+- [Add it to your AI app](#add-it-to-your-ai-app)
+- [What it can do](#what-it-can-do)
+- [All 210 tools](#all-210-tools)
+- [Settings and sign-in](#settings-and-sign-in)
+- [Troubleshooting](#troubleshooting)
+- [Run from a git checkout](#run-from-a-git-checkout)
+- [Security](#security)
 
-## Requirements
+## Quick start
 
-- Python 3.10 or newer.
-- A Basecamp 3 account.
-- A Basecamp OAuth application from <https://launchpad.37signals.com/integrations>.
-- A client that can run local MCP servers, such as Codex, Cursor, or Claude Desktop.
+You need [uv](https://docs.astral.sh/uv/getting-started/installation/) (it installs Python for you) and a Basecamp 3 or 4 account. Setup takes about five minutes.
 
-If your system Python is older, use `uv`; it can create a virtual environment with a newer Python version.
+**1. Install uv**, if you don't have it:
 
-## Quick Start
+```bash
+# macOS and Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
 
-Clone the repository and install dependencies:
+```powershell
+# Windows
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+**2. Sign in to Basecamp:**
+
+```bash
+uvx basecamp-mcp-server login
+```
+
+The first time, it walks you through registering a free Basecamp app at [launchpad.37signals.com/integrations](https://launchpad.37signals.com/integrations) (set its **Redirect URI** to `http://localhost:8000/auth/callback`), then asks for the Client ID and Client Secret it shows you. Your browser then opens for Basecamp sign-in, and the token is saved for you. Tokens refresh automatically after that.
+
+**3. Add the server to your AI app**, using the snippet from the next section, and restart the app.
+
+Check everything is working at any time:
+
+```bash
+uvx basecamp-mcp-server status
+```
+
+## Add it to your AI app
+
+`uvx basecamp-mcp-server config <app>` prints the exact snippet for your machine. The app can be `claude-desktop`, `cursor`, `claude-code`, `codex` or `generic`.
+
+<details open>
+<summary><b>Claude Desktop</b></summary>
+
+Open **Settings → Developer → Edit Config** and add:
+
+```json
+{
+  "mcpServers": {
+    "basecamp": {
+      "command": "uvx",
+      "args": ["basecamp-mcp-server"]
+    }
+  }
+}
+```
+
+Quit Claude Desktop completely and reopen it. If it says it can't find `uvx`, use the full path that `uvx basecamp-mcp-server config claude-desktop` prints.
+
+</details>
+
+<details>
+<summary><b>Claude Code</b></summary>
+
+```bash
+claude mcp add basecamp -- uvx basecamp-mcp-server
+```
+
+</details>
+
+<details>
+<summary><b>Cursor</b></summary>
+
+Add the same JSON as Claude Desktop to `~/.cursor/mcp.json` (or `.cursor/mcp.json` in a project), then restart Cursor and check **Settings → MCP**.
+
+</details>
+
+<details>
+<summary><b>Codex</b></summary>
+
+Add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.basecamp]
+command = "uvx"
+args = ["basecamp-mcp-server"]
+```
+
+</details>
+
+<details>
+<summary><b>Any other MCP client</b></summary>
+
+Run `uvx basecamp-mcp-server` as a local (stdio) MCP server. The JSON above works for most clients.
+
+</details>
+
+### Four tools or all 210?
+
+By default the server shows your AI app **four small tools** that find and run the right Basecamp operation on demand. That keeps the app's context small, and it can still reach all 210 operations. Reading and changing data are separate tools, so apps that ask before making changes still do.
+
+To list all 210 tools up front instead, add `--full`: `"args": ["basecamp-mcp-server", "--full"]`.
+
+## What it can do
+
+- **Projects and people:** list, create and update projects and templates; see who's on a project and grant or revoke access.
+- **To-dos:** read, create, assign, complete, move and archive to-dos and to-do lists; see what's assigned to anyone and what's overdue.
+- **Messages and comments:** read and post messages (or save drafts), pin them, manage categories, and comment on anything.
+- **Chat and check-ins:** read and post in Campfire chats; create, pause and read automatic check-in questions and answers.
+- **Schedules:** read, create and update events, including recurring ones.
+- **Card tables:** work with columns, cards and card steps; move cards between columns.
+- **Files and documents:** list, read and create documents; download uploads and inline attachments straight into the conversation.
+- **Search and activity:** search the whole account; browse activity timelines and account-wide feeds of messages, files, to-dos and cards.
+- **Time and progress:** timesheets, progress gauges and Hill Charts.
+- **Personal and admin:** notifications, bookmarks, your private note, subscriptions, webhooks and project tools.
+
+Big lists (projects, to-dos, comments, messages, cards, assignments) come back as compact summaries so they fit in the AI's context. Those tools take `detail: "full"` when you need every field, or set `BASECAMP_MCP_FULL_RESPONSES=1` to make that the default.
+
+## All 210 tools
+
+Grouped the same way the server groups them for discovery. Click a group to expand it.
+
+<details>
+<summary><b>Projects and people</b> (18 tools)</summary>
+
+- `create_project` — Create a Basecamp project
+- `create_project_from_template` — Start constructing a project from a Basecamp template
+- `create_template` — Create a Basecamp project template
+- `get_assignable_people` — Get all people who can have to-dos assigned to them
+- `get_people` — Get people available in the authenticated Basecamp account
+- `get_person` — Get one Basecamp person's profile
+- `get_pingable_people` — Get Basecamp people who can be pinged
+- `get_project` — Get one project's details, including its dock IDs
+- `get_project_construction` — Get the status of a project being constructed from a template
+- `get_project_people` — Get active people on a Basecamp project
+- `get_projects` — List Basecamp projects. Returns a compact summary by default
+- `get_template` — Get a Basecamp project template
+- `get_templates` — List visible Basecamp project templates
+- `trash_project` — Move a Basecamp project to the trash
+- `trash_template` — Move a Basecamp project template to the trash
+- `update_project` — Update a project's name, description, access policy, or date range
+- `update_project_people` — Grant, revoke, or invite people on a Basecamp project
+- `update_template` — Update a Basecamp project template
+
+</details>
+
+<details>
+<summary><b>Todos and assignments</b> (25 tools)</summary>
+
+- `archive_todo` — Archive a todo item
+- `complete_todo` — Mark a todo item as complete
+- `create_todo` — Create a new todo item in a todo list
+- `create_todolist` — Create a new todo list in a project
+- `create_todolist_group` — Create a new group inside a todo list
+- `delete_todo` — Move a todo item to the trash
+- `deprioritize_assignment` — Remove an assignment from the authenticated user's Up Next list
+- `get_completed_assignments` — Get the authenticated user's completed assignments
+- `get_due_assignments` — Get the authenticated user's assignments by due-date scope
+- `get_my_assignments` — Get the authenticated user's active assignments grouped by priority
+- `get_overdue_todos` — Get overdue to-dos for the WHOLE ACCOUNT, grouped by how late they are
+- `get_person_assignments` — Get all active, pending to-dos assigned to a specific person
+- `get_todo` — Get a single todo item by its ID
+- `get_todolist` — Get a specific todo list by ID
+- `get_todolist_groups` — Get all groups in a todo list
+- `get_todolists` — Get todo lists for a project
+- `get_todos` — Get todos from a todo list
+- `prioritize_assignment` — Add an assignment to the authenticated user's Up Next list
+- `reorder_priority` — Move an assignment to a position in the authenticated user's Up Next list
+- `reposition_todo` — Reposition a todo within its list, or move it to another list or group
+- `reposition_todolist_group` — Reposition a todo list group to a new location within its list
+- `trash_todolist` — Move a todo list to the trash
+- `uncomplete_todo` — Mark a todo item as incomplete
+- `update_todo` — Update an existing todo item
+- `update_todolist` — Update an existing todo list
+
+</details>
+
+<details>
+<summary><b>Messages and comments</b> (24 tools)</summary>
+
+- `create_comment` — Create a comment on a Basecamp item
+- `create_draft_message` — Create a draft message on a project's message board without publishing it
+- `create_message` — Create a new message on a project's message board
+- `create_message_category` — Create a message type/category
+- `delete_comment` — Delete a comment by moving it to the project's trash (Basecamp has no hard delete)
+- `delete_message_category` — Delete a message type/category
+- `get_comment` — Get a specific comment by ID
+- `get_comments` — Get comments for a Basecamp item
+- `get_forward` — Get a specific forwarded email by ID
+- `get_forwards` — Get all forwarded emails from a project's inbox
+- `get_inbox` — Get the inbox for a project (for email forwards)
+- `get_inbox_replies` — Get all replies to a forwarded email
+- `get_inbox_reply` — Get a specific reply to a forwarded email
+- `get_message` — Get a specific message by ID
+- `get_message_board` — Get the message board for a project
+- `get_message_categories` — Get message categories (types) for a project
+- `get_message_category` — Get one message type/category
+- `get_messages` — Get all messages from a project's message board
+- `pin_message` — Pin a message to the top of its message board
+- `trash_forward` — Move a forwarded email to trash
+- `unpin_message` — Remove a message from the top of its message board
+- `update_comment` — Update a comment's content
+- `update_message` — Update one or more fields on a message
+- `update_message_category` — Update a message type/category
+
+</details>
+
+<details>
+<summary><b>Campfires and check-ins</b> (17 tools)</summary>
+
+- `create_campfire_line` — Create a plain-text line in a Basecamp campfire
+- `create_question` — Create a question in a Basecamp automatic check-ins questionnaire
+- `delete_campfire_line` — Permanently delete a line from a Basecamp campfire
+- `get_campfire_line` — Get one line from a Basecamp campfire
+- `get_campfire_lines` — Get recent messages from a Basecamp campfire (chat room)
+- `get_campfires` — List campfire/chat rooms enabled in a project
+- `get_daily_check_ins` — Get project's daily checking questionnaire
+- `get_question` — Get one automatic check-in question
+- `get_question_answer` — Get one automatic check-in answer
+- `get_question_answerers` — List people who have answered a Basecamp automatic check-in question
+- `get_question_answers` — Get answers on daily check-in question
+- `get_question_reminders` — Get pending automatic check-in reminders for the authenticated user
+- `get_questionnaire` — Get the automatic check-ins questionnaire for a project
+- `get_questions` — Get questions from an automatic check-ins questionnaire
+- `pause_question` — Pause a Basecamp automatic check-in question
+- `resume_question` — Resume a paused Basecamp automatic check-in question
+- `update_question` — Update selected fields on a Basecamp automatic check-in question
+
+</details>
+
+<details>
+<summary><b>Schedules and calendars</b> (13 tools)</summary>
+
+- `create_lineup_marker` — Create an account-wide Basecamp Lineup marker
+- `create_schedule_entry` — Create a schedule entry in a Basecamp project's schedule
+- `delete_lineup_marker` — Delete an account-wide Basecamp Lineup marker
+- `get_calendar` — Get a Basecamp calendar by ID
+- `get_lineup_markers` — List account-wide Basecamp Lineup markers
+- `get_schedule` — Get the schedule for a Basecamp project
+- `get_schedule_entries` — Get schedule entries for a Basecamp project
+- `get_schedule_entry` — Get one schedule entry from a Basecamp project
+- `get_schedule_entry_occurrence` — Get one occurrence of a recurring schedule entry
+- `get_upcoming_schedule` — Get upcoming events and due work across all accessible projects
+- `update_calendar` — Update a Basecamp calendar's display color
+- `update_lineup_marker` — Update an account-wide Basecamp Lineup marker
+- `update_schedule_entry` — Update one or more fields on a Basecamp schedule entry
+
+</details>
+
+<details>
+<summary><b>Card tables</b> (29 tools)</summary>
+
+- `complete_card` — Mark a card as complete
+- `complete_card_step` — Mark a card step as complete
+- `create_card` — Create a new card in a column
+- `create_card_step` — Create a new step (sub-task) for a card
+- `create_card_table_wormhole` — Create a cross-project card-table wormhole
+- `create_column` — Create a new column in a card table
+- `delete_card_step` — Delete a card step
+- `delete_card_table_wormhole` — Delete a card-table wormhole
+- `get_card` — Get details for a specific card
+- `get_card_step` — Get details for a specific card step
+- `get_card_steps` — Get all steps (sub-tasks) for a card
+- `get_card_table` — Get the card table details for a project, including its columns
+- `get_card_tables` — Get all card tables for a project
+- `get_cards` — Get all cards in a column
+- `get_column` — Get details for a specific column
+- `get_columns` — Get all columns in a card table
+- `move_card` — Move a card to a column or linked cross-project wormhole
+- `move_column` — Move a column to a new position
+- `put_column_on_hold` — Put a column on hold (freeze work)
+- `remove_column_hold` — Remove hold from a column (unfreeze work)
+- `uncomplete_card` — Mark a card as incomplete
+- `uncomplete_card_step` — Mark a card step as incomplete
+- `unwatch_column` — Unsubscribe from notifications for a column
+- `update_card` — Update a card
+- `update_card_step` — Update a card step
+- `update_card_table_wormhole` — Change a card-table wormhole's destination column
+- `update_column` — Update a column title
+- `update_column_color` — Update a column color
+- `watch_column` — Subscribe to notifications for changes in a column
+
+</details>
+
+<details>
+<summary><b>Files and documents</b> (20 tools)</summary>
+
+- `archive_recording` — Archive any Basecamp recording
+- `create_attachment` — Upload a file as an attachment
+- `create_document` — Create a document in a vault
+- `create_draft_document` — Create a draft document in a vault without publishing it
+- `create_upload_version` — Replace an upload's file while preserving its recording URL
+- `download_attachment` — Download an inline comment/message attachment as MCP content
+- `download_upload` — Download the binary content of an upload (PDF, image, document, ...)
+- `get_document` — Get a single document
+- `get_documents` — List documents in a vault
+- `get_recordings` — List every recording of one supported type in a project or account
+- `get_upload` — Get details for a specific upload
+- `get_upload_versions` — Get raw version events for an upload, optionally filtered by action
+- `get_uploads` — List uploads in a project or vault
+- `get_vaults` — List child vaults in a vault
+- `restore_recording` — Restore an archived Basecamp recording to active status
+- `trash_document` — Move a document to trash
+- `trash_recording` — Move any Basecamp recording to the trash
+- `update_document` — Update a document
+- `update_recording_visibility` — Toggle client visibility for a Basecamp recording
+- `update_upload` — Update an upload's metadata without replacing its file
+
+</details>
+
+<details>
+<summary><b>Search, activity, and reports</b> (15 tools)</summary>
+
+- `get_events` — Get events for a recording
+- `get_everything_cards` — Get filtered cards grouped by project across the whole account
+- `get_everything_checkins` — Get automatic check-in answers across every accessible project
+- `get_everything_comments` — Get recent comments across every accessible Basecamp project
+- `get_everything_files` — Get files across every accessible project, optionally filtered by kind or creator
+- `get_everything_forwards` — Get inbox forwards across every accessible Basecamp project
+- `get_everything_messages` — Get recent messages across every accessible Basecamp project
+- `get_everything_todos` — Get filtered to-dos grouped by project across the whole account
+- `get_person_timeline` — Get timeline activity created by one Basecamp person
+- `get_project_timeline` — Get recent activity within one Basecamp project
+- `get_search_metadata` — Get the valid filters and content types for native Basecamp search
+- `get_timeline` — Get recent activity across every accessible Basecamp project
+- `global_search` — Search projects, todos and campfire messages across all projects
+- `search_basecamp` — Search across Basecamp projects, todos, and messages
+- `search_recordings` — Search Basecamp content, returning one page or at most ``limit`` results
+
+</details>
+
+<details>
+<summary><b>Timesheets and progress</b> (17 tools)</summary>
+
+- `create_gauge_needle` — Record a new progress update for a Basecamp project gauge
+- `create_timesheet_entry` — Log time against a Basecamp timesheetable recording
+- `delete_gauge_needle` — Permanently delete a Basecamp gauge needle
+- `delete_timesheet_entry` — Permanently delete a Basecamp timesheet entry
+- `get_gauge_needle` — Get one Basecamp gauge needle
+- `get_gauge_needles` — Get a project's gauge history, newest first
+- `get_gauges` — List project gauges across the authenticated Basecamp account
+- `get_hill_chart` — Get the Basecamp Hill Chart for a to-do set
+- `get_project_hill_chart` — Resolve and get a project's Basecamp Hill Chart
+- `get_project_timesheet` — Get paginated timesheet entries for a Basecamp project
+- `get_recording_timesheet` — Get paginated timesheet entries for a Basecamp recording
+- `get_timesheet_entry` — Get one Basecamp timesheet entry
+- `get_timesheet_report` — Get the account-wide, non-paginated Basecamp timesheet report
+- `toggle_gauge` — Enable or disable a Basecamp project's gauge
+- `update_gauge_needle` — Update the description of a Basecamp gauge needle
+- `update_hill_chart_settings` — Track or untrack to-do lists on a Basecamp Hill Chart
+- `update_timesheet_entry` — Update selected fields on a Basecamp timesheet entry
+
+</details>
+
+<details>
+<summary><b>Notifications and personal tools</b> (16 tools)</summary>
+
+- `create_bookmark` — Bookmark a Basecamp recording for the authenticated user
+- `delete_bookmark` — Remove a recording from the authenticated user's bookmarks
+- `get_bookmark_status` — Get the authenticated user's bookmark status for a recording
+- `get_bubble_ups` — Get the authenticated user's current and scheduled bubble-ups
+- `get_my_bookmarks` — Get recordings bookmarked by the authenticated user
+- `get_my_drafts` — Get unpublished drafts owned by the authenticated user
+- `get_my_note` — Get the authenticated user's personal Basecamp note
+- `get_my_profile` — Get the authenticated person's Basecamp profile
+- `get_notifications` — Get the authenticated user's grouped Basecamp notification inbox
+- `get_subscription` — Get subscription state and subscribers for a Basecamp recording
+- `mark_notifications_read` — Mark notification readable SGIDs as read
+- `subscribe_to_recording` — Subscribe the authenticated user to a Basecamp recording
+- `unsubscribe_from_recording` — Unsubscribe the authenticated user from a Basecamp recording
+- `update_my_note` — Replace the authenticated user's personal Basecamp note
+- `update_question_notification_settings` — Update the authenticated user's automatic check-in notification settings
+- `update_subscription` — Add or remove people from a recording's subscriber list
+
+</details>
+
+<details>
+<summary><b>Administration and integrations</b> (16 tools)</summary>
+
+- `create_dock_tool` — Add a tool to a Basecamp project's dock
+- `create_webhook` — Create a webhook
+- `delete_webhook` — Delete a webhook
+- `disable_dock_tool` — Hide a recording from a Basecamp project's dock without deleting it
+- `enable_dock_tool` — Enable a recording in a Basecamp project's dock
+- `get_account` — Get the Basecamp account associated with the current access token
+- `get_dock_tool` — Get one Basecamp project dock tool
+- `get_webhook` — Get one project webhook and its recent deliveries
+- `get_webhooks` — List webhooks for a project
+- `remove_account_logo` — Remove the account logo (administrator/owner only)
+- `reposition_dock_tool` — Move a Basecamp project dock tool to a one-based position
+- `trash_dock_tool` — Permanently delete a Basecamp dock tool and its content
+- `update_account_logo` — Upload or replace the account logo (administrator/owner only)
+- `update_account_name` — Rename the current Basecamp account (owner only)
+- `update_dock_tool` — Rename a Basecamp project dock tool
+- `update_webhook` — Update a project webhook destination, event types, or active state
+
+</details>
+
+
+> **Reading files in chat.** `download_upload` and `download_attachment` return files as MCP content. Claude Code passes PDFs, images and other files to the model. Claude Desktop and claude.ai currently pass images only; other file types are rejected by the app, not by this server.
+
+## Settings and sign-in
+
+The installed server keeps its settings in one folder:
+
+| System | Folder |
+| --- | --- |
+| macOS and Linux | `~/.config/basecamp-mcp-server/` (or `$XDG_CONFIG_HOME/basecamp-mcp-server/`) |
+| Windows | `%APPDATA%\basecamp-mcp-server\` |
+
+It holds `.env` (your Basecamp app's Client ID and Secret), `oauth_tokens.json` (your sign-in) and log files. The `.env` and token files are readable only by you. To use a different folder, set `BASECAMP_MCP_HOME`.
+
+**Several Basecamp accounts?** `login` asks which one to use, or you can pass `--account-id 1234567`. The ID is the number in your Basecamp URL: `https://3.basecamp.com/1234567/projects`.
+
+**Signing in on a machine without a browser?** Run `uvx basecamp-mcp-server login --no-browser`, open the printed link on any browser that can reach `localhost` on that machine, and approve.
+
+**Other settings** (environment variables or lines in the `.env` file):
+
+| Variable | What it does |
+| --- | --- |
+| `BASECAMP_MCP_HOME` | Settings folder (see above). |
+| `BASECAMP_MCP_TOKEN_FILE` | Token file location, for example on a mounted volume. |
+| `BASECAMP_REDIRECT_URI` | Must match your Basecamp app. Default `http://localhost:8000/auth/callback`. |
+| `BASECAMP_ACCOUNT_ID` | Fallback account if the token doesn't record one. |
+| `USER_AGENT` | Name sent to Basecamp's API. Basecamp asks for contact details; the default points to this project. |
+| `BASECAMP_MCP_FULL_RESPONSES` | `1` returns full records instead of compact summaries. |
+
+## Troubleshooting
+
+| Problem | Fix |
+| --- | --- |
+| The Basecamp tools don't appear in your app | Quit the app completely and reopen it. Check the JSON is valid. |
+| "spawn uvx ENOENT" or "command not found: uvx" | Desktop apps may not see your shell's PATH. Use the full path from `uvx basecamp-mcp-server config claude-desktop`. |
+| "Authentication required" or "token expired" | Run `uvx basecamp-mcp-server login` again. |
+| Login says the address is already in use | Something else is using port 8000 (often an old `oauth_app.py`). Stop it and retry. |
+| Login says there's no Basecamp 3 or 4 account | You signed in as a user who isn't in a Basecamp 3/4 account. Sign in with a different user. |
+| Basecamp shows "redirect_uri mismatch" | Your Basecamp app's Redirect URI must be exactly `http://localhost:8000/auth/callback` (or whatever `BASECAMP_REDIRECT_URI` is set to). |
+| 403 errors on some tools | Some Basecamp features (Lineup, account settings, timesheets) need an account admin or owner, or need the feature turned on. |
+
+Still stuck? `uvx basecamp-mcp-server status` shows where settings live and checks your sign-in. Logs are in the settings folder. Claude Desktop's own logs are in `~/Library/Logs/Claude/` (macOS) or `%APPDATA%\Claude\logs\` (Windows). Please [open an issue](https://github.com/georgeantonopoulos/Basecamp-MCP-Server/issues) with what you ran and the error.
+
+## Run from a git checkout
+
+Use this for development, or if you'd rather not install from PyPI. A checkout keeps its settings in the repository folder, as before.
 
 ```bash
 git clone https://github.com/georgeantonopoulos/Basecamp-MCP-Server.git
 cd Basecamp-MCP-Server
-
-uv venv --python 3.12 venv
-source venv/bin/activate
+uv venv --python 3.12 venv && source venv/bin/activate
 uv pip install -r requirements.txt
+cp .env.example .env        # then fill in your Basecamp app details
+python oauth_app.py         # sign in at http://localhost:8000
 ```
 
-Or, if `python` already points to Python 3.10 or newer:
+Then point your app at the checkout. These scripts write the config for you:
 
 ```bash
-python setup.py
+python generate_claude_desktop_config.py   # or generate_cursor_config.py, generate_codex_config.py
 ```
 
-Create a `.env` file from the example and fill in your Basecamp OAuth details:
-
-```bash
-cp .env.example .env
-```
-
-Required values:
-
-```bash
-BASECAMP_CLIENT_ID=your-client-id
-BASECAMP_CLIENT_SECRET=your-client-secret
-BASECAMP_ACCOUNT_ID=your-account-id
-USER_AGENT="Your App Name (your@email.com)"
-```
-
-Authenticate with Basecamp:
-
-```bash
-python oauth_app.py
-```
-
-Open <http://localhost:8000> and complete the OAuth flow. The token is stored locally in `oauth_tokens.json` by default.
-
-## Configure Your MCP Client
-
-### Codex
-
-```bash
-python generate_codex_config.py
-codex mcp get basecamp
-```
-
-Useful options:
-
-```bash
-python generate_codex_config.py --dry-run
-python generate_codex_config.py --full
-python generate_codex_config.py --legacy
-```
-
-The script writes a `basecamp` server entry to `~/.codex/config.toml` and uses retrieval-first discovery by default. Pass `--full` to expose all 210 tool schemas up front.
-
-### Cursor
-
-```bash
-python generate_cursor_config.py
-python generate_cursor_config.py --full
-```
-
-Then restart Cursor and check Settings -> MCP. The server should appear as `basecamp`.
-
-### Claude Desktop
-
-```bash
-python generate_claude_desktop_config.py
-python generate_claude_desktop_config.py --full
-python generate_claude_desktop_config.py --legacy
-```
-
-Then fully quit and reopen Claude Desktop. The generated config is written to:
-
-- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- Windows: `~/AppData/Roaming/Claude/claude_desktop_config.json`
-- Linux: `~/.config/claude-desktop/claude_desktop_config.json`
-
-## Verify The Server
-
-Run the retrieval-first FastMCP server through stdio and ask for its compact tool list:
-
-```bash
-printf '%s\n%s\n%s\n' \
-  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' \
-  '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
-  '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
-  | python basecamp_retrieval_mcp.py
-```
-
-Run the automated tests:
-
-```bash
-python -m pytest tests/ -v
-```
-
-## Available Tools
-
-The recommended server initially exposes four tools:
-
-- `list_basecamp_categories` — list the 11 functional categories and their tool counts.
-- `discover_basecamp_tools` — retrieve a bounded set of relevant tool schemas by intent, category, and read/write access.
-- `call_basecamp_read_tool` — execute a discovered read operation.
-- `call_basecamp_write_tool` — execute a discovered mutation through a separately annotated safety boundary.
-
-Discovery and dispatch route through the same 210 definitions in `basecamp_fastmcp.py`; no Basecamp capability is removed. The full FastMCP and legacy JSON-RPC entry points continue to advertise all 210 tools.
-
-### Retrieval Categories
-
-- Projects and people
-- Todos and assignments
-- Messages and comments
-- Campfires and check-ins
-- Schedules and calendars
-- Card tables
-- Files and documents
-- Search, activity, and reports
-- Timesheets and progress
-- Notifications and personal tools
-- Administration and integrations
-
-The remainder of this section lists the full canonical catalog available through discovery or `--full` mode.
-
-### Projects And Search
-
-- `get_projects`
-- `get_people`
-- `get_project_people`
-- `update_project_people`
-- `get_pingable_people`
-- `get_person`
-- `get_my_profile`
-- `get_my_assignments`
-- `get_completed_assignments`
-- `get_due_assignments`
-- `get_overdue_todos`
-- `get_upcoming_schedule`
-- `get_question_reminders`
-- `get_everything_messages`
-- `get_everything_comments`
-- `get_everything_checkins`
-- `get_everything_forwards`
-- `get_everything_files`
-- `get_everything_todos`
-- `get_everything_cards`
-- `get_timeline`
-- `get_project_timeline`
-- `get_person_timeline`
-- `get_lineup_markers`
-- `create_lineup_marker`
-- `update_lineup_marker`
-- `delete_lineup_marker`
-- `get_my_bookmarks`
-- `get_bookmark_status`
-- `create_bookmark`
-- `delete_bookmark`
-- `get_my_drafts`
-- `get_my_note`
-- `update_my_note`
-- `get_calendar`
-- `update_calendar`
-- `prioritize_assignment`
-- `deprioritize_assignment`
-- `reorder_priority`
-- `get_notifications`
-- `get_bubble_ups`
-- `mark_notifications_read`
-- `get_subscription`
-- `subscribe_to_recording`
-- `unsubscribe_from_recording`
-- `update_subscription`
-- `get_project`
-- `create_project`
-- `update_project`
-- `trash_project`
-- `search_basecamp`
-- `global_search`
-- `get_search_metadata`
-- `search_recordings`
-
-Native search uses Basecamp's account-wide Search API and supports type, project,
-creator, date, file-type, relevance/recency, and chat-exclusion filters.
-
-### Templates And Project Construction
-
-- `get_templates`
-- `get_template`
-- `create_template`
-- `update_template`
-- `trash_template`
-- `create_project_from_template`
-- `get_project_construction`
-
-### Todos
-
-- `get_todolists`
-- `get_todolist`
-- `create_todolist`
-- `update_todolist`
-- `trash_todolist`
-- `get_todos`
-- `get_todo`
-- `create_todo`
-- `update_todo`
-- `delete_todo`
-- `archive_todo`
-- `complete_todo`
-- `uncomplete_todo`
-- `reposition_todo`
-- `get_todolist_groups`
-- `create_todolist_group`
-- `reposition_todolist_group`
-
-### Messages, Campfires, And Check-Ins
-
-- `get_message_board`
-- `get_messages`
-- `get_message`
-- `get_message_categories`
-- `create_message`
-- `update_message`
-- `pin_message`
-- `unpin_message`
-- `create_draft_message`
-- `get_message_category`
-- `create_message_category`
-- `update_message_category`
-- `delete_message_category`
-
-Pass `publish: false` to `create_message` to create a draft message instead
-of posting it immediately. Agents can also call `create_draft_message` directly
-when the intended operation is specifically to create a draft.
-
-- `get_campfire_lines`
-- `get_campfires`
-- `get_campfire_line`
-- `create_campfire_line`
-- `delete_campfire_line`
-- `get_daily_check_ins`
-- `get_question_answers`
-- `get_questionnaire`
-- `get_questions`
-- `get_question`
-- `get_question_answer`
-
-### Comments
-
-- `get_comments`
-- `create_comment`
-- `get_comment`
-- `update_comment`
-- `delete_comment`
-
-### Schedules
-
-- `get_schedule`
-- `get_schedule_entries`
-- `get_schedule_entry`
-- `get_schedule_entry_occurrence`
-- `create_schedule_entry`
-- `update_schedule_entry`
-
-### Card Tables
-
-- `get_card_tables`
-- `get_card_table`
-- `get_columns`
-- `get_column`
-- `create_column`
-- `update_column`
-- `move_column`
-- `update_column_color`
-- `put_column_on_hold`
-- `remove_column_hold`
-- `watch_column`
-- `unwatch_column`
-- `get_cards`
-- `get_card`
-- `create_card`
-- `update_card`
-- `move_card`
-- `complete_card`
-- `uncomplete_card`
-- `get_card_steps`
-- `create_card_step`
-- `get_card_step`
-- `update_card_step`
-- `delete_card_step`
-- `complete_card_step`
-- `uncomplete_card_step`
-
-### Inbox Forwards
-
-- `get_inbox`
-- `get_forwards`
-- `get_forward`
-- `get_inbox_replies`
-- `get_inbox_reply`
-- `trash_forward`
-
-### Documents, Uploads, Attachments, Events, And Webhooks
-
-- `create_attachment`
-- `get_uploads`
-- `get_upload`
-- `get_vaults`
-- `get_recordings`
-- `trash_recording`
-- `archive_recording`
-- `restore_recording`
-- `download_upload` — download a vault Upload recording (Docs & Files) and
-  return its bytes as MCP content (``ImageContent`` for image MIME types,
-  ``EmbeddedResource`` / ``BlobResourceContents`` otherwise). The MCP host
-  forwards the blob to the model, so PDFs, images, and documents are read
-  natively without an out-of-band fetch.
-- `download_attachment` — download an inline comment/message attachment by its
-  ``content_attachments[].download_url`` and return it as MCP content. Use this
-  for files embedded into a comment or message body. Inline attachments are
-  ``Attachment`` objects with their own IDs and cannot be resolved through
-  ``/uploads/{id}`` — that endpoint returns 404. For files that are their own
-  Upload recording in a vault, use ``download_upload`` instead.
-
-> **Host compatibility for `download_upload` and `download_attachment`.**
-> Both tools return MCP content blocks. The file is only readable by the
-> model if the MCP host forwards `ImageContent` / `EmbeddedResource`
-> (`BlobResourceContents`) on. Status as of June 2026:
->
-> - **Claude Code (CLI)** — fully supported, including `application/pdf`
->   and other binary blob resources.
-> - **Claude Desktop / claude.ai web** — image content blocks work, but
->   non-image `EmbeddedResource` blocks are rejected with `"Resources of
->   type 'application/pdf' are not currently supported"`. The bytes reach
->   the host but never the model. Once the client adds support, these
->   tools become useful in those frontends without server changes.
-- `get_documents`
-- `get_document`
-- `create_document`
-- `create_draft_document`
-
-Pass `publish: false` to `create_document` to create a draft document instead
-of publishing it immediately. Agents can also call `create_draft_document`
-directly when the intended operation is specifically to create a draft.
-
-- `update_document`
-- `trash_document`
-- `get_events`
-- `get_webhooks`
-- `get_webhook`
-- `create_webhook`
-- `update_webhook`
-- `delete_webhook`
-
-## Example Prompts
-
-- "Show me all my Basecamp projects."
-- "Search Basecamp for deadline."
-- "Get the todolists for project 123456."
-- "Create a todo called Review PR in todolist 987654."
-- "Show me the message board categories for project 123456."
-- "Post an Announcement to the project message board."
-- "Show me the card table columns for project 123456."
-- "Move this card to the Done column."
-- "List the latest uploads in this project's vault."
-- "Download the screenshot attached to that comment so you can read it."
-
-## Architecture
-
-- [`basecamp_retrieval_mcp.py`](basecamp_retrieval_mcp.py): Recommended compact MCP entry point with category-based discovery and read/write dispatch.
-- [`basecamp_tool_retrieval.py`](basecamp_tool_retrieval.py): Deterministic category, access, ranking, and schema-projection logic.
-- [`basecamp_fastmcp.py`](basecamp_fastmcp.py): Canonical FastMCP registry containing all 210 validated operations; also the `--full` entry point.
-- [`basecamp_client.py`](basecamp_client.py): Synchronous Basecamp 3 API client.
-- [`search_utils.py`](search_utils.py): Higher-level search helpers across Basecamp resources.
-- [`oauth_app.py`](oauth_app.py): Local Flask OAuth flow for Basecamp authentication.
-- [`auth_manager.py`](auth_manager.py): OAuth refresh helper used before API calls.
-- [`token_storage.py`](token_storage.py): Local OAuth token storage.
-- [`generate_codex_config.py`](generate_codex_config.py): Codex MCP configuration generator.
-- [`generate_cursor_config.py`](generate_cursor_config.py): Cursor MCP configuration generator.
-- [`generate_claude_desktop_config.py`](generate_claude_desktop_config.py): Claude Desktop configuration generator.
-- [`mcp_server_cli.py`](mcp_server_cli.py): Legacy JSON-RPC server kept for compatibility and tests.
-
-## Authentication And Token Storage
-
-The recommended path is OAuth 2.0:
-
-1. Create a Basecamp OAuth app.
-2. Put the client ID, client secret, account ID, redirect URI, and user agent in `.env`.
-3. Run `python oauth_app.py`.
-4. Complete the browser flow at <http://localhost:8000>.
-
-By default, OAuth tokens are stored in `<project>/oauth_tokens.json`. For containers, read-only checkouts, or mounted token volumes, set `BASECAMP_MCP_TOKEN_FILE`:
-
-```bash
-export BASECAMP_MCP_TOKEN_FILE=/var/lib/basecamp-mcp/oauth_tokens.json
-```
-
-Both the OAuth app and the MCP server read the same variable. `token_storage.py` expands `~` and environment variables in this path, creates the parent directory if needed, and attempts to set the token file permissions to `0o600` when writing. Parent directory permissions are still your responsibility.
-
-The built-in OAuth web server omits query strings from its access log so callback authorization codes are not recorded. If you run it behind another web server or reverse proxy, configure that server's access logs to omit query strings too.
-
-## Troubleshooting
-
-If tools do not appear in your MCP client:
-
-1. Confirm the virtual environment exists and has the MCP SDK:
-
-   ```bash
-   ./venv/bin/python -c "import mcp; print('MCP available')"
-   ```
-
-2. Confirm `.env` contains `BASECAMP_ACCOUNT_ID`.
-3. Re-run the relevant config generator.
-4. Fully quit and restart your MCP client.
-
-If authentication fails:
-
-```bash
-python oauth_app.py
-```
-
-Then open <http://localhost:8000> and complete the Basecamp OAuth flow again.
-
-For Claude Desktop on macOS, MCP logs are usually under:
-
-```bash
-~/Library/Logs/Claude/
-```
-
-## Security Notes
-
-- Do not commit `.env` or `oauth_tokens.json`.
-- Use a descriptive `USER_AGENT` that includes contact information, as Basecamp expects API clients to identify themselves.
-- Keep token files on local or appropriately permissioned storage.
-- This server is designed for local MCP client use. Review the code and deployment model before exposing it on a network.
+Each accepts `--full` for all 210 tools, or `--legacy` for the older JSON-RPC server.
+
+Run the tests with `python -m pytest tests/`.
+
+<details>
+<summary><b>How the code is organised</b></summary>
+
+| File | Role |
+| --- | --- |
+| [`basecamp_mcp_server/cli.py`](basecamp_mcp_server/cli.py) | The installed command: `login`, `status`, `config` and running the server. |
+| [`basecamp_retrieval_mcp.py`](basecamp_retrieval_mcp.py) | Default server: four tools that discover and run the others. |
+| [`basecamp_tool_retrieval.py`](basecamp_tool_retrieval.py) | Categories, read/write split, and ranking for discovery. |
+| [`basecamp_fastmcp.py`](basecamp_fastmcp.py) | All 210 tool definitions; also the `--full` server. |
+| [`basecamp_client.py`](basecamp_client.py) | Basecamp API client. |
+| [`payload_shaping.py`](payload_shaping.py) | Compact summaries for large responses. |
+| [`basecamp_oauth.py`](basecamp_oauth.py), [`auth_manager.py`](auth_manager.py), [`token_storage.py`](token_storage.py) | Sign-in, automatic token refresh, and token storage. |
+| [`oauth_app.py`](oauth_app.py) | Browser sign-in page for git checkouts. |
+| [`mcp_server_cli.py`](mcp_server_cli.py) | Older JSON-RPC server, kept for compatibility. |
+
+</details>
+
+## Security
+
+- Your Basecamp app's secret and your token stay on your machine, in files only you can read. Never commit `.env` or `oauth_tokens.json`.
+- Sign-in uses a one-time random check value, and the local sign-in page only accepts the response it's waiting for.
+- Write tools are marked as such, so MCP apps that ask before making changes will ask.
+- This server is built to run locally for one person. Read [the design notes](https://github.com/georgeantonopoulos/Basecamp-MCP-Server/blob/codex/central-hosting-design/CENTRAL_HOSTING_DESIGN.md) before hosting it for a team.
 
 ## License
 

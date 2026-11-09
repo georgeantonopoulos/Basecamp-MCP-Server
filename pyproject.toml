@@ -1,0 +1,98 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "basecamp-mcp-server"
+dynamic = ["version"]
+description = "MCP server that connects Claude, Cursor and other AI assistants to Basecamp 3 and 4"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [{ name = "George Antonopoulos" }]
+keywords = ["basecamp", "mcp", "model-context-protocol", "claude", "cursor", "ai"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Groupware",
+]
+# Keep in step with requirements.txt. mcp 2.0 removed mcp.server.fastmcp, and
+# 1.28.1 is the first 1.x release patched against the known advisories.
+dependencies = [
+    "mcp[cli]>=1.28.1,<2",
+    "requests>=2.31.0",
+    "python-dotenv>=1.0.0",
+    "httpx>=0.25.0",
+    "anyio>=4.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/georgeantonopoulos/Basecamp-MCP-Server"
+Issues = "https://github.com/georgeantonopoulos/Basecamp-MCP-Server/issues"
+
+[project.scripts]
+basecamp-mcp-server = "basecamp_mcp_server.cli:main"
+
+[tool.hatch.version]
+path = "basecamp_mcp_server/__init__.py"
+
+# The server modules sit at the repository root so a git checkout keeps working
+# unchanged; the wheel ships exactly these alongside the entry-point package.
+# tests/test_packaging.py fails if a module the server imports is left out.
+[tool.hatch.build.targets.wheel]
+packages = ["basecamp_mcp_server"]
+only-include = [
+    "basecamp_mcp_server",
+    "auth_manager.py",
+    "basecamp_client.py",
+    "basecamp_fastmcp.py",
+    "basecamp_oauth.py",
+    "basecamp_retrieval_mcp.py",
+    "basecamp_tool_retrieval.py",
+    "payload_shaping.py",
+    "recording_utils.py",
+    "search_utils.py",
+    "sign_in_messages.py",
+    "token_storage.py",
+]
+
+[tool.hatch.build.targets.wheel.force-include]
+"auth_manager.py" = "auth_manager.py"
+"basecamp_client.py" = "basecamp_client.py"
+"basecamp_fastmcp.py" = "basecamp_fastmcp.py"
+"basecamp_oauth.py" = "basecamp_oauth.py"
+"basecamp_retrieval_mcp.py" = "basecamp_retrieval_mcp.py"
+"basecamp_tool_retrieval.py" = "basecamp_tool_retrieval.py"
+"payload_shaping.py" = "payload_shaping.py"
+"recording_utils.py" = "recording_utils.py"
+"search_utils.py" = "search_utils.py"
+"sign_in_messages.py" = "sign_in_messages.py"
+"token_storage.py" = "token_storage.py"
+
+[tool.hatch.build.targets.sdist]
+only-include = [
+    "basecamp_mcp_server",
+    "auth_manager.py",
+    "basecamp_client.py",
+    "basecamp_fastmcp.py",
+    "basecamp_oauth.py",
+    "basecamp_retrieval_mcp.py",
+    "basecamp_tool_retrieval.py",
+    "payload_shaping.py",
+    "recording_utils.py",
+    "search_utils.py",
+    "sign_in_messages.py",
+    "token_storage.py",
+    "tests",
+    "README.md",
+    "LICENSE",
+    "pytest.ini",
+    "requirements.txt",
+]

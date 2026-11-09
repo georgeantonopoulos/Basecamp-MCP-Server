@@ -2,9 +2,16 @@
 
 All notable changes to this project are documented here. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [1.0.0] - Unreleased
+
+First release on PyPI.
 
 ### Added
+
+- **One-command install.** `uvx basecamp-mcp-server` runs the server with no clone or virtual environment. `uvx basecamp-mcp-server login` registers your Basecamp app details, opens the browser for sign-in and saves the token itself; no local web page to start by hand. `status` checks the saved sign-in against Basecamp, and `config <app>` prints the setup snippet for Claude Desktop, Claude Code, Cursor or Codex. Installed settings live in one per-user folder (`BASECAMP_MCP_HOME` to override); git checkouts keep working as before.
+- Sign-in now stops with a clear message when the Basecamp login has no Basecamp 3/4 account, instead of saving a token that fails later. With several accounts, `login` asks which to use (`--account-id` to choose up front).
+- 210 Basecamp operations (up from 79), with a retrieval-first default server that shows four discovery tools and finds the rest on demand (#51).
+- OAuth token, refresh and identity requests time out after 30 seconds instead of hanging sign-in (#54, thanks @ranas-mukminov).
 
 - Reports API tools ([bc-api sections/reports.md](https://github.com/basecamp/bc-api/blob/master/sections/reports.md)): `get_assignable_people` (`GET /reports/todos/assigned.json`), `get_person_assignments` (`GET /reports/todos/assigned/{person_id}.json` with optional `group_by: bucket|date`) and `get_overdue_todos` (`GET /reports/todos/overdue.json`). `get_person_assignments` returns one person's active, pending to-dos across all projects in a single call — previously this required iterating every project and todolist, which was slow and easy to get wrong (missed projects read as "no assignments"). The embedded `todos` list follows `Link`-header pagination defensively and merges pages into one report. All three tools are also exposed by the legacy `mcp_server_cli.py` server for compatibility.
 - `completed` and `status` parameters for `get_todos`. The Basecamp to-dos
@@ -23,6 +30,9 @@ All notable changes to this project are documented here. The format is based on 
 
 ### Fixed
 
+- `delete_comment` now trashes the comment through Basecamp's documented route; it called an endpoint that doesn't exist and always failed.
+- `update_schedule_entry` keeps the entry's times, description and all-day setting when you change only some fields. Basecamp rejected partial updates, and once times were sent it cleared the rest.
+- `create_question` documents its schedule format and takes `respondents`; without them Basecamp rejected the guessed format or asked nobody.
 - Project dock lookups for to-do sets, message boards, inboxes, and schedules
   now share consistent handling for missing or malformed dock data.
 - All list helpers now follow Basecamp's `Link` header pagination via a shared
@@ -45,4 +55,4 @@ All notable changes to this project are documented here. The format is based on 
 ### Notes
 
 - `download_upload` and `download_attachment` rely on the MCP host (the client application) forwarding `ImageContent` / `EmbeddedResource` blocks to the model. As of June 2026, Claude Code (CLI) supports both fully, including `application/pdf`. Claude Desktop / claude.ai web rejects non-image `EmbeddedResource` blocks with `"Resources of type 'application/pdf' are not currently supported"` — the bytes arrive at the host but never reach the model. No server-side workaround possible.
-- `BASECAMP_MCP_TOKEN_FILE` environment variable to configure the OAuth token file path. Useful for containerized deployments where the application directory is read-only or ephemeral and the token store must live on a mounted volume. When unset, the token file stays at `<project>/oauth_tokens.json` (previous default). See [README — Token Storage Location](README.md#token-storage-location).
+- `BASECAMP_MCP_TOKEN_FILE` environment variable to configure the OAuth token file path. Useful for containerized deployments where the application directory is read-only or ephemeral and the token store must live on a mounted volume. When unset, the token file stays at `<project>/oauth_tokens.json` (previous default). See [README — Settings and sign-in](README.md#settings-and-sign-in).

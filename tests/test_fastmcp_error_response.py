@@ -18,6 +18,16 @@ def test_error_response_includes_status_error():
 
 
 @patch.dict(os.environ, {"USER_AGENT": "test-agent"})
+@patch("basecamp_fastmcp.token_storage.get_token", return_value=None)
+@patch("basecamp_fastmcp.token_storage.is_token_expired", return_value=True)
+def test_never_signed_in_asks_for_sign_in_not_expiry(mock_is_expired, mock_token):
+    """With no token at all, users should be told to sign in, not that a token expired."""
+    response = basecamp_fastmcp._get_auth_error_response()
+
+    assert response["error"] == "Authentication required"
+
+
+@patch.dict(os.environ, {"USER_AGENT": "test-agent"})
 @patch("basecamp_fastmcp.token_storage.is_token_expired", return_value=False)
 def test_auth_error_response_includes_status_error(mock_is_expired):
     response = basecamp_fastmcp._get_auth_error_response()
@@ -30,8 +40,9 @@ def test_auth_error_response_includes_status_error(mock_is_expired):
 
 
 @patch.dict(os.environ, {"USER_AGENT": "test-agent"})
+@patch("basecamp_fastmcp.token_storage.get_token", return_value={"access_token": "t"})
 @patch("basecamp_fastmcp.token_storage.is_token_expired", return_value=True)
-def test_expired_auth_error_response_includes_status_error(mock_is_expired):
+def test_expired_auth_error_response_includes_status_error(mock_is_expired, mock_token):
     response = basecamp_fastmcp._get_auth_error_response()
 
     assert response == {
