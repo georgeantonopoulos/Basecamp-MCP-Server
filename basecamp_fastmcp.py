@@ -3096,7 +3096,7 @@ async def update_comment(comment_id: str, project_id: str, content: str) -> Dict
 
 @mcp.tool()
 async def delete_comment(comment_id: str, project_id: str) -> Dict[str, Any]:
-    """Delete a comment.
+    """Delete a comment by moving it to the project's trash (Basecamp has no hard delete).
 
     Args:
         comment_id: The comment ID
@@ -4471,14 +4471,18 @@ async def create_question(
     title: str,
     schedule: Dict[str, Any],
     visible_to_clients: Optional[bool] = None,
+    respondents: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Create a question in a Basecamp automatic check-ins questionnaire.
 
     Args:
         questionnaire_id: Basecamp questionnaire ID.
-        title: Title of the new or updated item.
-        schedule: Schedule configuration.
+        title: The question to ask.
+        schedule: When to ask, e.g. {"frequency": "every_day", "time_of_day": "9:00am",
+            "days": ["1", "2", "3", "4", "5"]}. frequency is one of every_day, every_week,
+            every_other_week, every_month or on_certain_days; days are 0=Sunday to 6=Saturday.
         visible_to_clients: Whether clients can see this item.
+        respondents: Person IDs to ask. Basecamp asks nobody when this is omitted.
     """
     if not title:
         return _error_response("Invalid input", "title is required")
@@ -4486,6 +4490,8 @@ async def create_question(
         return _error_response("Invalid input", "schedule must be a non-empty object")
     if visible_to_clients is not None and not isinstance(visible_to_clients, bool):
         return _error_response("Invalid input", "visible_to_clients must be a boolean")
+    if respondents is not None and not isinstance(respondents, list):
+        return _error_response("Invalid input", "respondents must be a list of person IDs")
     client = _get_basecamp_client()
     if not client:
         return _get_auth_error_response()
@@ -4496,6 +4502,7 @@ async def create_question(
             title,
             schedule,
             visible_to_clients,
+            respondents,
         )
         return {"status": "success", "question": question, "message": "Question created"}
     except Exception as e:
@@ -4512,8 +4519,9 @@ async def update_question(
 
     Args:
         question_id: Basecamp question ID.
-        title: Title of the new or updated item.
-        schedule: Schedule configuration.
+        title: The question to ask.
+        schedule: When to ask, in the same shape as create_question, e.g.
+            {"frequency": "every_week", "time_of_day": "5:00pm", "days": ["5"]}.
     """
     if title is None and schedule is None:
         return _error_response("Invalid input", "title or schedule is required")

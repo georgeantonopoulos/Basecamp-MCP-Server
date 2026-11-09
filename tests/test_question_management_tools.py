@@ -112,3 +112,40 @@ def test_question_management_tools_are_registered_and_return_structured_results(
     assert answerers == {
         "status": "success", "answerers": [{"id": "person-1"}], "count": 1
     }
+
+
+def test_create_question_sends_respondents_at_top_level():
+    client = BasecampClient.__new__(BasecampClient)
+    created = MagicMock(status_code=201)
+    created.json.return_value = {"id": "question-1"}
+    schedule = {"frequency": "every_week", "time_of_day": "9:00am", "days": ["1"]}
+
+    with patch.object(client, "post", return_value=created) as post:
+        client.create_question("q-1", "Weekly?", schedule, respondents=[101, "102"])
+
+    post.assert_called_once_with(
+        "questionnaires/q-1/questions.json",
+        {"question": {"title": "Weekly?", "schedule": schedule}, "respondents": ["101", "102"]},
+    )
+
+
+def test_create_question_tool_passes_respondents_and_rejects_non_lists():
+    client = Mock()
+    client.create_question.return_value = {"id": "question-1"}
+
+    async def run():
+        with patch.object(basecamp_fastmcp, "_get_basecamp_client", return_value=client):
+            ok = await basecamp_fastmcp.create_question(
+                "q-1", "Daily", {"frequency": "every_day"}, None, ["101"]
+            )
+            bad = await basecamp_fastmcp.create_question(
+                "q-1", "Daily", {"frequency": "every_day"}, None, "101"
+            )
+            return ok, bad
+
+    ok, bad = asyncio.run(run())
+    assert ok["status"] == "success"
+    client.create_question.assert_called_once_with(
+        "q-1", "Daily", {"frequency": "every_day"}, None, ["101"]
+    )
+    assert bad["error"] == "Invalid input"

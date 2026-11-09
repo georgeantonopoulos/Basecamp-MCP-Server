@@ -1446,13 +1446,23 @@ class BasecampClient:
             f"Failed to update hill chart settings: {response.status_code} - {response.text}"
         )
 
-    def create_question(self, questionnaire_id, title, schedule, visible_to_clients=None):
-        """Create an automatic check-in question."""
+    def create_question(
+        self, questionnaire_id, title, schedule, visible_to_clients=None, respondents=None
+    ):
+        """Create an automatic check-in question.
+
+        ``respondents`` is a list of person IDs to ask; Basecamp asks nobody
+        when it is omitted.
+        """
         if not title:
             raise ValueError("title is required")
         if not isinstance(schedule, dict) or not schedule:
             raise ValueError("schedule must be a non-empty object")
         data = {"question": {"title": title, "schedule": schedule}}
+        if respondents is not None:
+            if not isinstance(respondents, list):
+                raise ValueError("respondents must be a list of person IDs")
+            data["respondents"] = [str(person_id) for person_id in respondents]
         if visible_to_clients is not None:
             if not isinstance(visible_to_clients, bool):
                 raise ValueError("visible_to_clients must be a boolean")
@@ -2204,6 +2214,13 @@ class BasecampClient:
         if not data:
             raise ValueError("at least one schedule entry field must be provided")
 
+        # Basecamp rejects updates (422) that omit starts_at/ends_at, so keep
+        # the entry's current times when the caller only changes other fields.
+        if "starts_at" not in data or "ends_at" not in data:
+            current = self.get_schedule_entry(project_id, entry_id)
+            data.setdefault("starts_at", current.get("starts_at"))
+            data.setdefault("ends_at", current.get("ends_at"))
+
         response = self.put(
             f"buckets/{project_id}/schedule_entries/{entry_id}.json",
             data,
@@ -2324,11 +2341,14 @@ class BasecampClient:
             comment_id (int): Comment ID
             bucket_id (int): Project/bucket ID
 
+        Basecamp has no hard-delete endpoint for comments, so this moves the
+        comment to the trash (recoverable from the project's trash).
+
         Returns:
             bool: True if successful
         """
-        endpoint = f"buckets/{bucket_id}/comments/{comment_id}.json"
-        response = self.delete(endpoint)
+        endpoint = f"buckets/{bucket_id}/recordings/{comment_id}/status/trashed.json"
+        response = self.put(endpoint)
         if response.status_code == 204:
             return True
         else:

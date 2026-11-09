@@ -90,3 +90,17 @@ def test_comment_tools_return_execution_errors(mock_get_client):
     result = run_tool(basecamp_fastmcp.get_comment, "comment-1", "project-1")
 
     assert result == {"error": "Execution error", "message": "boom"}
+
+
+def test_delete_comment_trashes_through_recording_status_route():
+    """Basecamp has no DELETE for comments (live 404); trashing is the documented route."""
+    from unittest.mock import MagicMock
+    from basecamp_client import BasecampClient
+
+    client = BasecampClient.__new__(BasecampClient)
+    with patch.object(client, "put", return_value=MagicMock(status_code=204)) as put, \
+            patch.object(client, "delete") as delete:
+        assert client.delete_comment("comment-1", "project-1") is True
+
+    put.assert_called_once_with("buckets/project-1/recordings/comment-1/status/trashed.json")
+    delete.assert_not_called()
