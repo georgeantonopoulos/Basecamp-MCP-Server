@@ -153,13 +153,34 @@ def test_callback_returns_code_when_state_matches():
     assert code == "abc"
 
 
-def test_callback_rejects_mismatched_state():
+def test_callback_ignores_stray_requests_and_waits_for_the_real_one():
     port = _free_port()
     redirect = f"http://127.0.0.1:{port}/auth/callback"
-    with pytest.raises(cli.LoginError, match="didn't match"):
+
+    def stray_then_real():
+        _hit_later(redirect + "?code=evil&state=wrong")
+        _hit_later(redirect)  # no state at all
+        threading.Timer(0.6, lambda: _hit_later(redirect + "?code=abc&state=s1")).start()
+
+    assert cli.wait_for_callback(redirect, "s1", timeout=5, on_ready=stray_then_real) == "abc"
+
+
+def test_callback_times_out_when_only_stray_requests_arrive():
+    port = _free_port()
+    redirect = f"http://127.0.0.1:{port}/auth/callback"
+    with pytest.raises(cli.LoginError, match="Timed out"):
         cli.wait_for_callback(
-            redirect, "s1", timeout=5, on_ready=lambda: _hit_later(redirect + "?code=abc&state=evil")
+            redirect, "s1", timeout=1.5, on_ready=lambda: _hit_later(redirect + "?code=abc&state=evil")
         )
+
+
+def test_full_flag_works_before_or_after_the_subcommand():
+    parser = cli.build_parser()
+    assert parser.parse_args(["--full", "config", "cursor"]).full is True
+    assert parser.parse_args(["config", "cursor", "--full"]).full is True
+    assert parser.parse_args(["config", "cursor"]).full is False
+    assert parser.parse_args(["--full"]).full is True
+    assert parser.parse_args(["run", "--full"]).full is True
 
 
 def test_callback_requires_local_http_redirect():

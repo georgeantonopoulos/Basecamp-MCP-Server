@@ -148,24 +148,31 @@ def wait_for_callback(redirect_uri: str, state: str, timeout: float, on_ready=No
                 self.end_headers()
                 return
             query = parse_qs(url.query)
-            if query.get("state", [None])[0] != state:
-                result["error"] = "The sign-in response didn't match this request. Please try again."
-            elif "error" in query:
+            if done.is_set() or query.get("state", [None])[0] != state:
+                # Not the response we're waiting for (a stray or repeated request):
+                # answer it, but keep waiting for the real one.
+                self._reply(400, _page("Sign-in link expired", "Run the login command again."))
+                return
+            if "error" in query:
                 result["error"] = f"Basecamp refused the sign-in: {query['error'][0]}"
             elif not query.get("code"):
                 result["error"] = "Basecamp didn't return an authorization code."
             else:
                 result["code"] = query["code"][0]
             ok = "code" in result
-            self.send_response(200 if ok else 400)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.end_headers()
-            self.wfile.write(
+            self._reply(
+                200 if ok else 400,
                 _page("Signed in to Basecamp", "You can close this tab and go back to the terminal.")
                 if ok
-                else _page("Sign-in failed", result["error"])
+                else _page("Sign-in failed", result["error"]),
             )
             done.set()
+
+        def _reply(self, status_code, body):
+            self.send_response(status_code)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(body)
 
         def log_message(self, *args):  # keep the terminal quiet
             pass
@@ -356,7 +363,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command")
     run_p = sub.add_parser("run", help="run the MCP server over stdio (the default)")
-    run_p.add_argument("--full", action="store_true", help=argparse.SUPPRESS)
+    # SUPPRESS keeps a --full given before the subcommand from being reset.
+    run_p.add_argument("--full", action="store_true", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
 
     login_p = sub.add_parser("login", help="sign in to Basecamp in the browser")
     login_p.add_argument("--account-id", help="Basecamp account to use when you belong to several")
@@ -368,7 +376,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     config_p = sub.add_parser("config", help="print the setup snippet for an MCP client")
     config_p.add_argument("client", choices=sorted(CONFIG_HELP))
-    config_p.add_argument("--full", action="store_true", help="configure all 210 tools directly")
+    config_p.add_argument(
+        "--full", action="store_true", default=argparse.SUPPRESS, help="configure all 210 tools directly"
+    )
     return parser
 
 
