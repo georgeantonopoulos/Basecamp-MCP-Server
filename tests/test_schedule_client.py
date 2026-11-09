@@ -66,7 +66,12 @@ def test_schedule_entry_lifecycle_uses_documented_endpoints():
                 notify=True,
             ) == {"id": "entry-2"}
 
-    current = {"starts_at": "2026-08-28T09:00:00Z", "ends_at": "2026-08-28T10:00:00Z"}
+    current = {
+        "summary": "Planning",
+        "starts_at": "2026-08-28T09:00:00Z",
+        "ends_at": "2026-08-28T10:00:00Z",
+        "description": "<div>agenda</div>",
+    }
     with patch.object(client, "get_schedule_entry", return_value=current) as get_current, \
             patch.object(client, "put", return_value=update_response) as put:
         assert client.update_schedule_entry(
@@ -88,25 +93,49 @@ def test_schedule_entry_lifecycle_uses_documented_endpoints():
             "notify": True,
         },
     )
-    # Basecamp answers 422 when an update omits the times, so the current ones are resent.
+    # Basecamp replaces the whole entry (422 without times, clears an omitted
+    # description), so current values are resent for fields the caller left out.
     put.assert_called_once_with(
         "buckets/project-1/schedule_entries/entry-2.json",
-        {"summary": "Updated", "all_day": False, **current},
+        {**current, "summary": "Updated", "all_day": False},
     )
 
 
-def test_update_schedule_entry_with_both_times_skips_lookup():
+def test_update_schedule_entry_keeps_all_day_and_description():
+    """Live: a summary-only PUT blanked the description and turned all-day into timed."""
     client = BasecampClient.__new__(BasecampClient)
     response = MagicMock(status_code=200)
     response.json.return_value = {"id": "entry-2"}
-    times = {"starts_at": "2026-09-01T09:00:00Z", "ends_at": "2026-09-01T10:00:00Z"}
+    current = {
+        "summary": "Offsite", "starts_at": "2026-12-09", "ends_at": "2026-12-09",
+        "description": "<div>keep me</div>", "all_day": True,
+    }
+
+    with patch.object(client, "get_schedule_entry", return_value=current), \
+            patch.object(client, "put", return_value=response) as put:
+        client.update_schedule_entry("project-1", "entry-2", summary="Offsite (moved)")
+
+    put.assert_called_once_with(
+        "buckets/project-1/schedule_entries/entry-2.json",
+        {**current, "summary": "Offsite (moved)"},
+    )
+
+
+def test_update_schedule_entry_with_every_field_skips_lookup():
+    client = BasecampClient.__new__(BasecampClient)
+    response = MagicMock(status_code=200)
+    response.json.return_value = {"id": "entry-2"}
+    fields = {
+        "summary": "S", "starts_at": "2026-09-01T09:00:00Z", "ends_at": "2026-09-01T10:00:00Z",
+        "description": "d", "all_day": False,
+    }
 
     with patch.object(client, "get_schedule_entry") as get_current, \
             patch.object(client, "put", return_value=response) as put:
-        client.update_schedule_entry("project-1", "entry-2", **times)
+        client.update_schedule_entry("project-1", "entry-2", **fields)
 
     get_current.assert_not_called()
-    put.assert_called_once_with("buckets/project-1/schedule_entries/entry-2.json", times)
+    put.assert_called_once_with("buckets/project-1/schedule_entries/entry-2.json", fields)
 
 
 def test_update_schedule_entry_requires_a_field():

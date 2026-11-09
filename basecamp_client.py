@@ -2214,12 +2214,16 @@ class BasecampClient:
         if not data:
             raise ValueError("at least one schedule entry field must be provided")
 
-        # Basecamp rejects updates (422) that omit starts_at/ends_at, so keep
-        # the entry's current times when the caller only changes other fields.
-        if "starts_at" not in data or "ends_at" not in data:
+        # Basecamp treats this PUT as a full replace: it rejects updates (422)
+        # without starts_at/ends_at and clears an omitted description or
+        # all_day. Carry the entry's current values over for anything the
+        # caller left out.
+        carried = ("summary", "starts_at", "ends_at", "description", "all_day")
+        if any(key not in data for key in carried):
             current = self.get_schedule_entry(project_id, entry_id)
-            data.setdefault("starts_at", current.get("starts_at"))
-            data.setdefault("ends_at", current.get("ends_at"))
+            for key in carried:
+                if key not in data and current.get(key) is not None:
+                    data[key] = current[key]
 
         response = self.put(
             f"buckets/{project_id}/schedule_entries/{entry_id}.json",
