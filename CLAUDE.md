@@ -8,7 +8,13 @@ This is a **Basecamp 3 MCP (Model Context Protocol) Server** that allows AI assi
 
 ## Development Commands
 
+Users install the published package: `uvx basecamp-mcp-server login`, then point their MCP client at `uvx basecamp-mcp-server`. The entry point is `basecamp_mcp_server/cli.py`; installed settings live in a per-user folder (`BASECAMP_MCP_HOME`). The server modules stay at the repo root and are listed in `pyproject.toml`; `tests/test_packaging.py` fails if a module the servers import is missing from the package.
+
 ```bash
+# Build and try the package locally
+uv build && uvx --from dist/*.whl basecamp-mcp-server --version
+python scripts/smoke_installed.py uvx --from dist/*.whl basecamp-mcp-server
+
 # Setup (one-time) - requires Python 3.10+
 # Option 1: Using uv (recommended - auto-downloads Python 3.12)
 uv venv --python 3.12 venv && source venv/bin/activate && uv pip install -r requirements.txt

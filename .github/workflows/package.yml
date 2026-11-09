@@ -1,0 +1,59 @@
+name: Package
+
+# Builds the PyPI package and checks the installed command works the way MCP
+# clients launch it, on every platform users run it on.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install-and-run:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.10", "3.12"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Build
+        run: uv build
+
+      - name: Install with uvx and run the command
+        shell: bash
+        run: |
+          WHEEL=$(ls dist/*.whl)
+          run() { uvx --python ${{ matrix.python-version }} --from "$WHEEL" basecamp-mcp-server "$@"; }
+          run --version
+          run config claude-desktop
+          # Fresh machine: status reports "not signed in" (exit 1) without crashing.
+          export BASECAMP_MCP_HOME="$RUNNER_TEMP/bc-home"
+          set +e; run status --offline; code=$?; set -e
+          test "$code" = 1
+          # login without app credentials and no terminal fails with a clear message.
+          set +e; out=$(run login </dev/null 2>&1); code=$?; set -e
+          echo "$out"; test "$code" = 1; echo "$out" | grep -q "BASECAMP_CLIENT_ID"
+
+      - name: MCP handshake through the installed command
+        shell: bash
+        timeout-minutes: 5
+        run: |
+          python scripts/smoke_installed.py uvx --python ${{ matrix.python-version }} \
+            --from "$(ls dist/*.whl)" basecamp-mcp-server
+
+      - uses: actions/upload-artifact@v4
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        with:
+          name: dist
+          path: dist/

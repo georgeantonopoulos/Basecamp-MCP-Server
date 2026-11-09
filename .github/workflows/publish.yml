@@ -1,0 +1,42 @@
+name: Publish to PyPI
+
+# Runs only when a GitHub release is published. Uses PyPI trusted publishing,
+# so no API token is stored in the repository: the PyPI project must list this
+# repository, workflow (publish.yml) and environment (pypi) as a trusted publisher.
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Check the release tag matches the package version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          VERSION=$(python -c "import re;print(re.search(r'__version__ = \"(.+)\"', open('basecamp_mcp_server/__init__.py').read()).group(1))")
+          if [ "v$VERSION" != "$RELEASE_TAG" ]; then
+            echo "Release tag $RELEASE_TAG doesn't match package version $VERSION"
+            exit 1
+          fi
+
+      - name: Build
+        run: uv build
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
