@@ -85,6 +85,29 @@ class TestGetAllPages(unittest.TestCase):
         self.assertEqual(
             str(ctx.exception), 'Failed to get projects: 401 - unauthorized')
 
+    def test_non_list_payloads_raise_instead_of_appearing_empty(self):
+        client = _client()
+        for payload in ({}, None, 0, False, {'error': 'failed'}):
+            with self.subTest(payload=payload):
+                with patch.object(client, 'get', return_value=_page(payload)):
+                    with self.assertRaisesRegex(Exception, 'expected a list'):
+                        client.get_all_pages('projects.json', error_label='projects')
+
+    def test_manual_collections_use_the_same_validated_pagination(self):
+        client = _client()
+        collections = (
+            (lambda: client.get_todolist_groups(1, 2), 'todolist groups'),
+            (lambda: client.get_messages(1, 2), 'messages'),
+            (lambda: client.get_forwards(1, 2), 'forwards'),
+            (lambda: client.get_inbox_replies(1, 2), 'inbox replies'),
+        )
+        for fetch, label in collections:
+            with self.subTest(label=label):
+                with patch.object(client, 'get', return_value=_page({})):
+                    with self.assertRaisesRegex(
+                            Exception, f'Failed to get {label}: expected a list'):
+                        fetch()
+
     def test_persistent_next_page_hits_page_cap(self):
         """A response that always advertises a next page raises at MAX_PAGES."""
         client = _client()

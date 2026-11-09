@@ -1,0 +1,149 @@
+"""Tests for schedule endpoint discovery and pagination."""
+
+from unittest.mock import MagicMock, patch
+
+from basecamp_client import BasecampClient
+
+
+def test_get_schedule_resolves_schedule_from_project_dock():
+    client = BasecampClient.__new__(BasecampClient)
+    project = {"id": "project-1", "dock": [{"name": "schedule", "id": "schedule-1"}]}
+    response = MagicMock(status_code=200)
+    response.json.return_value = {"id": "schedule-1", "title": "Schedule"}
+
+    with patch.object(client, "get_project", return_value=project):
+        with patch.object(client, "get", return_value=response) as get:
+            result = client.get_schedule("project-1")
+
+    assert result == {"id": "schedule-1", "title": "Schedule"}
+    get.assert_called_once_with(
+        "buckets/project-1/schedules/schedule-1.json"
+    )
+
+
+def test_get_schedule_entries_uses_schedule_id_and_paginates():
+    client = BasecampClient.__new__(BasecampClient)
+    client.get_project = MagicMock(return_value={
+        "dock": [{"name": "schedule", "id": "schedule-1"}],
+    })
+
+    with patch.object(client, "get_all_pages", return_value=[
+        {"id": "entry-1"},
+        {"id": "entry-2"},
+    ]) as get_entries:
+        result = client.get_schedule_entries("project-1")
+
+    assert result == [{"id": "entry-1"}, {"id": "entry-2"}]
+    get_entries.assert_called_once_with(
+        "buckets/project-1/schedules/schedule-1/entries.json",
+        error_label="schedule entries",
+    )
+
+
+def test_schedule_entry_lifecycle_uses_documented_endpoints():
+    client = BasecampClient.__new__(BasecampClient)
+    get_response = MagicMock(status_code=200)
+    get_response.json.return_value = {"id": "entry-1"}
+    create_response = MagicMock(status_code=201)
+    create_response.json.return_value = {"id": "entry-2"}
+    update_response = MagicMock(status_code=200)
+    update_response.json.return_value = {"id": "entry-2", "summary": "Updated"}
+
+    with patch.object(client, "get", side_effect=[get_response, get_response]) as get:
+        assert client.get_schedule_entry("project-1", "entry-1") == {"id": "entry-1"}
+        assert client.get_schedule_entry_occurrence(
+            "project-1", "entry-1", "2026-08-28"
+        ) == {"id": "entry-1"}
+
+    with patch.object(client, "get_schedule", return_value={"id": "schedule-1"}):
+        with patch.object(client, "post", return_value=create_response) as post:
+            assert client.create_schedule_entry(
+                "project-1",
+                "Planning",
+                "2026-08-28T09:00:00Z",
+                "2026-08-28T10:00:00Z",
+                participant_ids=["person-1"],
+                notify=True,
+            ) == {"id": "entry-2"}
+
+    current = {
+        "summary": "Planning",
+        "starts_at": "2026-08-28T09:00:00Z",
+        "ends_at": "2026-08-28T10:00:00Z",
+        "description": "<div>agenda</div>",
+    }
+    with patch.object(client, "get_schedule_entry", return_value=current) as get_current, \
+            patch.object(client, "put", return_value=update_response) as put:
+        assert client.update_schedule_entry(
+            "project-1", "entry-2", summary="Updated", all_day=False
+        ) == {"id": "entry-2", "summary": "Updated"}
+    get_current.assert_called_once_with("project-1", "entry-2")
+
+    assert [call.args[0] for call in get.call_args_list] == [
+        "buckets/project-1/schedule_entries/entry-1.json",
+        "buckets/project-1/schedule_entries/entry-1/occurrences/2026-08-28.json",
+    ]
+    post.assert_called_once_with(
+        "buckets/project-1/schedules/schedule-1/entries.json",
+        {
+            "summary": "Planning",
+            "starts_at": "2026-08-28T09:00:00Z",
+            "ends_at": "2026-08-28T10:00:00Z",
+            "participant_ids": ["person-1"],
+            "notify": True,
+        },
+    )
+    # Basecamp replaces the whole entry (422 without times, clears an omitted
+    # description), so current values are resent for fields the caller left out.
+    put.assert_called_once_with(
+        "buckets/project-1/schedule_entries/entry-2.json",
+        {**current, "summary": "Updated", "all_day": False},
+    )
+
+
+def test_update_schedule_entry_keeps_all_day_and_description():
+    """Live: a summary-only PUT blanked the description and turned all-day into timed."""
+    client = BasecampClient.__new__(BasecampClient)
+    response = MagicMock(status_code=200)
+    response.json.return_value = {"id": "entry-2"}
+    current = {
+        "summary": "Offsite", "starts_at": "2026-12-09", "ends_at": "2026-12-09",
+        "description": "<div>keep me</div>", "all_day": True,
+    }
+
+    with patch.object(client, "get_schedule_entry", return_value=current), \
+            patch.object(client, "put", return_value=response) as put:
+        client.update_schedule_entry("project-1", "entry-2", summary="Offsite (moved)")
+
+    put.assert_called_once_with(
+        "buckets/project-1/schedule_entries/entry-2.json",
+        {**current, "summary": "Offsite (moved)"},
+    )
+
+
+def test_update_schedule_entry_with_every_field_skips_lookup():
+    client = BasecampClient.__new__(BasecampClient)
+    response = MagicMock(status_code=200)
+    response.json.return_value = {"id": "entry-2"}
+    fields = {
+        "summary": "S", "starts_at": "2026-09-01T09:00:00Z", "ends_at": "2026-09-01T10:00:00Z",
+        "description": "d", "all_day": False,
+    }
+
+    with patch.object(client, "get_schedule_entry") as get_current, \
+            patch.object(client, "put", return_value=response) as put:
+        client.update_schedule_entry("project-1", "entry-2", **fields)
+
+    get_current.assert_not_called()
+    put.assert_called_once_with("buckets/project-1/schedule_entries/entry-2.json", fields)
+
+
+def test_update_schedule_entry_requires_a_field():
+    client = BasecampClient.__new__(BasecampClient)
+
+    try:
+        client.update_schedule_entry("project-1", "entry-1")
+    except ValueError as exc:
+        assert "at least one schedule entry field" in str(exc)
+    else:
+        raise AssertionError("empty schedule entry update was accepted")

@@ -3,14 +3,17 @@
 Command-line MCP server for Basecamp integration with Cursor.
 
 This server implements the MCP (Model Context Protocol) via stdin/stdout
-as expected by Cursor.
+as expected by Cursor. Existing tools keep their CLI schemas and handlers;
+newer tools use the FastMCP registry and its argument validation.
 """
 
+import asyncio
 import json
 import sys
 import logging
 from typing import Any, Dict, List, Optional
 from basecamp_client import BasecampClient
+from basecamp_fastmcp import mcp as fastmcp_server
 import payload_shaping as _shape
 from search_utils import BasecampSearch
 import token_storage
@@ -47,6 +50,27 @@ def _coerce_bool(value: Any, default: bool = False) -> bool:
     return bool(value)
 
 
+def _json_default(value: Any) -> Any:
+    """Serialize typed MCP content blocks returned by new tools."""
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
+def _new_tool_content(result: Any) -> List[Dict[str, Any]]:
+    """Preserve binary and resource blocks from newly added FastMCP tools."""
+    if isinstance(result, list) and result and all(
+        hasattr(item, "model_dump") and getattr(item, "type", None)
+        in {"text", "image", "audio", "resource", "resource_link"}
+        for item in result
+    ):
+        return [item.model_dump(mode="json", exclude_none=True) for item in result]
+    return [{"type": "text", "text": json.dumps(result, indent=2, default=_json_default)}]
+
+
+_tool_result_content = _new_tool_content
+
+
 class MCPServer:
     """MCP server implementing the Model Context Protocol for Cursor."""
 
@@ -55,8 +79,8 @@ class MCPServer:
         logger.info("MCP CLI Server initialized")
 
     def _get_available_tools(self) -> List[Dict[str, Any]]:
-        """Get list of available tools for Basecamp."""
-        return [
+        """Keep legacy schemas and add new FastMCP tools without duplicates."""
+        legacy_tools = [
             {
                 "name": "get_projects",
                 "description": "Get all Basecamp projects",
@@ -817,6 +841,31 @@ class MCPServer:
                 }
             }
         ]
+        self._legacy_tool_names = {tool["name"] for tool in legacy_tools}
+        public_tools = asyncio.run(fastmcp_server.list_tools())
+        self._fastmcp_tool_names = {tool.name for tool in public_tools}
+        return legacy_tools + [
+            {
+                "name": tool.name,
+                "description": tool.description or "",
+                "inputSchema": tool.inputSchema,
+            }
+            for tool in public_tools if tool.name not in self._legacy_tool_names
+        ]
+
+    def _execute_new_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
+        """Run added tools through FastMCP validation and dispatch."""
+        try:
+            result = asyncio.run(fastmcp_server.call_tool(tool_name, arguments))
+            if isinstance(result, tuple) and len(result) == 2:
+                content, structured = result
+                if isinstance(structured, dict):
+                    return structured["result"] if set(structured) == {"result"} else structured
+                return content
+            return result
+        except Exception as exc:
+            logger.error("Error executing FastMCP tool %s: %s", tool_name, exc)
+            return {"error": "Execution error", "message": str(exc)}
 
     def _get_basecamp_client(self) -> Optional[BasecampClient]:
         """Get authenticated Basecamp client."""
@@ -860,6 +909,13 @@ class MCPServer:
 
     def handle_request(self, request: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Handle an MCP request."""
+        if not isinstance(request, dict):
+            return {"jsonrpc": "2.0", "id": None, "error": {
+                "code": -32600, "message": "Invalid Request"}}
+        if "id" not in request:
+            # Notifications still run, but JSON-RPC does not answer them.
+            self.handle_request({**request, "id": None})
+            return None
         method = request.get("method")
         # Normalize method name for cursor compatibility
         method_lower = method.lower() if isinstance(method, str) else ''
@@ -867,6 +923,10 @@ class MCPServer:
         request_id = request.get("id")
 
         logger.info(f"Handling request: {method}")
+
+        if method_lower in ("initialize", "tools/list", "listtools", "tools/call", "toolscall", "listofferings", "list_offerings", "loffering", "ping") and not isinstance(params, dict):
+            return {"jsonrpc": "2.0", "id": request_id, "error": {
+                "code": -32602, "message": "Invalid params"}}
 
         try:
             if method_lower == "initialize":
@@ -903,18 +963,29 @@ class MCPServer:
                 tool_name = params.get("name")
                 arguments = params.get("arguments", {})
 
-                result = self._execute_tool(tool_name, arguments)
+                if not isinstance(tool_name, str) or not tool_name:
+                    return {"jsonrpc": "2.0", "id": request_id, "error": {
+                        "code": -32602, "message": "Invalid params: tool name is required"}}
+                if not isinstance(arguments, dict):
+                    return {"jsonrpc": "2.0", "id": request_id, "error": {
+                        "code": -32602, "message": "Invalid params: arguments must be an object"}}
 
+                result = self._execute_tool(tool_name, arguments)
+                if isinstance(result, dict) and "error" in result:
+                    result = dict(result)
+                    result.setdefault("status", "error")
+
+                content = (
+                    _new_tool_content(result)
+                    if tool_name not in self._legacy_tool_names
+                    else [{"type": "text", "text": json.dumps(result, indent=2)}]
+                )
                 return {
                     "jsonrpc": "2.0",
                     "id": request_id,
                     "result": {
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": json.dumps(result, indent=2)
-                            }
-                        ]
+                        "content": content,
+                        "isError": isinstance(result, dict) and result.get("status") == "error",
                     }
                 }
 
@@ -966,6 +1037,11 @@ class MCPServer:
 
     def _execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a tool and return the result."""
+        if tool_name not in self._legacy_tool_names:
+            if tool_name in self._fastmcp_tool_names:
+                return self._execute_new_tool(tool_name, arguments)
+            return {"error": "Unknown tool", "message": f"Tool '{tool_name}' is not supported"}
+
         client = self._get_basecamp_client()
         if not client:
             # Check if it's specifically a token expiration issue
@@ -1034,7 +1110,7 @@ class MCPServer:
                 notify = _coerce_bool(arguments.get("notify", False))
                 due_on = arguments.get("due_on")
                 starts_on = arguments.get("starts_on")
-                
+
                 todo = client.create_todo(
                     project_id, todolist_id, content,
                     description=description,
@@ -1060,7 +1136,7 @@ class MCPServer:
                 due_on = arguments.get("due_on")
                 starts_on = arguments.get("starts_on")
                 notify = arguments.get("notify")
-                
+
                 todo = client.update_todo(
                     project_id, todo_id,
                     content=content,
@@ -1238,7 +1314,7 @@ class MCPServer:
                     "campfire_lines": answers,
                     "count": len(answers)
                 }
-            
+
             # Card Table tools implementation
             elif tool_name == "get_card_tables":
                 project_id = arguments.get("project_id")
@@ -1435,7 +1511,7 @@ class MCPServer:
                     "status": "success",
                     "message": message
                 }
-            
+
             elif tool_name == "complete_card":
                 project_id = arguments.get("project_id")
                 card_id = arguments.get("card_id")

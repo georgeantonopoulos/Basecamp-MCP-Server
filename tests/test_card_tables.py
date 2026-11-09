@@ -21,6 +21,9 @@ class TestCardTableTools(unittest.TestCase):
     
     def setUp(self):
         """Set up test fixtures."""
+        user_agent = patch.dict(os.environ, {"USER_AGENT": "test-agent"})
+        user_agent.start()
+        self.addCleanup(user_agent.stop)
         self.server = MCPServer()
         
     def test_card_table_tools_registered(self):
