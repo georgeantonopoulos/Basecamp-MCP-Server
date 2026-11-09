@@ -98,14 +98,26 @@ def save_settings(values: dict) -> None:
 
 # --------------------------------------------------------------------------- login
 
+def _no_terminal_error() -> LoginError:
+    return LoginError(
+        "BASECAMP_CLIENT_ID and BASECAMP_CLIENT_SECRET are not set. "
+        f"Run `{LOGIN_COMMAND}` in a terminal to enter them."
+    )
+
+
+def _ask(prompt: str, secret: bool = False) -> str:
+    """Prompt for a value. Windows reports some empty inputs as terminals, so EOF is handled too."""
+    try:
+        return (getpass.getpass(prompt) if secret else input(prompt)).strip()
+    except EOFError:
+        raise _no_terminal_error() from None
+
+
 def _ensure_credentials(interactive: bool) -> None:
     if os.environ.get("BASECAMP_CLIENT_ID") and os.environ.get("BASECAMP_CLIENT_SECRET"):
         return
     if not interactive:
-        raise LoginError(
-            "BASECAMP_CLIENT_ID and BASECAMP_CLIENT_SECRET are not set. "
-            f"Run `{LOGIN_COMMAND}` in a terminal to enter them."
-        )
+        raise _no_terminal_error()
     redirect = os.environ["BASECAMP_REDIRECT_URI"]
     print(
         "First, register this server as a Basecamp app (one time, free):\n"
@@ -114,8 +126,8 @@ def _ensure_credentials(interactive: bool) -> None:
         f"  3. Set the Redirect URI to exactly: {redirect}\n"
         "  4. Copy the Client ID and Client Secret it shows you.\n"
     )
-    client_id = input("Client ID: ").strip()
-    client_secret = getpass.getpass("Client Secret (hidden): ").strip()
+    client_id = _ask("Client ID: ")
+    client_secret = _ask("Client Secret (hidden): ", secret=True)
     if not client_id or not client_secret:
         raise LoginError("Both the Client ID and the Client Secret are needed.")
     save_settings({"BASECAMP_CLIENT_ID": client_id, "BASECAMP_CLIENT_SECRET": client_secret})
@@ -221,7 +233,10 @@ def choose_account(identity: dict, wanted: str | None, interactive: bool) -> dic
         raise LoginError(f"Several Basecamp accounts found; rerun with --account-id:\n{listing}")
     print(f"This login can use several Basecamp accounts:\n{listing}")
     while True:
-        choice = input(f"Which one? [1-{len(accounts)}]: ").strip()
+        try:
+            choice = input(f"Which one? [1-{len(accounts)}]: ").strip()
+        except EOFError:
+            raise LoginError(f"Several Basecamp accounts found; rerun with --account-id:\n{listing}") from None
         if choice.isdigit() and 1 <= int(choice) <= len(accounts):
             return accounts[int(choice) - 1]
 

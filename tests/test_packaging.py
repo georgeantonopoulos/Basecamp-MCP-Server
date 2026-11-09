@@ -174,6 +174,24 @@ def test_callback_times_out_when_only_stray_requests_arrive():
         )
 
 
+def test_login_prompts_fail_clearly_when_input_is_empty(monkeypatch):
+    """Windows treats an empty input as a terminal; login must not crash with EOFError."""
+    for key in ("BASECAMP_CLIENT_ID", "BASECAMP_CLIENT_SECRET"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("BASECAMP_REDIRECT_URI", cli.DEFAULT_REDIRECT_URI)
+
+    def eof(*_):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", eof)
+    with pytest.raises(cli.LoginError, match="BASECAMP_CLIENT_ID"):
+        cli._ensure_credentials(interactive=True)
+
+    two = {"accounts": [{"id": 7, "product": "bc3"}, {"id": 8, "product": "bc3"}]}
+    with pytest.raises(cli.LoginError, match="--account-id"):
+        cli.choose_account(two, None, interactive=True)
+
+
 def test_full_flag_works_before_or_after_the_subcommand():
     parser = cli.build_parser()
     assert parser.parse_args(["--full", "config", "cursor"]).full is True
