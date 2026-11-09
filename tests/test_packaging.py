@@ -18,6 +18,15 @@ ROOT = Path(__file__).resolve().parent.parent
 ENTRY_MODULES = {"basecamp_retrieval_mcp", "basecamp_fastmcp"}
 
 
+@pytest.fixture(autouse=True)
+def _restore_environment():
+    """prepare_environment() and save_settings() write os.environ directly."""
+    saved = dict(os.environ)
+    yield
+    os.environ.clear()
+    os.environ.update(saved)
+
+
 def _listed_modules(section):
     """Root-level .py files named in one [tool.hatch...] table of pyproject.toml."""
     text = (ROOT / "pyproject.toml").read_text()
@@ -206,7 +215,56 @@ def test_callback_requires_local_http_redirect():
         cli.wait_for_callback("https://example.com/cb", "s", timeout=1)
 
 
+def test_client_config_carries_a_custom_settings_folder(monkeypatch, tmp_path):
+    monkeypatch.setattr(cli, "uvx_command", lambda: "uvx")
+    monkeypatch.setenv("BASECAMP_MCP_HOME", str(tmp_path))
+    monkeypatch.delenv("BASECAMP_MCP_TOKEN_FILE", raising=False)
+    desktop = json.loads(cli.client_config("claude-desktop", full=False))
+    assert desktop["mcpServers"]["basecamp"]["env"] == {"BASECAMP_MCP_HOME": str(tmp_path)}
+    assert f"-e BASECAMP_MCP_HOME={tmp_path}" in cli.client_config("claude-code", full=False)
+    assert "env = { BASECAMP_MCP_HOME" in cli.client_config("codex", full=False)
+
+
+def test_prepare_environment_expands_tilde_in_home(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.setenv("BASECAMP_MCP_HOME", "~/bc-settings")
+    cli.prepare_environment()
+    assert os.environ["BASECAMP_MCP_HOME"] == str(tmp_path / "bc-settings")
+    assert (tmp_path / "bc-settings").is_dir()
+
+
+def test_save_settings_replaces_duplicate_keys(tmp_path, monkeypatch):
+    monkeypatch.setenv("BASECAMP_MCP_HOME", str(tmp_path))
+    (tmp_path / ".env").write_text('BASECAMP_CLIENT_ID="a"\nX="1"\nBASECAMP_CLIENT_ID="b"\n')
+    monkeypatch.delenv("BASECAMP_CLIENT_ID", raising=False)
+    cli.save_settings({"BASECAMP_CLIENT_ID": "new"})
+    text = (tmp_path / ".env").read_text()
+    assert text.count("BASECAMP_CLIENT_ID") == 1 and 'BASECAMP_CLIENT_ID="new"' in text and 'X="1"' in text
+
+
+def test_idle_connection_does_not_block_the_real_callback():
+    import socket
+
+    port = _free_port()
+    redirect = f"http://127.0.0.1:{port}/auth/callback"
+    idle = []
+
+    def preconnect_then_real():
+        sock = socket.create_connection(("127.0.0.1", port))  # like a browser preconnect
+        idle.append(sock)
+        _hit_later(redirect + "?code=abc&state=s1")
+
+    try:
+        assert cli.wait_for_callback(redirect, "s1", timeout=5, on_ready=preconnect_then_real) == "abc"
+    finally:
+        for sock in idle:
+            sock.close()
+
+
 def test_client_config_snippets(monkeypatch):
+    for key in ("BASECAMP_MCP_HOME", "BASECAMP_MCP_TOKEN_FILE"):
+        monkeypatch.delenv(key, raising=False)
     monkeypatch.setattr(cli, "uvx_command", lambda: "/opt/bin/uvx")
     desktop = json.loads(cli.client_config("claude-desktop", full=False))
     assert desktop == {"mcpServers": {"basecamp": {"command": "/opt/bin/uvx", "args": ["basecamp-mcp-server"]}}}

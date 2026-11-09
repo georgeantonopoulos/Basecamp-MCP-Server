@@ -431,11 +431,11 @@ It holds `.env` (your Basecamp app's Client ID and Secret), `oauth_tokens.json` 
 
 **Signing in on a machine without a browser?** Run `uvx basecamp-mcp-server login --no-browser`, open the printed link on any browser that can reach `localhost` on that machine, and approve.
 
-**Other settings** (environment variables or lines in the `.env` file):
+**Other settings** go in the environment or as lines in the settings `.env` file. `BASECAMP_MCP_HOME` is the exception: it says where that file is, so set it in the environment, or in your AI app's `env` block (`config` adds it for you).
 
 | Variable | What it does |
 | --- | --- |
-| `BASECAMP_MCP_HOME` | Settings folder (see above). |
+| `BASECAMP_MCP_HOME` | Settings folder (see above). Environment only. |
 | `BASECAMP_MCP_TOKEN_FILE` | Token file location, for example on a mounted volume. |
 | `BASECAMP_REDIRECT_URI` | Must match your Basecamp app. Default `http://localhost:8000/auth/callback`. |
 | `BASECAMP_ACCOUNT_ID` | Fallback account if the token doesn't record one. |
@@ -463,7 +463,8 @@ Use this for development, or if you'd rather not install from PyPI. A checkout k
 ```bash
 git clone https://github.com/georgeantonopoulos/Basecamp-MCP-Server.git
 cd Basecamp-MCP-Server
-uv venv --python 3.12 venv && source venv/bin/activate
+uv venv --python 3.12 venv
+source venv/bin/activate     # Windows: venv\Scripts\activate
 uv pip install -r requirements.txt
 cp .env.example .env        # then fill in your Basecamp app details
 python oauth_app.py         # sign in at http://localhost:8000

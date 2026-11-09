@@ -20,7 +20,7 @@ import secrets
 import sys
 import threading
 import webbrowser
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -67,7 +67,8 @@ def prepare_environment() -> Path:
     from dotenv import load_dotenv
 
     load_dotenv(env_file())  # real environment variables still win
-    os.environ.setdefault("BASECAMP_MCP_HOME", str(home))
+    # Always the expanded path: a literal "~" from a client config would break logging.
+    os.environ["BASECAMP_MCP_HOME"] = str(home)
     os.environ.setdefault("BASECAMP_MCP_TOKEN_FILE", str(home / "oauth_tokens.json"))
     os.environ.setdefault("BASECAMP_REDIRECT_URI", DEFAULT_REDIRECT_URI)
     os.environ.setdefault("USER_AGENT", DEFAULT_USER_AGENT)
@@ -79,15 +80,9 @@ def save_settings(values: dict) -> None:
     """Merge KEY=value pairs into the per-user .env, readable only by this user."""
     path = env_file()
     lines = path.read_text().splitlines() if path.exists() else []
-    remaining = dict(values)
-    out = []
-    for line in lines:
-        key = line.split("=", 1)[0].strip()
-        if key in remaining:
-            out.append(f"{key}={json.dumps(remaining.pop(key))}")
-        else:
-            out.append(line)
-    out.extend(f"{key}={json.dumps(value)}" for key, value in remaining.items())
+    # Drop every existing line for these keys (duplicates included), then append the new values.
+    out = [line for line in lines if line.split("=", 1)[0].strip() not in values]
+    out.extend(f"{key}={json.dumps(value)}" for key, value in values.items())
     path.write_text("\n".join(out) + "\n")
     try:
         path.chmod(0o600)
@@ -151,8 +146,11 @@ def wait_for_callback(redirect_uri: str, state: str, timeout: float, on_ready=No
         )
     result: dict = {}
     done = threading.Event()
+    claim = threading.Lock()  # requests are served on separate threads
 
     class Handler(BaseHTTPRequestHandler):
+        timeout = 30  # a browser's idle preconnect can't hold the server
+
         def do_GET(self):  # noqa: N802 (http.server API)
             url = urlsplit(self.path)
             if url.path != (parts.path or "/"):
@@ -160,25 +158,25 @@ def wait_for_callback(redirect_uri: str, state: str, timeout: float, on_ready=No
                 self.end_headers()
                 return
             query = parse_qs(url.query)
-            if done.is_set() or query.get("state", [None])[0] != state:
-                # Not the response we're waiting for (a stray or repeated request):
-                # answer it, but keep waiting for the real one.
-                self._reply(400, _page("Sign-in link expired", "Run the login command again."))
-                return
             if "error" in query:
-                result["error"] = f"Basecamp refused the sign-in: {query['error'][0]}"
+                outcome = {"error": f"Basecamp refused the sign-in: {query['error'][0]}"}
             elif not query.get("code"):
-                result["error"] = "Basecamp didn't return an authorization code."
+                outcome = {"error": "Basecamp didn't return an authorization code."}
             else:
-                result["code"] = query["code"][0]
-            ok = "code" in result
-            self._reply(
-                200 if ok else 400,
-                _page("Signed in to Basecamp", "You can close this tab and go back to the terminal.")
-                if ok
-                else _page("Sign-in failed", result["error"]),
-            )
-            done.set()
+                outcome = {"code": query["code"][0]}
+            with claim:
+                # Only the first response carrying our check value counts. Stray or
+                # repeated requests are answered but don't end the wait.
+                accepted = not done.is_set() and query.get("state", [None])[0] == state
+                if accepted:
+                    result.update(outcome)
+                    done.set()
+            if not accepted:
+                self._reply(400, _page("Sign-in link expired", "Run the login command again."))
+            elif "code" in outcome:
+                self._reply(200, _page("Signed in to Basecamp", "You can close this tab and go back to the terminal."))
+            else:
+                self._reply(400, _page("Sign-in failed", outcome["error"]))
 
         def _reply(self, status_code, body):
             self.send_response(status_code)
@@ -190,7 +188,8 @@ def wait_for_callback(redirect_uri: str, state: str, timeout: float, on_ready=No
             pass
 
     try:
-        server = HTTPServer((parts.hostname, parts.port or 80), Handler)
+        server = ThreadingHTTPServer((parts.hostname, parts.port or 80), Handler)
+        server.daemon_threads = True
     except OSError as exc:
         raise LoginError(
             f"Couldn't listen on {parts.hostname}:{parts.port}: {exc}. "
@@ -327,15 +326,29 @@ def uvx_command() -> str:
     return shutil.which("uvx") or "uvx"
 
 
+def _custom_env() -> dict:
+    """Settings-location variables the user set, so the AI app finds the same sign-in."""
+    keys = ("BASECAMP_MCP_HOME", "BASECAMP_MCP_TOKEN_FILE")
+    return {key: str(Path(os.path.expanduser(os.environ[key]))) for key in keys if os.environ.get(key)}
+
+
 def client_config(client: str, full: bool) -> str:
     args = [PACKAGE] + (["--full"] if full else [])
+    env = _custom_env()
     if client == "claude-code":
-        return "claude mcp add basecamp -- uvx " + " ".join(args)
+        flags = "".join(f" -e {key}={value}" for key, value in env.items())
+        return f"claude mcp add basecamp{flags} -- uvx " + " ".join(args)
     command = uvx_command()
     if client == "codex":
         quoted = ", ".join(json.dumps(a) for a in args)
-        return f"[mcp_servers.basecamp]\ncommand = {json.dumps(command)}\nargs = [{quoted}]"
+        text = f"[mcp_servers.basecamp]\ncommand = {json.dumps(command)}\nargs = [{quoted}]"
+        if env:
+            pairs = ", ".join(f"{key} = {json.dumps(value)}" for key, value in env.items())
+            text += f"\nenv = {{ {pairs} }}"
+        return text
     entry = {"command": command, "args": args}
+    if env:
+        entry["env"] = env
     return json.dumps({"mcpServers": {"basecamp": entry}}, indent=2)
 
 

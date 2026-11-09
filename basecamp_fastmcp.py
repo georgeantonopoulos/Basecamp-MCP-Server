@@ -39,7 +39,9 @@ load_dotenv(DOTENV_PATH)
 
 # Set up logging to file AND stderr (following MCP best practices)
 # The installed package sets BASECAMP_MCP_HOME so logs stay out of site-packages.
-LOG_FILE_PATH = os.path.join(os.environ.get('BASECAMP_MCP_HOME') or PROJECT_ROOT, 'basecamp_fastmcp.log')
+LOG_DIR = os.path.expanduser(os.environ.get('BASECAMP_MCP_HOME') or PROJECT_ROOT)
+os.makedirs(LOG_DIR, exist_ok=True)
+LOG_FILE_PATH = os.path.join(LOG_DIR, 'basecamp_fastmcp.log')
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',

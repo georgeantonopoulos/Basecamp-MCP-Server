@@ -30,7 +30,9 @@ load_dotenv(DOTENV_PATH)
 
 # Log file in the project directory
 # The installed package sets BASECAMP_MCP_HOME so logs stay out of site-packages.
-LOG_FILE_PATH = os.path.join(os.environ.get('BASECAMP_MCP_HOME') or PROJECT_ROOT, 'mcp_cli_server.log')
+LOG_DIR = os.path.expanduser(os.environ.get('BASECAMP_MCP_HOME') or PROJECT_ROOT)
+os.makedirs(LOG_DIR, exist_ok=True)
+LOG_FILE_PATH = os.path.join(LOG_DIR, 'mcp_cli_server.log')
 # Set up logging to file AND stderr
 logging.basicConfig(
     level=logging.DEBUG,

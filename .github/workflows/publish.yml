@@ -8,6 +8,9 @@ on:
   release:
     types: [published]
 
+permissions:
+  contents: read
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -17,14 +20,20 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - uses: astral-sh/setup-uv@v6
 
       - name: Check the release tag matches the package version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           VERSION=$(python -c "import re;print(re.search(r'__version__ = \"(.+)\"', open('basecamp_mcp_server/__init__.py').read()).group(1))")
-          test "v$VERSION" = "${{ github.event.release.tag_name }}" || {
-            echo "Release tag ${{ github.event.release.tag_name }} doesn't match package version $VERSION"; exit 1; }
+          if [ "v$VERSION" != "$RELEASE_TAG" ]; then
+            echo "Release tag $RELEASE_TAG doesn't match package version $VERSION"
+            exit 1
+          fi
 
       - name: Build
         run: uv build

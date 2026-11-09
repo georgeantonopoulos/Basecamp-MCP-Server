@@ -9,10 +9,13 @@ nothing but JSON-RPC is written to stdout.
 """
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
-import os
+import threading
+
+DEADLINE_SECONDS = 180  # includes uvx's first download of dependencies
 
 
 def main(command):
@@ -54,8 +57,10 @@ def main(command):
     send({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {
         "name": "call_basecamp_read_tool",
         "arguments": {"name": "get_projects", "arguments": {}}}})
-    text = json.dumps(receive(3))
+    reply = receive(3)
+    text = json.dumps(reply)
     print("unsigned call:", text[:200])
+    assert reply.get("result", {}).get("isError") is True, "an unsigned call must be reported as an error"
     assert "basecamp-mcp-server login" in text, "expected a pointer to the login command"
 
     proc.stdin.close()
@@ -64,4 +69,12 @@ def main(command):
 
 
 if __name__ == "__main__":
+    # A server that stays up without answering must fail, not hang the job.
+    def give_up():
+        print("FAILED: timed out waiting for the server", flush=True)
+        os._exit(1)
+
+    watchdog = threading.Timer(DEADLINE_SECONDS, give_up)
+    watchdog.daemon = True
+    watchdog.start()
     main(sys.argv[1:])
