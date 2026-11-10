@@ -19,6 +19,22 @@ AUTH_URL = "https://launchpad.37signals.com/authorization/new"
 TOKEN_URL = "https://launchpad.37signals.com/authorization/token"
 IDENTITY_URL = "https://launchpad.37signals.com/authorization.json"
 
+
+def fetch_identity(access_token, user_agent=None, timeout=DEFAULT_REQUEST_TIMEOUT):
+    """Return the Launchpad identity and account list for an access token.
+
+    Needs only the token, not the app's client ID and secret.
+    """
+    headers = {
+        'User-Agent': user_agent or os.getenv('USER_AGENT') or 'Basecamp MCP Server',
+        'Authorization': f"Bearer {access_token}"
+    }
+    response = requests.get(IDENTITY_URL, headers=headers, timeout=timeout)
+    if response.status_code == 200:
+        return response.json()
+    raise Exception(f"Failed to get identity: HTTP {response.status_code}")
+
+
 class BasecampOAuth:
     """
     OAuth 2.0 client for Basecamp 3.
@@ -126,16 +142,4 @@ class BasecampOAuth:
         Returns:
             dict: The identity and account information
         """
-        headers = {
-            'User-Agent': self.user_agent,
-            'Authorization': f"Bearer {access_token}"
-        }
-
-        response = requests.get(
-            IDENTITY_URL, headers=headers, timeout=DEFAULT_REQUEST_TIMEOUT
-        )
-
-        if response.status_code == 200:
-            return response.json()
-        else:
-            raise Exception(f"Failed to get identity: HTTP {response.status_code}")
+        return fetch_identity(access_token, self.user_agent)

@@ -1048,18 +1048,10 @@ class MCPServer:
 
         client = self._get_basecamp_client()
         if not client:
-            # Check if it's specifically a token expiration issue
             token = token_storage.get_token()
-            if token and token.get("access_token") and token_storage.is_token_expired():
-                return {
-                    "error": "OAuth token expired",
-                    "message": sign_in_messages.expired()
-                }
-            else:
-                return {
-                    "error": "Authentication required",
-                    "message": sign_in_messages.sign_in_required()
-                }
+            expired = bool(token and token.get("access_token")) and token_storage.is_token_expired()
+            error, message = sign_in_messages.auth_problem(token, expired)
+            return {"error": error, "message": message}
 
         try:
             if tool_name == "get_projects":

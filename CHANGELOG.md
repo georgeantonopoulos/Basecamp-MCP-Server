@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+
+- **Clearer message when your login has no Basecamp account.** Signing in with a 37signals or Google login that isn't a member of any Basecamp 3 or 4 account now names the login, lists any older products it does have (Basecamp 2, Campfire and so on, in plain words), and says what to do: sign out at launchpad.37signals.com and sign in with the email you use for Basecamp, or get invited. The same message appears in `login`, on the local sign-in page (which no longer saves a token with no account behind it), in `status`, and in tool errors seen by the AI app. `status` also notices when you've lost access to the saved account and lists the accounts you can still use.
+
 ## [1.0.0] - 2026-11-09
 
 First release on PyPI.

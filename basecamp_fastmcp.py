@@ -124,15 +124,8 @@ def _get_auth_error_response() -> Dict[str, Any]:
             "Set USER_AGENT in .env to a descriptive app name with a contact email before using Basecamp.",
         )
     token = token_storage.get_token()
-    if token and token.get("access_token") and token_storage.is_token_expired():
-        return _error_response(
-            "OAuth token expired",
-            sign_in_messages.expired(),
-        )
-    return _error_response(
-        "Authentication required",
-        sign_in_messages.sign_in_required(),
-    )
+    expired = bool(token and token.get("access_token")) and token_storage.is_token_expired()
+    return _error_response(*sign_in_messages.auth_problem(token, expired))
 
 async def _run_sync(func, *args, **kwargs):
     """Wrapper to run synchronous functions in thread pool."""
