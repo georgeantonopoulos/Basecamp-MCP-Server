@@ -304,14 +304,14 @@ def status(args) -> int:
         return 0
     import auth_manager
     from basecamp_client import BasecampClient
-    from basecamp_oauth import BasecampOAuth
+    from basecamp_oauth import fetch_identity
 
     if not auth_manager.ensure_authenticated():
         print(f"The saved token no longer works and couldn't be refreshed. Run `{LOGIN_COMMAND}`.")
         return 1
     token = token_storage.get_token()
     try:
-        identity = BasecampOAuth().get_identity(token["access_token"])
+        identity = fetch_identity(token["access_token"], os.environ["USER_AGENT"])
     except Exception as exc:
         # Only a hint; the profile request below is the real connection check.
         print(f"Warning: couldn't check which Basecamp accounts this login can use ({exc}).")

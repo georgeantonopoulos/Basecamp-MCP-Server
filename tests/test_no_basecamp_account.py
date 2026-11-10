@@ -68,15 +68,16 @@ def test_requested_account_id_does_not_hide_the_real_problem():
 
 def _status(monkeypatch, tmp_path, token, identity=None, offline=False):
     monkeypatch.setenv("BASECAMP_MCP_HOME", str(tmp_path))
-    monkeypatch.setenv("BASECAMP_CLIENT_ID", "id")
-    monkeypatch.setenv("BASECAMP_CLIENT_SECRET", "secret")
+    # The account check uses only the token: no app client ID/secret needed.
+    monkeypatch.delenv("BASECAMP_CLIENT_ID", raising=False)
+    monkeypatch.delenv("BASECAMP_CLIENT_SECRET", raising=False)
     import auth_manager
     import basecamp_oauth
     import token_storage
 
     monkeypatch.setattr(token_storage, "get_token", lambda: token)
     monkeypatch.setattr(auth_manager, "ensure_authenticated", lambda: True)
-    monkeypatch.setattr(basecamp_oauth.BasecampOAuth, "get_identity", lambda self, _t: identity)
+    monkeypatch.setattr(basecamp_oauth, "fetch_identity", lambda _t, _ua=None: identity)
     return cli.status(SimpleNamespace(offline=offline))
 
 
@@ -110,13 +111,13 @@ def test_status_still_checks_the_connection_when_the_account_list_is_unreachable
     import basecamp_client
     import basecamp_oauth
 
-    def unreachable(self, _token):
+    def unreachable(_token, _user_agent=None):
         raise Exception("Failed to get identity: HTTP 503")
 
     profile = Mock(status_code=200, json=Mock(return_value={"name": "Pat"}))
     monkeypatch.setattr(basecamp_client.BasecampClient, "get", lambda self, _path: profile)
     token = {"access_token": "t", "account_id": "7", "expires_at": "later"}
-    monkeypatch.setattr(basecamp_oauth.BasecampOAuth, "get_identity", unreachable, raising=False)
+    monkeypatch.setattr(basecamp_oauth, "fetch_identity", unreachable)
     monkeypatch.setenv("BASECAMP_MCP_HOME", str(tmp_path))
     monkeypatch.setenv("BASECAMP_CLIENT_ID", "id")
     monkeypatch.setenv("BASECAMP_CLIENT_SECRET", "secret")
