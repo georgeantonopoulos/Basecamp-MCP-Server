@@ -21,6 +21,7 @@ from basecamp_oauth import BasecampOAuth
 from basecamp_client import BasecampClient
 from search_utils import BasecampSearch
 import token_storage
+import sign_in_messages
 
 # Configure logging
 logging.basicConfig(
@@ -310,13 +311,17 @@ def auth_callback():
                 identity = oauth_client.get_identity(access_token)
                 logger.info("Identity response: %s", identity)
 
-                # Find Basecamp 3 account
-                if identity.get('accounts'):
-                    for account in identity['accounts']:
-                        if account.get('product') == 'bc3':  # Basecamp 3
-                            account_id = account['id']
-                            logger.info("Found account_id: %s", account_id)
-                            break
+                accounts = sign_in_messages.basecamp_accounts(identity)
+                if not accounts:
+                    logger.warning("Login has no Basecamp 3/4 account; token not stored")
+                    return render_template_string(
+                        RESULTS_TEMPLATE,
+                        title="No Basecamp account",
+                        message=sign_in_messages.no_basecamp_account(identity),
+                        show_home=True
+                    )
+                account_id = accounts[0]['id']
+                logger.info("Found account_id: %s", account_id)
             except Exception as identity_error:
                 logger.error("Error getting identity: %s", str(identity_error))
                 # Continue with the flow, but log the error

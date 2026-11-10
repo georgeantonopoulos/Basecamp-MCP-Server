@@ -119,7 +119,7 @@ def test_save_settings_merges_and_is_private(tmp_path, monkeypatch):
 
 def test_choose_account_fails_clearly_without_a_basecamp_account():
     identity = {"accounts": [{"id": 1, "product": "campfire", "name": "Chat"}]}
-    with pytest.raises(cli.LoginError, match="no Basecamp 3 or 4 account.*campfire"):
+    with pytest.raises(cli.LoginError, match="isn't a member of any Basecamp 3 or 4 account.*Campfire"):
         cli.choose_account(identity, None, interactive=False)
 
 

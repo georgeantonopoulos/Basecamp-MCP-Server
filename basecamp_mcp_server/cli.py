@@ -212,19 +212,16 @@ def wait_for_callback(redirect_uri: str, state: str, timeout: float, on_ready=No
 
 def choose_account(identity: dict, wanted: str | None, interactive: bool) -> dict:
     """Pick the Basecamp (3 or 4) account to use; fail clearly when there isn't one."""
-    accounts = [a for a in identity.get("accounts", []) if a.get("product") == "bc3"]
+    import sign_in_messages
+
+    accounts = sign_in_messages.basecamp_accounts(identity)
+    if not accounts:
+        raise LoginError(sign_in_messages.no_basecamp_account(identity))
     if wanted:
         for account in accounts:
             if str(account.get("id")) == str(wanted):
                 return account
         raise LoginError(f"Account {wanted} isn't among this login's Basecamp accounts.")
-    if not accounts:
-        products = sorted({a.get("product", "?") for a in identity.get("accounts", [])})
-        found = f" (found only: {', '.join(products)})" if products else ""
-        raise LoginError(
-            "This Basecamp login has no Basecamp 3 or 4 account" + found + ". "
-            "Sign in with a user who belongs to one."
-        )
     if len(accounts) == 1:
         return accounts[0]
     listing = "\n".join(f"  {i}. {a.get('name')} (id {a.get('id')})" for i, a in enumerate(accounts, 1))
@@ -295,19 +292,35 @@ def status(args) -> int:
     if not token or not token.get("access_token"):
         print(f"Signed in: no. Run `{LOGIN_COMMAND}`.")
         return 1
-    print(f"Signed in: yes (account {token.get('account_id')}, token expires {token.get('expires_at')})")
+    import sign_in_messages
+
+    account_id = token.get("account_id") or os.environ.get("BASECAMP_ACCOUNT_ID")
+    if not account_id:
+        print("Signed in: yes, but no Basecamp account is selected.")
+        print(sign_in_messages.no_account_selected())
+        return 1
+    print(f"Signed in: yes (account {account_id}, token expires {token.get('expires_at')})")
     if args.offline:
         return 0
     import auth_manager
     from basecamp_client import BasecampClient
+    from basecamp_oauth import BasecampOAuth
 
     if not auth_manager.ensure_authenticated():
         print(f"The saved token no longer works and couldn't be refreshed. Run `{LOGIN_COMMAND}`.")
         return 1
     token = token_storage.get_token()
+    try:
+        identity = BasecampOAuth().get_identity(token["access_token"])
+    except Exception as exc:
+        print(f"Couldn't check which Basecamp accounts this login can use: {exc}")
+        return 1
+    if str(account_id) not in {str(a.get("id")) for a in sign_in_messages.basecamp_accounts(identity)}:
+        print(sign_in_messages.account_not_available(account_id, identity))
+        return 1
     client = BasecampClient(
         access_token=token["access_token"],
-        account_id=token.get("account_id") or os.environ.get("BASECAMP_ACCOUNT_ID"),
+        account_id=account_id,
         user_agent=os.environ["USER_AGENT"],
         auth_mode="oauth",
     )
