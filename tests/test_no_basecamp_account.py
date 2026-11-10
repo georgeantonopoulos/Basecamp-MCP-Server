@@ -77,7 +77,7 @@ def _status(monkeypatch, tmp_path, token, identity=None, offline=False):
 
     monkeypatch.setattr(token_storage, "get_token", lambda: token)
     monkeypatch.setattr(auth_manager, "ensure_authenticated", lambda: True)
-    monkeypatch.setattr(basecamp_oauth, "fetch_identity", lambda _t, _ua=None: identity)
+    monkeypatch.setattr(basecamp_oauth, "fetch_identity", lambda _t, _ua=None, timeout=None: identity)
     return cli.status(SimpleNamespace(offline=offline))
 
 
@@ -111,7 +111,7 @@ def test_status_still_checks_the_connection_when_the_account_list_is_unreachable
     import basecamp_client
     import basecamp_oauth
 
-    def unreachable(_token, _user_agent=None):
+    def unreachable(_token, _user_agent=None, timeout=None):
         raise Exception("Failed to get identity: HTTP 503")
 
     profile = Mock(status_code=200, json=Mock(return_value={"name": "Pat"}))

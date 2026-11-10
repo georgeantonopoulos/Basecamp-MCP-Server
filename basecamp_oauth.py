@@ -20,7 +20,7 @@ TOKEN_URL = "https://launchpad.37signals.com/authorization/token"
 IDENTITY_URL = "https://launchpad.37signals.com/authorization.json"
 
 
-def fetch_identity(access_token, user_agent=None):
+def fetch_identity(access_token, user_agent=None, timeout=DEFAULT_REQUEST_TIMEOUT):
     """Return the Launchpad identity and account list for an access token.
 
     Needs only the token, not the app's client ID and secret.
@@ -29,7 +29,7 @@ def fetch_identity(access_token, user_agent=None):
         'User-Agent': user_agent or os.getenv('USER_AGENT') or 'Basecamp MCP Server',
         'Authorization': f"Bearer {access_token}"
     }
-    response = requests.get(IDENTITY_URL, headers=headers, timeout=DEFAULT_REQUEST_TIMEOUT)
+    response = requests.get(IDENTITY_URL, headers=headers, timeout=timeout)
     if response.status_code == 200:
         return response.json()
     raise Exception(f"Failed to get identity: HTTP {response.status_code}")

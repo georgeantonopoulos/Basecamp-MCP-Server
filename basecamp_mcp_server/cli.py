@@ -311,7 +311,8 @@ def status(args) -> int:
         return 1
     token = token_storage.get_token()
     try:
-        identity = fetch_identity(token["access_token"], os.environ["USER_AGENT"])
+        # Optional check, so a short timeout: don't hold up the real connection check below.
+        identity = fetch_identity(token["access_token"], os.environ["USER_AGENT"], timeout=(5, 15))
     except Exception as exc:
         # Only a hint; the profile request below is the real connection check.
         print(f"Warning: couldn't check which Basecamp accounts this login can use ({exc}).")
