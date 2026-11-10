@@ -104,6 +104,33 @@ def test_status_lists_remaining_accounts_when_saved_one_is_gone(monkeypatch, tmp
     assert "Team (id 7)" in out and LOGIN in out
 
 
+def test_status_still_checks_the_connection_when_the_account_list_is_unreachable(
+    monkeypatch, tmp_path, capsys
+):
+    import basecamp_client
+    import basecamp_oauth
+
+    def unreachable(self, _token):
+        raise Exception("Failed to get identity: HTTP 503")
+
+    profile = Mock(status_code=200, json=Mock(return_value={"name": "Pat"}))
+    monkeypatch.setattr(basecamp_client.BasecampClient, "get", lambda self, _path: profile)
+    token = {"access_token": "t", "account_id": "7", "expires_at": "later"}
+    monkeypatch.setattr(basecamp_oauth.BasecampOAuth, "get_identity", unreachable, raising=False)
+    monkeypatch.setenv("BASECAMP_MCP_HOME", str(tmp_path))
+    monkeypatch.setenv("BASECAMP_CLIENT_ID", "id")
+    monkeypatch.setenv("BASECAMP_CLIENT_SECRET", "secret")
+    import auth_manager
+    import token_storage
+
+    monkeypatch.setattr(token_storage, "get_token", lambda: token)
+    monkeypatch.setattr(auth_manager, "ensure_authenticated", lambda: True)
+
+    assert cli.status(SimpleNamespace(offline=False)) == 0
+    out = capsys.readouterr().out
+    assert "Warning" in out and "Connection check: OK" in out
+
+
 def test_mcp_tools_explain_a_token_with_no_account(monkeypatch):
     import basecamp_fastmcp
     import token_storage

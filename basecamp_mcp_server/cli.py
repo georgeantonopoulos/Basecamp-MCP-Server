@@ -313,9 +313,11 @@ def status(args) -> int:
     try:
         identity = BasecampOAuth().get_identity(token["access_token"])
     except Exception as exc:
-        print(f"Couldn't check which Basecamp accounts this login can use: {exc}")
-        return 1
-    if str(account_id) not in {str(a.get("id")) for a in sign_in_messages.basecamp_accounts(identity)}:
+        # Only a hint; the profile request below is the real connection check.
+        print(f"Warning: couldn't check which Basecamp accounts this login can use ({exc}).")
+        identity = None
+    reachable = {str(a.get("id")) for a in sign_in_messages.basecamp_accounts(identity)}
+    if identity is not None and str(account_id) not in reachable:
         print(sign_in_messages.account_not_available(account_id, identity))
         return 1
     client = BasecampClient(
