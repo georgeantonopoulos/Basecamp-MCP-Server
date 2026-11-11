@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format is based on 
 
 ### Added
 
-- **Run it as a web address.** `basecamp-mcp-server serve` runs the server over HTTP (MCP streamable HTTP at `/mcp`) for apps that connect to a URL. Every request needs an access key (`Authorization: Bearer ...`), created and saved on first run. It listens on this machine only unless you pass `--host`, and warns when it doesn't.
+- **Run it as a web address, with each person signed in to their own Basecamp.** `basecamp-mcp-server serve` runs the server over HTTP (MCP streamable HTTP at `/mcp`) for apps that connect to a URL, such as claude.ai custom connectors. Connecting opens Basecamp's sign-in, and every request runs with that person's own Basecamp token; nothing is shared. Basecamp tokens are refreshed automatically, and the server's own tokens are stored only as hashes. `serve --auth key` keeps a simpler single-user mode protected by one access key.
 
 ## [1.0.1] - 2026-11-10
 

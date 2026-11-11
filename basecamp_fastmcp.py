@@ -55,9 +55,43 @@ logger = logging.getLogger('basecamp_fastmcp')
 # Initialize FastMCP server
 mcp = FastMCP("basecamp")
 
+# Per-request sign-in (remote HTTP mode with OAuth). When set, the resolver
+# returns the calling user's own Basecamp credentials ({"access_token",
+# "account_id"}) or None, and the shared token file is never used.
+# See basecamp_mcp_server/oauth_provider.py.
+_credential_resolver = None
+_credential_error = None
+
+
+def set_credential_resolver(resolver, error_response=None) -> None:
+    """Use per-user credentials from ``resolver`` instead of the shared token file."""
+    global _credential_resolver, _credential_error
+    _credential_resolver = resolver
+    _credential_error = error_response
+
+
+def _client_from_resolver() -> Optional[BasecampClient]:
+    credentials = _credential_resolver()
+    user_agent = os.getenv('USER_AGENT')
+    if not credentials or not user_agent:
+        return None
+    return BasecampClient(
+        access_token=credentials['access_token'],
+        account_id=credentials['account_id'],
+        user_agent=user_agent,
+        auth_mode='oauth',
+    )
+
+
 # Auth helper functions (reused from original server)
 def _get_basecamp_client() -> Optional[BasecampClient]:
     """Get authenticated Basecamp client (sync version from original server)."""
+    if _credential_resolver is not None:
+        try:
+            return _client_from_resolver()
+        except Exception as e:
+            logger.error(f"Error creating per-user Basecamp client: {e}")
+            return None
     try:
         token_data = token_storage.get_token()
         logger.debug(
@@ -123,6 +157,8 @@ def _get_auth_error_response() -> Dict[str, Any]:
             "Configuration required",
             "Set USER_AGENT in .env to a descriptive app name with a contact email before using Basecamp.",
         )
+    if _credential_resolver is not None and _credential_error is not None:
+        return _error_response(*_credential_error())
     token = token_storage.get_token()
     expired = bool(token and token.get("access_token")) and token_storage.is_token_expired()
     return _error_response(*sign_in_messages.auth_problem(token, expired))

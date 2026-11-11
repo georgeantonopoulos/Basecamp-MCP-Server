@@ -120,20 +120,26 @@ To list all 210 tools up front instead, add `--full`: `"args": ["basecamp-mcp-se
 
 ### Run it as a web address (HTTP)
 
-Apps that connect to a URL instead of starting a program can use HTTP mode:
+Apps that connect to a URL instead of starting a program, such as claude.ai custom connectors, can use HTTP mode. Each person who connects signs in with their own Basecamp login, and everything they do runs as them. No token is shared.
 
-```bash
-uvx basecamp-mcp-server serve            # http://127.0.0.1:8765/mcp, this machine only
-uvx basecamp-mcp-server serve --host 0.0.0.0 --port 9000   # reachable from other machines
-```
+1. In your Basecamp app at [launchpad.37signals.com/integrations](https://launchpad.37signals.com/integrations), set the Redirect URI to `https://<your address>/auth/callback`.
+2. Put the app's Client ID and Secret in the settings `.env` (or run `login` once), then start the server behind HTTPS:
 
-Anyone who can reach the address acts in Basecamp as you, so every request must carry an access key: `Authorization: Bearer <key>`. The first `serve` creates the key, saves it to the settings `.env` as `BASECAMP_MCP_HTTP_TOKEN` and prints it with a ready-made Claude Code command:
+   ```bash
+   uvx basecamp-mcp-server serve --host 0.0.0.0 --port 8765 --public-url https://basecamp-mcp.example.com
+   ```
+
+3. In claude.ai, add a custom connector with the URL `https://basecamp-mcp.example.com/mcp`. Connecting it opens Basecamp's sign-in; people with several Basecamp accounts pick one.
+
+The server speaks plain HTTP, so put a reverse proxy or tunnel in front for HTTPS. `--public-url` is the address people reach it at. To try it on your own machine, `serve --port 8000` uses `http://localhost:8000` and the default `http://localhost:8000/auth/callback` Redirect URI. Sign-ins are kept in `http_oauth.json` in the settings folder, with this server's own tokens stored only as hashes.
+
+**Just for yourself?** `serve --auth key` skips per-person sign-in and uses the token saved by `login`. Every request must then carry an access key, which the first run creates, saves as `BASECAMP_MCP_HTTP_TOKEN` and prints with a ready-made command:
 
 ```bash
 claude mcp add --transport http basecamp http://127.0.0.1:8765/mcp --header "Authorization: Bearer <key>"
 ```
 
-The server speaks plain HTTP. Before using it across a network you don't control, put it behind HTTPS (a reverse proxy or a tunnel), or the key travels unencrypted. Apps that only offer OAuth sign-in for remote servers (for example claude.ai custom connectors) can't send a fixed key yet. `--full` works here too: `serve --full`.
+`--full` works in both modes: `serve --full`.
 
 ## What it can do
 
@@ -457,7 +463,10 @@ It holds `.env` (your Basecamp app's Client ID and Secret), `oauth_tokens.json` 
 | `BASECAMP_REDIRECT_URI` | Must match your Basecamp app. Default `http://localhost:8000/auth/callback`. |
 | `BASECAMP_ACCOUNT_ID` | Fallback account if the token doesn't record one. |
 | `USER_AGENT` | Name sent to Basecamp's API. Basecamp asks for contact details; the default points to this project. |
-| `BASECAMP_MCP_HTTP_TOKEN` | Access key for `serve`, at least 32 characters. Created for you if missing. |
+| `BASECAMP_MCP_HTTP_AUTH` | `oauth` (default) or `key` for `serve`. |
+| `BASECAMP_MCP_PUBLIC_URL` | Address people reach `serve` at (`--public-url`). |
+| `BASECAMP_MCP_HTTP_REDIRECT_URI` | Basecamp Redirect URI for `serve`. Default `<public URL>/auth/callback`. |
+| `BASECAMP_MCP_HTTP_TOKEN` | Access key for `serve --auth key`, at least 32 characters. Created for you if missing. |
 | `BASECAMP_MCP_HTTP_HOST` / `BASECAMP_MCP_HTTP_PORT` | Default address for `serve` (`127.0.0.1`, `8765`). |
 | `BASECAMP_MCP_FULL_RESPONSES` | `1` returns full records instead of compact summaries. |
 
