@@ -76,11 +76,13 @@ class BearerTokenMiddleware:
         await send({"type": "http.response.body", "body": body})
 
 
-def _prepare(server, host: str) -> None:
+def _prepare(server, host: str, public_url: str | None = None) -> None:
     server.settings.streamable_http_path = MCP_PATH
-    if host not in LOOPBACK_HOSTS:
+    public_host = urlsplit(public_url).hostname if public_url else None
+    if host not in LOOPBACK_HOSTS or (public_host and public_host not in LOOPBACK_HOSTS):
         # The library's built-in Host/Origin check only allows localhost names, which
-        # would refuse every remote client. Sign-in (or the access key) protects it instead.
+        # would refuse every remote client, including ones arriving through a proxy or
+        # tunnel to a local port. Sign-in (or the access key) protects it instead.
         from mcp.server.transport_security import TransportSecuritySettings
 
         server.settings.transport_security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
@@ -101,7 +103,7 @@ def build_oauth_app(server, provider, public_url: str, host: str):
     import basecamp_fastmcp
     from basecamp_mcp_server import oauth_provider
 
-    _prepare(server, host)
+    _prepare(server, host, public_url)
     public_url = public_url.rstrip("/")
     extra = {}
     if "validate_token_resource" in AuthSettings.model_fields:
@@ -124,13 +126,14 @@ def build_oauth_app(server, provider, public_url: str, host: str):
     server._custom_starlette_routes.extend(
         [
             Route(callback_path, provider.handle_callback, methods=["GET"]),
+            Route(provider.consent_path, provider.handle_consent, methods=["GET", "POST"]),
             Route(provider.account_path, provider.handle_account_choice, methods=["GET"]),
         ]
     )
     basecamp_fastmcp.set_credential_resolver(
         oauth_provider.credential_resolver(provider), oauth_provider.credential_error
     )
-    return server.streamable_http_app()
+    return oauth_provider.BasecampCredentialsMiddleware(server.streamable_http_app(), provider)
 
 
 def run_app(app, host: str, port: int) -> None:

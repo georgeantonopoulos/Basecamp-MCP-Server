@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import json
+import re
 import secrets
 import time
 from urllib.parse import parse_qs, urlsplit
@@ -93,9 +94,18 @@ def _sign_in(client, basecamp_code, account=None):
         },
     )
     assert auth.status_code == 302, auth.text
-    to_basecamp = urlsplit(auth.headers["location"])
+    consent = urlsplit(auth.headers["location"])
+    assert f"{consent.scheme}://{consent.netloc}" == BASE and consent.path == "/auth/consent"
+    page = client.get(consent.path + "?" + consent.query)
+    assert page.status_code == 200 and "localhost:9999" in page.text
+    assert page.headers["x-frame-options"] == "DENY"
+    state = parse_qs(consent.query)["state"][0]
+    csrf = re.search(r"name='csrf' value='([^']+)'", page.text).group(1)
+    approved = client.post("/auth/consent", data={"state": state, "csrf": csrf})
+    assert approved.status_code == 303, approved.text
+    to_basecamp = urlsplit(approved.headers["location"])
     assert to_basecamp.netloc == "launchpad.example"
-    state = parse_qs(to_basecamp.query)["state"][0]
+    assert parse_qs(to_basecamp.query)["state"] == [state]
 
     back = client.get("/auth/callback", params={"code": basecamp_code, "state": state})
     if account is not None:
@@ -221,3 +231,99 @@ def test_no_shared_token_fallback(setup, monkeypatch):
     # Outside an authenticated request there is no user, so no client, and never the shared token.
     assert basecamp_fastmcp._get_basecamp_client() is None
     assert basecamp_fastmcp._get_auth_error_response()["error"] == "Basecamp sign-in required"
+
+
+def _start(client):
+    """Register and open /authorize; return (state, csrf) from the consent page."""
+    reg = client.post("/register", json={"redirect_uris": [CLIENT_REDIRECT], "token_endpoint_auth_method": "none"})
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(b"v" * 50).digest()).rstrip(b"=").decode()
+    auth = client.get(
+        "/authorize",
+        params={
+            "response_type": "code",
+            "client_id": reg.json()["client_id"],
+            "redirect_uri": CLIENT_REDIRECT,
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+        },
+    )
+    consent = urlsplit(auth.headers["location"])
+    page = client.get(consent.path + "?" + consent.query)
+    return parse_qs(consent.query)["state"][0], re.search(r"name='csrf' value='([^']+)'", page.text).group(1)
+
+
+def test_sign_in_needs_the_consent_click(setup):
+    client, fake, *_ = setup
+    fake.add_person("code-ann", "ann", ["111"])
+    state, _ = _start(client)
+    # Skipping the consent page (a phishing link straight through) is refused.
+    assert client.get("/auth/callback", params={"code": "code-ann", "state": state}).status_code == 400
+
+
+def test_consent_needs_the_page_token(setup):
+    client, *_ = setup
+    state, _ = _start(client)
+    assert client.post("/auth/consent", data={"state": state, "csrf": "guess"}).status_code == 400
+
+
+def test_callback_in_another_browser_is_refused(setup):
+    client, fake, *_ = setup
+    fake.add_person("code-ann", "ann", ["111"])
+    state, csrf = _start(client)
+    assert client.post("/auth/consent", data={"state": state, "csrf": csrf}).status_code == 303
+    client.cookies.clear()
+    response = client.get("/auth/callback", params={"code": "code-ann", "state": state})
+    assert response.status_code == 400 and "same browser" in response.text
+
+
+def test_revoking_either_token_ends_both(setup):
+    client, fake, *_ = setup
+    fake.add_person("code-ann", "ann", ["111"])
+    ann = _sign_in(client, "code-ann")
+    revoked = client.post("/revoke", data={"token": ann["refresh_token"], "client_id": ann["client_id"], "client_secret": ""})
+    assert revoked.status_code == 200, revoked.text
+    response = client.post("/mcp", json={}, headers={**MCP_HEADERS, "Authorization": f"Bearer {ann['access_token']}"})
+    assert response.status_code == 401
+
+
+def test_refreshing_ends_the_old_access_token(setup):
+    client, fake, *_ = setup
+    fake.add_person("code-ann", "ann", ["111"])
+    ann = _sign_in(client, "code-ann")
+    form = {"grant_type": "refresh_token", "refresh_token": ann["refresh_token"], "client_id": ann["client_id"]}
+    assert client.post("/token", data=form).status_code == 200
+    response = client.post("/mcp", json={}, headers={**MCP_HEADERS, "Authorization": f"Bearer {ann['access_token']}"})
+    assert response.status_code == 401
+
+
+def test_basecamp_refresh_runs_off_the_event_loop(setup):
+    client, fake, *_ = setup
+    import threading
+
+    threads = []
+    original = fake.refresh_token
+
+    def recording_refresh(token):
+        threads.append(threading.current_thread().name)
+        return original(token)
+
+    fake.refresh_token = recording_refresh
+    fake.add_person("code-ann", "ann", ["111"], expires_in=60)
+    ann = _sign_in(client, "code-ann")
+    loop_thread = client.portal.call(lambda: threading.current_thread().name)
+    assert _whoami(client, ann["access_token"])["access_token"] == "bc-renewed-ann"
+    assert len(threads) == 1 and threads[0] != loop_thread
+
+
+def test_public_address_behind_a_proxy_is_accepted(tmp_path):
+    fake = FakeBasecamp()
+    public = "https://basecamp-mcp.example.com"
+    provider = oauth_provider.BasecampOAuthProvider(tmp_path, f"{public}/auth/callback", basecamp_oauth=fake)
+    app = http_server.build_oauth_app(_tool_server(), provider, public, "127.0.0.1")
+    try:
+        with TestClient(app, base_url=public) as client:
+            response = client.post("/mcp", json={}, headers=MCP_HEADERS)
+        # Asked to sign in (401), not refused for its Host header (421).
+        assert response.status_code == 401
+    finally:
+        basecamp_fastmcp.set_credential_resolver(None)

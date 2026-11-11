@@ -52,6 +52,7 @@ CODE_SECONDS = 5 * 60
 PENDING_SECONDS = 15 * 60
 BASECAMP_REFRESH_MARGIN = 5 * 60
 STORE_NAME = "http_oauth.json"
+BROWSER_COOKIE = "basecamp_mcp_signin"
 
 
 def _hash(token: str) -> str:
@@ -109,7 +110,13 @@ class BasecampOAuthProvider:
         from basecamp_oauth import BasecampOAuth
 
         self.callback_url = callback_url
-        self.account_path = urlsplit(callback_url).path.rstrip("/") + "/account"
+        parts = urlsplit(callback_url)
+        self.account_path = parts.path.rstrip("/") + "/account"
+        # Served on the callback's host so the browser cookie set there comes back with the callback.
+        self.consent_path = parts.path.rsplit("/", 1)[0] + "/consent"
+        self.consent_url = f"{parts.scheme}://{parts.netloc}{self.consent_path}"
+        self.cookie_path = "/"
+        self._user_locks: dict[str, threading.Lock] = {}
         self.basecamp = basecamp_oauth or BasecampOAuth(redirect_uri=callback_url)
         self.store = _Store(Path(home) / STORE_NAME)
         self.pending: dict[str, dict[str, Any]] = {}
@@ -129,19 +136,69 @@ class BasecampOAuthProvider:
     # ------------------------------------------------------------------ authorize
 
     async def authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str:
+        """Send the user to our consent page first, never straight to Basecamp.
+
+        Anyone can register a client, so a link to /authorize could come from an
+        attacker whose redirect URI would receive the user's sign-in. The consent page
+        names the app and where it sends the user, and only a click there (which also
+        ties the sign-in to this browser with a cookie) continues to Basecamp.
+        """
         self._drop_stale_pending()
         state = secrets.token_urlsafe(32)
         self.pending[state] = {
             "created": time.time(),
             "client_id": client.client_id,
+            "client_name": client.client_name or "An app",
             "params": params,
+            "csrf": secrets.token_urlsafe(32),
+            "browser": secrets.token_urlsafe(32),
         }
-        return self.basecamp.get_authorization_url(state=state)
+        return f"{self.consent_url}?{urlencode({'state': state})}"
 
     def _drop_stale_pending(self) -> None:
-        cutoff = time.time() - PENDING_SECONDS
-        for state in [s for s, p in self.pending.items() if p["created"] < cutoff]:
+        now = time.time()
+        for state in [s for s, p in self.pending.items() if p["created"] < now - PENDING_SECONDS]:
             del self.pending[state]
+        for code in [c for c, v in self.codes.items() if v.expires_at < now]:
+            del self.codes[code]
+
+    async def handle_consent(self, request: Request) -> Response:
+        """GET shows who is asking; POST (the Approve button) continues to Basecamp."""
+        self._drop_stale_pending()
+        if request.method == "POST":
+            form = await request.form()
+            state = str(form.get("state", ""))
+        else:
+            state = request.query_params.get("state", "")
+        pending = self.pending.get(state)
+        if pending is None or pending.get("approved"):
+            return _page("Sign-in link expired", "Start connecting Basecamp again from your app.", 400)
+        if request.method == "GET":
+            redirect_host = urlsplit(str(pending["params"].redirect_uri)).netloc or "?"
+            body = (
+                f"<p><b>{html.escape(pending['client_name'])}</b> wants to use your Basecamp as you. "
+                f"After you sign in, you'll be sent back to <b>{html.escape(redirect_host)}</b>.</p>"
+                "<p>Only continue if you just asked to connect Basecamp to this app.</p>"
+                f"<form method='post' action='{html.escape(self.consent_path)}'>"
+                f"<input type='hidden' name='state' value='{html.escape(state)}'>"
+                f"<input type='hidden' name='csrf' value='{html.escape(pending['csrf'])}'>"
+                "<button type='submit'>Continue to Basecamp sign-in</button></form>"
+            )
+            return _guarded(HTMLResponse(_shell("Connect Basecamp?", body)))
+        if not secrets.compare_digest(str(form.get("csrf", "")), pending["csrf"]):
+            return _page("Sign-in link expired", "Start connecting Basecamp again from your app.", 400)
+        pending["approved"] = True
+        response = RedirectResponse(self.basecamp.get_authorization_url(state=state), status_code=303)
+        response.set_cookie(
+            BROWSER_COOKIE,
+            pending["browser"],
+            max_age=PENDING_SECONDS,
+            path=self.cookie_path,
+            httponly=True,
+            samesite="lax",
+            secure=self.callback_url.startswith("https://"),
+        )
+        return _guarded(response)
 
     async def handle_callback(self, request: Request) -> Response:
         """Basecamp redirects here after the user signs in."""
@@ -150,8 +207,14 @@ class BasecampOAuthProvider:
         self._drop_stale_pending()
         state = request.query_params.get("state", "")
         pending = self.pending.get(state)
-        if pending is None:
+        if pending is None or not pending.get("approved"):
             return _page("Sign-in link expired", "Start connecting Basecamp again from your app.", 400)
+        if not secrets.compare_digest(request.cookies.get(BROWSER_COOKIE, ""), pending["browser"]):
+            return _page(
+                "Different browser",
+                "Finish connecting in the same browser where you started. Start again from your app.",
+                400,
+            )
         if request.query_params.get("error") or not request.query_params.get("code"):
             self.pending.pop(state, None)
             reason = request.query_params.get("error") or "Basecamp didn't return a sign-in code."
@@ -183,13 +246,15 @@ class BasecampOAuthProvider:
             f"{html.escape(str(a.get('name')))}</a></li>"
             for a in accounts
         )
-        return HTMLResponse(_shell("Choose a Basecamp account", f"<ul>{links}</ul>"))
+        return _guarded(HTMLResponse(_shell("Choose a Basecamp account", f"<ul>{links}</ul>")))
 
     async def handle_account_choice(self, request: Request) -> Response:
         state = request.query_params.get("state", "")
         pending = self.pending.get(state)
         if pending is None or "accounts" not in pending:
             return _page("Sign-in link expired", "Start connecting Basecamp again from your app.", 400)
+        if not secrets.compare_digest(request.cookies.get(BROWSER_COOKIE, ""), pending["browser"]):
+            return _page("Different browser", "Finish connecting in the same browser where you started.", 400)
         return self._finish(state, request.query_params.get("account", ""))
 
     def _finish(self, state: str, account_id: str) -> Response:
@@ -244,7 +309,9 @@ class BasecampOAuthProvider:
     async def exchange_authorization_code(self, client, authorization_code: BasecampAuthorizationCode) -> OAuthToken:
         if self.codes.pop(authorization_code.code, None) is None:
             raise TokenError("invalid_grant", "authorization code already used")
-        return self._issue(client.client_id, authorization_code.scopes, authorization_code.resource, authorization_code.user_key)
+        return self._issue(
+            client.client_id, authorization_code.scopes, authorization_code.resource, authorization_code.user_key
+        )
 
     async def load_refresh_token(self, client, refresh_token: str):
         record = self.store.data["refresh"].get(_hash(refresh_token))
@@ -252,18 +319,28 @@ class BasecampOAuthProvider:
             return None
         if record.get("expires_at") and record["expires_at"] < time.time():
             return None
-        return BasecampRefreshToken(token=refresh_token, **record)
+        return BasecampRefreshToken(token=refresh_token, **_token_fields(record))
 
     async def exchange_refresh_token(self, client, refresh_token: BasecampRefreshToken, scopes: list[str]) -> OAuthToken:
         with self.store.lock:
-            if self.store.data["refresh"].pop(_hash(refresh_token.token), None) is None:
+            record = self.store.data["refresh"].get(_hash(refresh_token.token))
+            if record is None:
                 raise TokenError("invalid_grant", "refresh token already used")
+            # Rotating ends the whole previous grant, including its access token.
+            self._drop_grant(record.get("grant"))
         return self._issue(client.client_id, scopes or refresh_token.scopes, refresh_token.resource, refresh_token.user_key)
 
     def _issue(self, client_id: str, scopes: list[str], resource: str | None, user_key: str) -> OAuthToken:
         access, refresh = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
         now = int(time.time())
-        common = {"client_id": client_id, "scopes": scopes, "resource": resource, "user_key": user_key}
+        # access and refresh tokens share a grant id so revoking either ends both.
+        common = {
+            "client_id": client_id,
+            "scopes": scopes,
+            "resource": resource,
+            "user_key": user_key,
+            "grant": secrets.token_urlsafe(16),
+        }
         with self.store.lock:
             self.store.data["access"][_hash(access)] = {**common, "expires_at": now + ACCESS_TOKEN_SECONDS}
             self.store.data["refresh"][_hash(refresh)] = {**common, "expires_at": now + REFRESH_TOKEN_SECONDS}
@@ -282,20 +359,40 @@ class BasecampOAuthProvider:
             return None
         if record["user_key"] not in self.store.data["users"]:
             return None
-        return BasecampAccessToken(token=token, **record)
+        return BasecampAccessToken(token=token, **_token_fields(record))
 
     async def revoke_token(self, token) -> None:
         with self.store.lock:
+            digest = _hash(token.token)
+            record = self.store.data["access"].get(digest) or self.store.data["refresh"].get(digest)
             for table in ("access", "refresh"):
-                self.store.data[table].pop(_hash(token.token), None)
+                self.store.data[table].pop(digest, None)
+            if record:
+                self._drop_grant(record.get("grant"))
             self.store.save()
+
+    def _drop_grant(self, grant: str | None) -> None:
+        """Remove every token of one grant. Caller holds the store lock."""
+        if not grant:
+            return
+        for table in ("access", "refresh"):
+            for key in [k for k, v in self.store.data[table].items() if v.get("grant") == grant]:
+                del self.store.data[table][key]
 
     # ------------------------------------------------------------------ per-request Basecamp credentials
 
     def credentials_for(self, user_key: str) -> dict | None:
-        """The user's Basecamp token and account, refreshed with Basecamp when near expiry."""
+        """The user's Basecamp token and account, refreshed with Basecamp when near expiry.
+
+        May call Basecamp, so callers in async code run it in a worker thread
+        (see BasecampCredentialsMiddleware). Only this user's refresh waits on the
+        network; the shared store lock is never held across it.
+        """
         with self.store.lock:
-            user = self.store.data["users"].get(user_key)
+            lock = self._user_locks.setdefault(user_key, threading.Lock())
+        with lock:
+            with self.store.lock:
+                user = dict(self.store.data["users"].get(user_key) or {})
             if not user:
                 return None
             expires_at = user.get("expires_at")
@@ -310,7 +407,10 @@ class BasecampOAuthProvider:
                 user["access_token"] = fresh["access_token"]
                 user["refresh_token"] = fresh.get("refresh_token") or user["refresh_token"]
                 user["expires_at"] = time.time() + float(fresh["expires_in"]) if fresh.get("expires_in") else None
-                self.store.save()
+                with self.store.lock:
+                    if user_key in self.store.data["users"]:
+                        self.store.data["users"][user_key] = user
+                        self.store.save()
             return {"access_token": user["access_token"], "account_id": user["account_id"]}
 
 
@@ -331,12 +431,54 @@ def current_access_token() -> AccessToken | None:
     return get_access_token()
 
 
+SCOPE_KEY = "basecamp_mcp_credentials"
+
+
+class BasecampCredentialsMiddleware:
+    """Look up the caller's Basecamp credentials in a worker thread before the MCP app runs.
+
+    A token refresh calls Basecamp; doing it here keeps that network wait off the
+    event loop that every user shares. The result rides along in the ASGI scope,
+    which the request in the tool's context shares.
+    """
+
+    def __init__(self, app, provider: BasecampOAuthProvider):
+        self.app = app
+        self.provider = provider
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            header = dict(scope.get("headers", [])).get(b"authorization", b"").decode("latin-1")
+            if header[:7].lower() == "bearer ":
+                record = self.provider.store.data["access"].get(_hash(header[7:].strip()))
+                if record and record.get("expires_at", 0) > time.time():
+                    import anyio
+
+                    user_key = record["user_key"]
+                    credentials = await anyio.to_thread.run_sync(self.provider.credentials_for, user_key)
+                    scope[SCOPE_KEY] = {"user_key": user_key, "credentials": credentials}
+        await self.app(scope, receive, send)
+
+
+def _request_scope() -> dict:
+    from mcp.server.lowlevel.server import request_ctx
+
+    try:
+        request = request_ctx.get().request
+    except LookupError:
+        return {}
+    return getattr(request, "scope", None) or {}
+
+
 def credential_resolver(provider: BasecampOAuthProvider):
     def resolve() -> dict | None:
         token = current_access_token()
         user_key = getattr(token, "user_key", None)
         if not user_key:
             return None
+        looked_up = _request_scope().get(SCOPE_KEY)
+        if looked_up and looked_up["user_key"] == user_key:
+            return looked_up["credentials"]
         return provider.credentials_for(user_key)
 
     return resolve
@@ -350,6 +492,18 @@ def credential_error() -> tuple[str, str]:
     )
 
 
+def _token_fields(record: dict) -> dict:
+    return {k: v for k, v in record.items() if k != "grant"}
+
+
+def _guarded(response: Response) -> Response:
+    """Sign-in pages can't be framed (clickjacking) or cached."""
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 def _shell(title: str, body_html: str) -> str:
     return (
         "<!doctype html><meta charset='utf-8'><title>Basecamp MCP</title>"
@@ -358,5 +512,5 @@ def _shell(title: str, body_html: str) -> str:
     )
 
 
-def _page(title: str, message: str, status: int) -> HTMLResponse:
-    return HTMLResponse(_shell(title, f"<p>{html.escape(message)}</p>"), status_code=status)
+def _page(title: str, message: str, status: int) -> Response:
+    return _guarded(HTMLResponse(_shell(title, f"<p>{html.escape(message)}</p>"), status_code=status))
