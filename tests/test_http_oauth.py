@@ -72,14 +72,15 @@ def setup(tmp_path):
     basecamp_fastmcp.set_credential_resolver(None)
 
 
-def _sign_in(client, basecamp_code, account=None):
+def _sign_in(client, basecamp_code, account=None, client_id=None):
     """Run the whole connector flow; return the token response."""
-    reg = client.post(
-        "/register",
-        json={"redirect_uris": [CLIENT_REDIRECT], "token_endpoint_auth_method": "none", "client_name": "t"},
-    )
-    assert reg.status_code == 201, reg.text
-    client_id = reg.json()["client_id"]
+    if client_id is None:
+        reg = client.post(
+            "/register",
+            json={"redirect_uris": [CLIENT_REDIRECT], "token_endpoint_auth_method": "none", "client_name": "t"},
+        )
+        assert reg.status_code == 201, reg.text
+        client_id = reg.json()["client_id"]
     verifier = secrets.token_urlsafe(48)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
     auth = client.get(
@@ -258,6 +259,57 @@ def test_sign_in_needs_the_consent_click(setup):
     state, _ = _start(client)
     # Skipping the consent page (a phishing link straight through) is refused.
     assert client.get("/auth/callback", params={"code": "code-ann", "state": state}).status_code == 400
+
+
+def test_one_user_cannot_use_another_users_session(setup):
+    """Same connector (client_id), two people: B must not reuse A's MCP session."""
+    client, fake, *_ = setup
+    fake.add_person("code-ann", "ann", ["111"])
+    fake.add_person("code-bob", "bob", ["222"])
+    ann = _sign_in(client, "code-ann")
+    bob = _sign_in(client, "code-bob", client_id=ann["client_id"])
+    headers = {**MCP_HEADERS, "Authorization": f"Bearer {ann['access_token']}"}
+    init = client.post(
+        "/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t", "version": "1"}},
+        },
+        headers=headers,
+    )
+    session = init.headers["mcp-session-id"]
+    as_bob = {**MCP_HEADERS, "Authorization": f"Bearer {bob['access_token']}", "mcp-session-id": session}
+    hijack = client.post("/mcp", json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"}, headers=as_bob)
+    assert hijack.status_code == 404
+    stream = client.get("/mcp", headers={**as_bob, "Accept": "text/event-stream"})
+    assert stream.status_code == 404
+
+
+def test_failed_basecamp_refresh_keeps_a_still_valid_token(setup):
+    client, fake, provider, _ = setup
+
+    def broken(token):
+        raise RuntimeError("Launchpad down")
+
+    fake.refresh_token = broken
+    fake.add_person("code-ann", "ann", ["111"], expires_in=120)  # inside the refresh margin, not expired
+    ann = _sign_in(client, "code-ann")
+    assert _whoami(client, ann["access_token"])["access_token"] == "bc-ann"
+    provider.store.data["users"]["ann:111"]["expires_at"] = time.time() - 1  # really expired now
+    assert provider.credentials_for("ann:111") is None
+
+
+def test_empty_per_user_credentials_never_fall_back_to_the_environment(monkeypatch):
+    monkeypatch.setenv("BASECAMP_ACCESS_TOKEN", "shared-env-token")
+    monkeypatch.setenv("BASECAMP_ACCOUNT_ID", "999")
+    monkeypatch.setenv("USER_AGENT", "t")
+    try:
+        basecamp_fastmcp.set_credential_resolver(lambda: {"access_token": "", "account_id": ""})
+        assert basecamp_fastmcp._get_basecamp_client() is None
+    finally:
+        basecamp_fastmcp.set_credential_resolver(None)
 
 
 def test_consent_post_from_a_browser_that_never_loaded_the_page_is_refused(setup):

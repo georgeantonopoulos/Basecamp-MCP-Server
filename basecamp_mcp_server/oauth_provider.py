@@ -72,6 +72,10 @@ class BasecampRefreshToken(RefreshToken):
 class BasecampAccessToken(AccessToken):
     user_key: str
     resource: str | None = None  # declared here too: older mcp releases lack it
+    # The SDK ties each streamable-HTTP session to (client_id, issuer, subject).
+    # Many users can share one client_id (one connector registration), so the
+    # subject must name the user or one user could reuse another's session.
+    subject: str | None = None
 
 
 class _Store:
@@ -379,7 +383,7 @@ class BasecampOAuthProvider:
             return None
         if record["user_key"] not in self.store.data["users"]:
             return None
-        return BasecampAccessToken(token=token, **_token_fields(record))
+        return BasecampAccessToken(token=token, subject=record["user_key"], **_token_fields(record))
 
     async def revoke_token(self, token) -> None:
         with self.store.lock:
@@ -417,13 +421,15 @@ class BasecampOAuthProvider:
                 return None
             expires_at = user.get("expires_at")
             if expires_at and expires_at - BASECAMP_REFRESH_MARGIN < time.time():
+                still_valid = expires_at > time.time()
                 if not user.get("refresh_token"):
-                    return None
+                    return self._credentials(user) if still_valid else None
                 try:
                     fresh = self.basecamp.refresh_token(user["refresh_token"])
                 except Exception as exc:
+                    # Keep using the current token until it really expires.
                     logger.error("Basecamp token refresh failed for one user: %s", exc)
-                    return None
+                    return self._credentials(user) if still_valid else None
                 user["access_token"] = fresh["access_token"]
                 user["refresh_token"] = fresh.get("refresh_token") or user["refresh_token"]
                 user["expires_at"] = time.time() + float(fresh["expires_in"]) if fresh.get("expires_in") else None
@@ -431,7 +437,13 @@ class BasecampOAuthProvider:
                     if user_key in self.store.data["users"]:
                         self.store.data["users"][user_key] = user
                         self.store.save()
-            return {"access_token": user["access_token"], "account_id": user["account_id"]}
+            return self._credentials(user)
+
+    @staticmethod
+    def _credentials(user: dict) -> dict | None:
+        if not user.get("access_token") or not user.get("account_id"):
+            return None
+        return {"access_token": user["access_token"], "account_id": user["account_id"]}
 
 
 def current_access_token() -> AccessToken | None:

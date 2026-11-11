@@ -73,7 +73,9 @@ def set_credential_resolver(resolver, error_response=None) -> None:
 def _client_from_resolver() -> Optional[BasecampClient]:
     credentials = _credential_resolver()
     user_agent = os.getenv('USER_AGENT')
-    if not credentials or not user_agent:
+    # BasecampClient falls back to BASECAMP_ACCESS_TOKEN / BASECAMP_ACCOUNT_ID when
+    # given empty values; per-user mode must never reach a shared token that way.
+    if not credentials or not credentials.get('access_token') or not credentials.get('account_id') or not user_agent:
         return None
     return BasecampClient(
         access_token=credentials['access_token'],
