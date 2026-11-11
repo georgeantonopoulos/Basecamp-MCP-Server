@@ -184,11 +184,20 @@ class BasecampOAuthProvider:
                 f"<input type='hidden' name='csrf' value='{html.escape(pending['csrf'])}'>"
                 "<button type='submit'>Continue to Basecamp sign-in</button></form>"
             )
-            return _guarded(HTMLResponse(_shell("Connect Basecamp?", body)))
+            # Bind this sign-in to the browser that loaded the page. SameSite=Lax keeps the
+            # cookie off cross-site POSTs, so another site can't submit the form for the user.
+            return self._bind_browser(_guarded(HTMLResponse(_shell("Connect Basecamp?", body))), pending)
+        if not self._same_site_post(request):
+            return _page("Not allowed", "Approve the connection from the Basecamp sign-in page itself.", 403)
+        if not secrets.compare_digest(request.cookies.get(BROWSER_COOKIE, ""), pending["browser"]):
+            return _page("Different browser", "Finish connecting in the same browser where you started.", 400)
         if not secrets.compare_digest(str(form.get("csrf", "")), pending["csrf"]):
             return _page("Sign-in link expired", "Start connecting Basecamp again from your app.", 400)
         pending["approved"] = True
         response = RedirectResponse(self.basecamp.get_authorization_url(state=state), status_code=303)
+        return _guarded(response)
+
+    def _bind_browser(self, response: Response, pending: dict) -> Response:
         response.set_cookie(
             BROWSER_COOKIE,
             pending["browser"],
@@ -198,7 +207,18 @@ class BasecampOAuthProvider:
             samesite="lax",
             secure=self.callback_url.startswith("https://"),
         )
-        return _guarded(response)
+        return response
+
+    def _same_site_post(self, request: Request) -> bool:
+        """Refuse a POST that browsers say came from another site."""
+        fetch_site = request.headers.get("sec-fetch-site")
+        if fetch_site and fetch_site not in ("same-origin", "none"):
+            return False
+        origin = request.headers.get("origin")
+        if origin and origin != "null":
+            expected = urlsplit(self.consent_url)
+            return origin == f"{expected.scheme}://{expected.netloc}"
+        return origin != "null"
 
     async def handle_callback(self, request: Request) -> Response:
         """Basecamp redirects here after the user signs in."""

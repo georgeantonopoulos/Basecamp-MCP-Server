@@ -260,6 +260,25 @@ def test_sign_in_needs_the_consent_click(setup):
     assert client.get("/auth/callback", params={"code": "code-ann", "state": state}).status_code == 400
 
 
+def test_consent_post_from_a_browser_that_never_loaded_the_page_is_refused(setup):
+    """Codex P1: an attacker fetches its own consent page and auto-submits it in the victim's browser."""
+    client, fake, *_ = setup
+    state, csrf = _start(client)  # the attacker's browser loads the page and learns state + csrf
+    client.cookies.clear()  # the victim's browser never loaded it
+    response = client.post("/auth/consent", data={"state": state, "csrf": csrf})
+    assert response.status_code == 400 and "launchpad" not in response.headers.get("location", "")
+
+
+def test_cross_site_consent_post_is_refused(setup):
+    client, *_ = setup
+    state, csrf = _start(client)
+    for headers in ({"Origin": "https://evil.example"}, {"Sec-Fetch-Site": "cross-site"}, {"Origin": "null"}):
+        response = client.post("/auth/consent", data={"state": state, "csrf": csrf}, headers=headers)
+        assert response.status_code == 403, headers
+    same = client.post("/auth/consent", data={"state": state, "csrf": csrf}, headers={"Origin": BASE})
+    assert same.status_code == 303
+
+
 def test_consent_needs_the_page_token(setup):
     client, *_ = setup
     state, _ = _start(client)
