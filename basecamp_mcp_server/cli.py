@@ -1,6 +1,7 @@
 """Command-line entry point for the installed Basecamp MCP server.
 
     basecamp-mcp-server            run the MCP server over stdio (what MCP clients launch)
+    basecamp-mcp-server serve      run it as a web address instead (see `serve --help`)
     basecamp-mcp-server login      sign in to Basecamp in the browser and save the token
     basecamp-mcp-server status     show where settings live and check the saved sign-in
     basecamp-mcp-server config X   print the snippet to add the server to an MCP client
@@ -386,14 +387,86 @@ def config(args) -> int:
 
 def run(args) -> int:
     prepare_environment()
-    if args.full:
+    _server(args.full).run(transport="stdio")
+    return 0
+
+
+def _server(full: bool):
+    if full:
         from basecamp_fastmcp import mcp
 
-        mcp.run(transport="stdio")
-    else:
-        from basecamp_retrieval_mcp import retrieval_mcp
+        return mcp
+    from basecamp_retrieval_mcp import retrieval_mcp
 
-        retrieval_mcp.run(transport="stdio")
+    return retrieval_mcp
+
+
+def serve(args) -> int:
+    prepare_environment()
+    from basecamp_mcp_server import http_server
+
+    # Read after prepare_environment so the BASECAMP_MCP_HTTP_* settings in the .env apply.
+    args.host = args.host or os.environ.get("BASECAMP_MCP_HTTP_HOST") or http_server.DEFAULT_HOST
+    try:
+        if args.port is None:
+            args.port = int(os.environ.get("BASECAMP_MCP_HTTP_PORT") or http_server.DEFAULT_PORT)
+    except ValueError:
+        raise LoginError("BASECAMP_MCP_HTTP_PORT must be a number.") from None
+    args.auth = args.auth or os.environ.get("BASECAMP_MCP_HTTP_AUTH") or "oauth"
+    if args.auth not in ("oauth", "key"):
+        raise LoginError("BASECAMP_MCP_HTTP_AUTH must be 'oauth' or 'key'.")
+    loopback = args.host in http_server.LOOPBACK_HOSTS
+    server = _server(args.full)
+
+    if args.auth == "key":
+        try:
+            token, created = http_server.ensure_token(save_settings)
+        except ValueError as exc:
+            raise LoginError(str(exc)) from None
+        shown_host = f"[{args.host}]" if ":" in args.host else args.host
+        url = f"http://{shown_host}:{args.port}{http_server.MCP_PATH}"
+        print(f"Basecamp MCP server (access-key mode) listening at {url}")
+        if created:
+            print(f"Created an access key and saved it to {env_file()} as {http_server.TOKEN_ENV}.")
+        print("Clients must send this header on every request:")
+        print(f"  Authorization: Bearer {token}")
+        print(f"For Claude Code: claude mcp add --transport http basecamp {url} --header \"Authorization: Bearer {token}\"")
+        if not loopback:
+            print(
+                "Warning: reachable from other machines. Anyone with the address and key can act in "
+                "Basecamp as you, and this plain-http address sends the key unencrypted: put it behind "
+                "HTTPS (a reverse proxy or tunnel) before using it over a network you don't control.",
+                file=sys.stderr,
+            )
+        app = http_server.build_app(server, token, args.host)
+    else:
+        if not (os.environ.get("BASECAMP_CLIENT_ID") and os.environ.get("BASECAMP_CLIENT_SECRET")):
+            raise LoginError(
+                "Sign-in mode needs your Basecamp app's BASECAMP_CLIENT_ID and BASECAMP_CLIENT_SECRET "
+                f"(in the environment or {env_file()}). Register an app at {INTEGRATIONS_URL}."
+            )
+        public_url = (args.public_url or os.environ.get("BASECAMP_MCP_PUBLIC_URL") or "").rstrip("/")
+        if not public_url:
+            if not loopback:
+                raise LoginError(
+                    "Set --public-url (or BASECAMP_MCP_PUBLIC_URL) to the https address people will "
+                    "use to reach this server, for example https://basecamp-mcp.example.com."
+                )
+            public_url = f"http://localhost:{args.port}"
+        if urlsplit(public_url).scheme != "https" and urlsplit(public_url).hostname not in ("localhost", "127.0.0.1"):
+            raise LoginError("--public-url must start with https:// (plain http is only allowed for localhost).")
+        callback = os.environ.get("BASECAMP_MCP_HTTP_REDIRECT_URI") or f"{public_url}/auth/callback"
+        from basecamp_mcp_server import oauth_provider
+
+        provider = oauth_provider.BasecampOAuthProvider(prepare_environment(), callback)
+        url = f"{public_url}{http_server.MCP_PATH}"
+        print(f"Basecamp MCP server (sign-in mode) listening on {args.host}:{args.port}")
+        print(f"Connector URL: {url}")
+        print(f"Your Basecamp app's Redirect URI must be exactly: {callback}")
+        print(f"For Claude Code: claude mcp add --transport http basecamp {url}")
+        app = http_server.build_oauth_app(server, provider, public_url, args.host)
+    sys.stdout.flush()
+    http_server.run_app(app, args.host, args.port)
     return 0
 
 
@@ -409,6 +482,26 @@ def build_parser() -> argparse.ArgumentParser:
     run_p = sub.add_parser("run", help="run the MCP server over stdio (the default)")
     # SUPPRESS keeps a --full given before the subcommand from being reset.
     run_p.add_argument("--full", action="store_true", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+
+    serve_p = sub.add_parser("serve", help="run the MCP server over HTTP (each user signs in to Basecamp)")
+    serve_p.add_argument(
+        "--auth",
+        choices=["oauth", "key"],
+        default=None,
+        help="oauth (default): each user signs in with Basecamp; key: one shared access key for yourself",
+    )
+    serve_p.add_argument(
+        "--public-url", default=None, help="https address clients use to reach this server (sign-in mode)"
+    )
+    serve_p.add_argument("--full", action="store_true", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    serve_p.add_argument(
+        "--host",
+        default=None,
+        help="address to listen on (default 127.0.0.1, this machine only; 0.0.0.0 for every network)",
+    )
+    serve_p.add_argument(
+        "--port", type=int, default=None, help="port (default 8765)"
+    )
 
     login_p = sub.add_parser("login", help="sign in to Basecamp in the browser")
     login_p.add_argument("--account-id", help="Basecamp account to use when you belong to several")
@@ -428,7 +521,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
-    handlers = {None: run, "run": run, "login": login, "status": status, "config": config}
+    handlers = {None: run, "run": run, "serve": serve, "login": login, "status": status, "config": config}
     try:
         return handlers[args.command](args)
     except LoginError as exc:
