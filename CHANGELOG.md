@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **Run it as a web address.** `basecamp-mcp-server serve` runs the server over HTTP (MCP streamable HTTP at `/mcp`) for apps that connect to a URL. Every request needs an access key (`Authorization: Bearer ...`), created and saved on first run. It listens on this machine only unless you pass `--host`, and warns when it doesn't.
+
 ## [1.0.1] - 2026-11-10
 
 ### Changed

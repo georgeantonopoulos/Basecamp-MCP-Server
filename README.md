@@ -118,6 +118,23 @@ By default the server shows your AI app **four small tools** that find and run t
 
 To list all 210 tools up front instead, add `--full`: `"args": ["basecamp-mcp-server", "--full"]`.
 
+### Run it as a web address (HTTP)
+
+Apps that connect to a URL instead of starting a program can use HTTP mode:
+
+```bash
+uvx basecamp-mcp-server serve            # http://127.0.0.1:8765/mcp, this machine only
+uvx basecamp-mcp-server serve --host 0.0.0.0 --port 9000   # reachable from other machines
+```
+
+Anyone who can reach the address acts in Basecamp as you, so every request must carry an access key: `Authorization: Bearer <key>`. The first `serve` creates the key, saves it to the settings `.env` as `BASECAMP_MCP_HTTP_TOKEN` and prints it with a ready-made Claude Code command:
+
+```bash
+claude mcp add --transport http basecamp http://127.0.0.1:8765/mcp --header "Authorization: Bearer <key>"
+```
+
+The server speaks plain HTTP. Before using it across a network you don't control, put it behind HTTPS (a reverse proxy or a tunnel), or the key travels unencrypted. Apps that only offer OAuth sign-in for remote servers (for example claude.ai custom connectors) can't send a fixed key yet. `--full` works here too: `serve --full`.
+
 ## What it can do
 
 - **Projects and people:** list, create and update projects and templates; see who's on a project and grant or revoke access.
@@ -440,6 +457,8 @@ It holds `.env` (your Basecamp app's Client ID and Secret), `oauth_tokens.json` 
 | `BASECAMP_REDIRECT_URI` | Must match your Basecamp app. Default `http://localhost:8000/auth/callback`. |
 | `BASECAMP_ACCOUNT_ID` | Fallback account if the token doesn't record one. |
 | `USER_AGENT` | Name sent to Basecamp's API. Basecamp asks for contact details; the default points to this project. |
+| `BASECAMP_MCP_HTTP_TOKEN` | Access key for `serve`, at least 32 characters. Created for you if missing. |
+| `BASECAMP_MCP_HTTP_HOST` / `BASECAMP_MCP_HTTP_PORT` | Default address for `serve` (`127.0.0.1`, `8765`). |
 | `BASECAMP_MCP_FULL_RESPONSES` | `1` returns full records instead of compact summaries. |
 
 ## Troubleshooting
