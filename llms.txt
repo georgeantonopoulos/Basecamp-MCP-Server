@@ -1,0 +1,21 @@
+# Basecamp MCP Server
+
+> A Model Context Protocol server that connects AI assistants like Claude, Cursor and Codex to a Basecamp 3 or 4 account, exposing 210 operations over projects, to-dos, messages, cards, schedules and files.
+
+Written in Python and run with uv via `uvx basecamp-mcp-server` as a stdio MCP server, with optional HTTP mode. First run performs a Basecamp OAuth login, saving tokens that refresh automatically. By default it exposes four tools that find and run the right operation on demand; add `--full` to list all 210 tools, and `config` prints client setup snippets for Claude Desktop, Claude Code, Cursor and Codex.
+
+## Docs
+
+- [Basecamp MCP Server](https://raw.githubusercontent.com/georgeantonopoulos/Basecamp-MCP-Server/main/README.md): MCP server connecting Claude, Cursor and Codex to Basecamp 3 or 4, with quick start, tools, settings and troubleshooting.
+- [Quick start](https://github.com/georgeantonopoulos/Basecamp-MCP-Server/blob/main/README.md#quick-start): Installing uv, registering a Basecamp app, signing in, and adding the server to your AI app in five minutes.
+- [Add it to your AI app](https://github.com/georgeantonopoulos/Basecamp-MCP-Server/blob/main/README.md#add-it-to-your-ai-app): Configuration snippets for Claude Desktop, Cursor, Codex and other clients, four-tool default versus all 210, and HTTP mode.
+- [What it can do](https://github.com/georgeantonopoulos/Basecamp-MCP-Server/blob/main/README.md#what-it-can-do): Coverage of projects, to-dos, messages, chats, schedules, cards, files, search, timesheets and admin, with compact summary responses.
+- [All 210 tools](https://github.com/georgeantonopoulos/Basecamp-MCP-Server/blob/main/README.md#all-210-tools): All 210 tools grouped as the server groups them for discovery, each with a short description.
+- [Settings and sign-in](https://github.com/georgeantonopoulos/Basecamp-MCP-Server/blob/main/README.md#settings-and-sign-in): Where settings, tokens and logs live, multiple Basecamp accounts, browserless sign-in, and environment variables.
+- [Troubleshooting](https://github.com/georgeantonopoulos/Basecamp-MCP-Server/blob/main/README.md#troubleshooting): Using the status command to check settings and sign-in, where the logs live, and how to open an issue.
+- [Run from a git checkout](https://github.com/georgeantonopoulos/Basecamp-MCP-Server/blob/main/README.md#run-from-a-git-checkout): Running from a git checkout instead of PyPI, pointing your app at it, --full and --legacy flags, running pytest.
+- [Security](https://github.com/georgeantonopoulos/Basecamp-MCP-Server/blob/main/README.md#security): How secrets and tokens stay local, one-time sign-in check, write tools ask first, and why team hosting needs the design notes.
+
+## Optional
+
+- [Changelog](https://raw.githubusercontent.com/georgeantonopoulos/Basecamp-MCP-Server/main/CHANGELOG.md): Notable changes per release, from HTTP serving with per-person sign-in in 1.1.0 to clearer login error messages in 1.0.1.
