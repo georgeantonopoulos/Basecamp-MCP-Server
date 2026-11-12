@@ -1,4 +1,4 @@
-# CodeRabbit reviews only when asked (George, 12 Nov): comment "@coderabbitai review" on a PR.
+# CodeRabbit reviews only when asked: comment "@coderabbitai review" on a pull request.
 reviews:
   auto_review:
     enabled: false
