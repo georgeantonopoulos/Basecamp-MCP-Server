@@ -1,0 +1,5 @@
+# CodeRabbit reviews only when asked (George, 12 Nov): comment "@coderabbitai review" on a PR.
+reviews:
+  auto_review:
+    enabled: false
+    drafts: false
