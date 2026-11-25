@@ -2,7 +2,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/basecamp-mcp-server.svg)](https://pypi.org/project/basecamp-mcp-server/)
 [![Tests](https://github.com/georgeantonopoulos/Basecamp-MCP-Server/actions/workflows/tests.yml/badge.svg)](https://github.com/georgeantonopoulos/Basecamp-MCP-Server/actions/workflows/tests.yml)
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 Connect Claude, Cursor, Codex and other AI assistants to your **Basecamp 3 or 4** account. Ask in plain language to find, read, create and update projects, to-dos, messages, card tables, schedules, documents and more: 210 Basecamp operations in all.
@@ -117,6 +117,19 @@ Run `uvx basecamp-mcp-server` as a local (stdio) MCP server. The JSON above work
 By default the server shows your AI app **four small tools** that find and run the right Basecamp operation on demand. That keeps the app's context small, and it can still reach all 210 operations. Reading and changing data are separate tools, so apps that ask before making changes still do.
 
 To list all 210 tools up front instead, add `--full`: `"args": ["basecamp-mcp-server", "--full"]`.
+
+### Built-in skills
+
+The server also ships four **skills**: short written guides that teach your AI app how to do common Basecamp jobs well. They are served over MCP's skills extension, so apps that support it (Claude Code 2.1.331 or later) load them automatically; they show up in `/skills` as `basecamp:<name>`. Other apps simply ignore them.
+
+| Skill | What it does |
+| ----- | ------------ |
+| `project-status` | A read-only status digest for one project: recent activity, open and overdue to-dos, cards, upcoming dates. |
+| `my-work` | Your assignments: what's overdue, due today, this week, and on your schedule. |
+| `card-board` | Working a card table: find the board, create, move, update and complete cards, then read them back. |
+| `safe-changes` | Confirm before changing anything, and take extra care with trashing, deleting, archiving and posting. |
+
+The skills live in `basecamp_mcp_server/skills/<name>/SKILL.md`. Add a folder there to add your own; `tests/test_skills.py` checks each one and fails if a skill names a tool that doesn't exist.
 
 ### Run it as a web address (HTTP)
 

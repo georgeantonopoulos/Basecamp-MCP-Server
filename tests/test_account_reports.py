@@ -305,7 +305,7 @@ def test_due_assignments_rejects_unknown_scope():
 
 
 def test_account_report_tools_are_registered_in_both_servers():
-    fastmcp_names = set(basecamp_fastmcp.mcp._tool_manager._tools)
+    fastmcp_names = set(basecamp_fastmcp.registered_tools())
     cli_names = {tool["name"] for tool in MCPServer().tools}
     expected = {
         "get_my_assignments", "get_completed_assignments", "get_due_assignments",

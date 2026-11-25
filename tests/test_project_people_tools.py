@@ -83,7 +83,7 @@ def test_update_project_people_sends_only_requested_operations():
 
 
 def test_project_and_people_tools_are_registered_in_both_servers():
-    fastmcp_names = set(basecamp_fastmcp.mcp._tool_manager._tools)
+    fastmcp_names = set(basecamp_fastmcp.registered_tools())
     cli_names = {tool["name"] for tool in MCPServer().tools}
     expected = {
         "create_project", "update_project", "trash_project", "get_project_people",

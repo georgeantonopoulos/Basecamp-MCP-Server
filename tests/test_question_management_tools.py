@@ -78,7 +78,7 @@ def test_question_management_tools_are_registered_and_return_structured_results(
         "create_question", "update_question", "pause_question", "resume_question",
         "update_question_notification_settings", "get_question_answerers",
     }
-    fastmcp_names = set(basecamp_fastmcp.mcp._tool_manager._tools)
+    fastmcp_names = set(basecamp_fastmcp.registered_tools())
     cli_names = {tool["name"] for tool in MCPServer().tools}
     assert expected <= fastmcp_names
     assert fastmcp_names == cli_names

@@ -26,7 +26,7 @@ def _restore_environment():
 
 
 def _fresh_server():
-    from mcp.server.fastmcp import FastMCP
+    from fastmcp import FastMCP
 
     server = FastMCP("t")
 
@@ -71,6 +71,25 @@ def test_right_key_reaches_the_mcp_server(host):
         listed = client.post("/mcp", json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"}, headers=headers)
     assert listed.status_code == 200
     assert '"ping"' in listed.text
+
+
+def test_local_server_refuses_a_foreign_host_header():
+    """A server bound to this machine still blocks DNS rebinding (a foreign Host header)."""
+    headers = {**HEADERS, "Authorization": f"Bearer {TOKEN}"}
+    inner = http_server.build_app(_fresh_server(), TOKEN, "127.0.0.1")
+
+    async def bound_to_loopback(scope, receive, send):
+        # uvicorn reports the bind address; the test client would report the Host.
+        if scope["type"] == "http":
+            scope = {**scope, "server": ("127.0.0.1", 8765)}
+        await inner(scope, receive, send)
+
+    with TestClient(bound_to_loopback, base_url="http://evil.example:8765") as client:
+        refused = client.post("/mcp", json=INIT, headers=headers)
+    with TestClient(bound_to_loopback, base_url="http://localhost:8765") as client:
+        allowed = client.post("/mcp", json=INIT, headers=headers)
+    assert refused.status_code == 421, refused.text
+    assert allowed.status_code == 200, allowed.text
 
 
 def test_key_is_generated_once_and_saved(tmp_path):

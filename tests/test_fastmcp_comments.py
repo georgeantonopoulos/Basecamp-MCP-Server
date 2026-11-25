@@ -12,7 +12,7 @@ def run_tool(tool, *args):
 
 
 def test_comment_tools_are_registered_with_expected_signatures():
-    tools = basecamp_fastmcp.mcp._tool_manager._tools
+    tools = basecamp_fastmcp.registered_tools()
 
     assert {"get_comment", "update_comment", "delete_comment"} <= set(tools)
     assert list(inspect.signature(tools["get_comment"].fn).parameters) == [

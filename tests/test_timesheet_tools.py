@@ -113,7 +113,7 @@ def test_timesheet_tools_are_registered_in_both_servers():
         "update_timesheet_entry",
         "delete_timesheet_entry",
     }
-    fastmcp_names = set(basecamp_fastmcp.mcp._tool_manager._tools)
+    fastmcp_names = set(basecamp_fastmcp.registered_tools())
     cli_names = {tool["name"] for tool in MCPServer().tools}
     assert expected <= fastmcp_names
     assert fastmcp_names == cli_names

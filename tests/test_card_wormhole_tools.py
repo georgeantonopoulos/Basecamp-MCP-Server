@@ -61,7 +61,7 @@ def test_wormhole_tools_are_registered_and_structured():
         "update_card_table_wormhole",
         "delete_card_table_wormhole",
     }
-    fastmcp_names = set(basecamp_fastmcp.mcp._tool_manager._tools)
+    fastmcp_names = set(basecamp_fastmcp.registered_tools())
     cli_names = {tool["name"] for tool in MCPServer().tools}
     assert expected <= fastmcp_names
     assert fastmcp_names == cli_names

@@ -25,7 +25,7 @@ def test_recording_status_client_uses_documented_endpoint():
 
 
 def test_recording_tools_are_registered_in_both_servers():
-    fastmcp_names = set(basecamp_fastmcp.mcp._tool_manager._tools)
+    fastmcp_names = set(basecamp_fastmcp.registered_tools())
     cli_names = {tool["name"] for tool in MCPServer().tools}
     assert {"trash_recording", "archive_recording", "restore_recording"} <= fastmcp_names
     assert fastmcp_names == cli_names

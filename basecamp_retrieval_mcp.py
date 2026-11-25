@@ -12,11 +12,11 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Literal, Optional
 
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.exceptions import ToolError
+from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-from basecamp_fastmcp import mcp as full_mcp
+from basecamp_fastmcp import call_tool_unwrapped, mcp as full_mcp, skills_provider
 from basecamp_tool_retrieval import (
     CATEGORY_BY_NAME,
     category_summaries,
@@ -34,6 +34,7 @@ retrieval_mcp = FastMCP(
         "Discover only the operations relevant to the current request, then "
         "invoke the named operation through its returned read or write executor."
     ),
+    providers=[skills_provider()],
 )
 
 
@@ -78,15 +79,7 @@ async def _dispatch(name: str, arguments: Dict[str, Any], expected_access: str) 
         )
 
     try:
-        result = await full_mcp.call_tool(name, arguments)
-        if isinstance(result, tuple) and len(result) == 2:
-            content, structured = result
-            if isinstance(structured, dict):
-                if set(structured) == {"result"}:
-                    return _raise_if_tool_error(structured["result"])
-                return _raise_if_tool_error(structured)
-            return content
-        return _raise_if_tool_error(result)
+        return _raise_if_tool_error(await call_tool_unwrapped(name, arguments))
     except ToolError:
         raise
     except Exception as exc:

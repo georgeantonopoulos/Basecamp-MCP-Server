@@ -48,9 +48,9 @@ def test_hill_chart_settings_use_documented_payload():
 
 def test_hill_chart_tools_are_registered_and_structured():
     expected = {"get_hill_chart", "get_project_hill_chart", "update_hill_chart_settings"}
-    assert expected <= set(basecamp_fastmcp.mcp._tool_manager._tools)
+    assert expected <= set(basecamp_fastmcp.registered_tools())
     assert {tool["name"] for tool in MCPServer().tools} == set(
-        basecamp_fastmcp.mcp._tool_manager._tools
+        basecamp_fastmcp.registered_tools()
     )
 
     client = Mock()

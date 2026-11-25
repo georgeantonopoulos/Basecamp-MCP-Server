@@ -85,7 +85,7 @@ def test_gauge_tools_are_registered_in_both_servers():
         "get_gauges", "get_gauge_needles", "get_gauge_needle", "create_gauge_needle",
         "update_gauge_needle", "delete_gauge_needle", "toggle_gauge",
     }
-    fastmcp_names = set(basecamp_fastmcp.mcp._tool_manager._tools)
+    fastmcp_names = set(basecamp_fastmcp.registered_tools())
     cli_names = {tool["name"] for tool in MCPServer().tools}
     assert expected <= fastmcp_names
     assert fastmcp_names == cli_names
