@@ -88,7 +88,7 @@ def test_personal_surface_tools_are_registered_in_both_servers():
         "get_my_bookmarks", "get_bookmark_status", "create_bookmark", "delete_bookmark",
         "get_my_drafts", "get_my_note", "update_my_note", "get_calendar", "update_calendar",
     }
-    fastmcp_names = set(basecamp_fastmcp.mcp._tool_manager._tools)
+    fastmcp_names = set(basecamp_fastmcp.registered_tools())
     cli_names = {tool["name"] for tool in MCPServer().tools}
     assert expected <= fastmcp_names
     assert fastmcp_names == cli_names

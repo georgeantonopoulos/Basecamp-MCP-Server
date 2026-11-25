@@ -13,7 +13,7 @@ import sys
 import logging
 from typing import Any, Dict, List, Optional
 from basecamp_client import BasecampClient
-from basecamp_fastmcp import mcp as fastmcp_server
+from basecamp_fastmcp import call_tool_unwrapped, mcp as fastmcp_server
 import payload_shaping as _shape
 from search_utils import BasecampSearch
 import sign_in_messages
@@ -57,7 +57,7 @@ def _coerce_bool(value: Any, default: bool = False) -> bool:
 def _json_default(value: Any) -> Any:
     """Serialize typed MCP content blocks returned by new tools."""
     if hasattr(value, "model_dump"):
-        return value.model_dump(mode="json")
+        return value.model_dump(mode="json", by_alias=True, exclude_none=True)
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
@@ -68,7 +68,7 @@ def _new_tool_content(result: Any) -> List[Dict[str, Any]]:
         in {"text", "image", "audio", "resource", "resource_link"}
         for item in result
     ):
-        return [item.model_dump(mode="json", exclude_none=True) for item in result]
+        return [item.model_dump(mode="json", by_alias=True, exclude_none=True) for item in result]
     return [{"type": "text", "text": json.dumps(result, indent=2, default=_json_default)}]
 
 
@@ -852,7 +852,7 @@ class MCPServer:
             {
                 "name": tool.name,
                 "description": tool.description or "",
-                "inputSchema": tool.inputSchema,
+                "inputSchema": tool.parameters,
             }
             for tool in public_tools if tool.name not in self._legacy_tool_names
         ]
@@ -860,13 +860,7 @@ class MCPServer:
     def _execute_new_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """Run added tools through FastMCP validation and dispatch."""
         try:
-            result = asyncio.run(fastmcp_server.call_tool(tool_name, arguments))
-            if isinstance(result, tuple) and len(result) == 2:
-                content, structured = result
-                if isinstance(structured, dict):
-                    return structured["result"] if set(structured) == {"result"} else structured
-                return content
-            return result
+            return asyncio.run(call_tool_unwrapped(tool_name, arguments))
         except Exception as exc:
             logger.error("Error executing FastMCP tool %s: %s", tool_name, exc)
             return {"error": "Execution error", "message": str(exc)}

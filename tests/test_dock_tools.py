@@ -69,7 +69,7 @@ def test_dock_tools_are_registered_and_structured():
         "get_dock_tool", "create_dock_tool", "update_dock_tool", "enable_dock_tool",
         "reposition_dock_tool", "disable_dock_tool", "trash_dock_tool",
     }
-    fastmcp_names = set(basecamp_fastmcp.mcp._tool_manager._tools)
+    fastmcp_names = set(basecamp_fastmcp.registered_tools())
     cli_names = {tool["name"] for tool in MCPServer().tools}
     assert expected <= fastmcp_names
     assert fastmcp_names == cli_names

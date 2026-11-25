@@ -76,64 +76,37 @@ class BearerTokenMiddleware:
         await send({"type": "http.response.body", "body": body})
 
 
-def _prepare(server, host: str, public_url: str | None = None) -> None:
-    server.settings.streamable_http_path = MCP_PATH
-    public_host = urlsplit(public_url).hostname if public_url else None
-    if host not in LOOPBACK_HOSTS or (public_host and public_host not in LOOPBACK_HOSTS):
-        # The library's built-in Host/Origin check only allows localhost names, which
-        # would refuse every remote client, including ones arriving through a proxy or
-        # tunnel to a local port. Sign-in (or the access key) protects it instead.
-        from mcp.server.transport_security import TransportSecuritySettings
+def _host_origin_protection(host: str, public_url: str | None = None) -> bool:
+    """Check Host/Origin headers only when the server is reachable on this machine alone.
 
-        server.settings.transport_security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
+    The check only allows localhost names, which would refuse every remote client,
+    including ones arriving through a proxy or tunnel to a local port. Sign-in (or
+    the access key) protects a public server instead.
+    """
+    public_host = urlsplit(public_url).hostname if public_url else None
+    return host in LOOPBACK_HOSTS and not (public_host and public_host not in LOOPBACK_HOSTS)
 
 
 def build_app(server, token: str, host: str):
     """Access-key mode: wrap a FastMCP server's streamable HTTP app with the key check."""
-    _prepare(server, host)
-    return BearerTokenMiddleware(server.streamable_http_app(), token)
+    app = server.http_app(path=MCP_PATH, host_origin_protection=_host_origin_protection(host))
+    return BearerTokenMiddleware(app, token)
 
 
 def build_oauth_app(server, provider, public_url: str, host: str):
     """Sign-in mode: each user signs in to Basecamp; tools run with their own token."""
-    from mcp.server.auth.provider import ProviderTokenVerifier
-    from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
-    from starlette.routing import Route
-
     import basecamp_fastmcp
     from basecamp_mcp_server import oauth_provider
 
-    _prepare(server, host, public_url)
     public_url = public_url.rstrip("/")
-    extra = {}
-    if "validate_token_resource" in AuthSettings.model_fields:
-        # Tokens are only ever issued by this server for this server, and some clients
-        # don't send a resource indicator, so don't require one.
-        extra["validate_token_resource"] = False
-    server.settings.auth = AuthSettings(
-        **extra,
-        issuer_url=public_url,
-        resource_server_url=public_url + MCP_PATH,
-        client_registration_options=ClientRegistrationOptions(
-            enabled=True, valid_scopes=[oauth_provider.SCOPE], default_scopes=[oauth_provider.SCOPE]
-        ),
-        revocation_options=RevocationOptions(enabled=True),
-        required_scopes=[oauth_provider.SCOPE],
-    )
-    server._auth_server_provider = provider
-    server._token_verifier = ProviderTokenVerifier(provider)
-    callback_path = urlsplit(provider.callback_url).path or "/"
-    server._custom_starlette_routes.extend(
-        [
-            Route(callback_path, provider.handle_callback, methods=["GET"]),
-            Route(provider.consent_path, provider.handle_consent, methods=["GET", "POST"]),
-            Route(provider.account_path, provider.handle_account_choice, methods=["GET"]),
-        ]
-    )
+    server.auth = oauth_provider.FastMCPAuth(provider, public_url)
     basecamp_fastmcp.set_credential_resolver(
         oauth_provider.credential_resolver(provider), oauth_provider.credential_error
     )
-    return oauth_provider.BasecampCredentialsMiddleware(server.streamable_http_app(), provider)
+    app = server.http_app(
+        path=MCP_PATH, host_origin_protection=_host_origin_protection(host, public_url)
+    )
+    return oauth_provider.BasecampCredentialsMiddleware(app, provider)
 
 
 def run_app(app, host: str, port: int) -> None:

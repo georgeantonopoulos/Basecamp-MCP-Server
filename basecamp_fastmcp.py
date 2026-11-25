@@ -11,11 +11,13 @@ import functools
 import json
 import logging
 import os
+from pathlib import Path
 import sys
 from typing import Any, Dict, List, Literal, Optional
 import anyio
 import httpx
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
+from fastmcp.skills.provider import SkillsDirectoryProvider
 from mcp.types import (
     BlobResourceContents,
     EmbeddedResource,
@@ -53,7 +55,41 @@ logging.basicConfig(
 logger = logging.getLogger('basecamp_fastmcp')
 
 # Initialize FastMCP server
-mcp = FastMCP("basecamp")
+# Workflow skills (MCP skills extension): one folder per skill, each with a SKILL.md.
+# They ship inside the package so an installed server serves them too.
+SKILLS_DIR = Path(__file__).resolve().parent / "basecamp_mcp_server" / "skills"
+
+
+def skills_provider() -> SkillsDirectoryProvider:
+    """Serve the bundled Basecamp skills (skills/list, skills/get, skill:// resources)."""
+    return SkillsDirectoryProvider(SKILLS_DIR)
+
+
+mcp = FastMCP("basecamp", providers=[skills_provider()])
+
+
+def registered_tools() -> Dict[str, Any]:
+    """Every registered tool by name (FastMCP ``FunctionTool``s: ``.fn``, ``.parameters``).
+
+    Synchronous, so call it only outside a running event loop (module import,
+    tests, the legacy CLI). Async code should ``await mcp.list_tools()``.
+    """
+    import asyncio
+
+    return {tool.name: tool for tool in asyncio.run(mcp.list_tools())}
+
+
+async def call_tool_unwrapped(name: str, arguments: Dict[str, Any]) -> Any:
+    """Call a registered tool with full argument validation and return its plain value.
+
+    Tools that return a dict come back as that dict; tools that return MCP content
+    blocks (attachment downloads) come back as the list of blocks.
+    """
+    result = await mcp.call_tool(name, arguments)
+    structured = getattr(result, "structured_content", None)
+    if isinstance(structured, dict):
+        return structured["result"] if set(structured) == {"result"} else structured
+    return getattr(result, "content", result)
 
 # Per-request sign-in (remote HTTP mode with OAuth). When set, the resolver
 # returns the calling user's own Basecamp credentials ({"access_token",

@@ -7,12 +7,12 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from datetime import timedelta
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from fastmcp import Client
+from fastmcp.client.transports import PythonStdioTransport
 from mcp.types import ImageContent, TextContent
-from mcp.server.fastmcp.exceptions import ToolError
+from fastmcp.exceptions import ToolError
+from fastmcp.tools import ToolResult
 
 import basecamp_retrieval_mcp
 import basecamp_tool_retrieval
@@ -35,13 +35,13 @@ def test_retrieval_server_exposes_only_compact_public_surface():
         "call_basecamp_write_tool",
     ]
     serialized = json.dumps(
-        [tool.model_dump(mode="json", by_alias=True) for tool in tools]
+        [tool.to_mcp_tool().model_dump(mode="json", by_alias=True) for tool in tools]
     )
     assert len(serialized.encode("utf-8")) < 5_000
 
     by_name = {tool.name: tool for tool in tools}
-    assert by_name["call_basecamp_read_tool"].annotations.readOnlyHint is True
-    assert by_name["call_basecamp_write_tool"].annotations.destructiveHint is True
+    assert by_name["call_basecamp_read_tool"].annotations.read_only_hint is True
+    assert by_name["call_basecamp_write_tool"].annotations.destructive_hint is True
 
 
 def test_every_canonical_tool_is_available_through_one_category_and_executor():
@@ -130,7 +130,7 @@ def test_read_dispatcher_uses_canonical_fastmcp_validation_path():
     with patch.object(
         basecamp_retrieval_mcp.full_mcp,
         "call_tool",
-        new=AsyncMock(return_value=([], {"result": expected})),
+        new=AsyncMock(return_value=ToolResult(structured_content={"result": expected})),
     ) as call_tool:
         result = _run(
             basecamp_retrieval_mcp.call_basecamp_read_tool("get_projects", {})
@@ -158,9 +158,10 @@ def test_canonical_error_envelope_becomes_tool_error():
         basecamp_retrieval_mcp.full_mcp,
         "call_tool",
         new=AsyncMock(
-            return_value=(
-                [],
-                {"result": {"status": "error", "error": "Execution error", "message": "boom"}},
+            return_value=ToolResult(
+                structured_content={
+                    "result": {"status": "error", "error": "Execution error", "message": "boom"}
+                }
             )
         ),
     ):
@@ -174,26 +175,22 @@ def test_canonical_error_envelope_becomes_tool_error():
 
 def test_stdio_marks_dispatch_rejection_as_mcp_error():
     project_root = Path(__file__).resolve().parents[1]
+
     async def exercise():
-        # Keep stdin open until the response arrives; sending EOF immediately
-        # can cancel an in-flight tool call during server shutdown.
-        params = StdioServerParameters(
-            command=sys.executable,
-            args=[str(project_root / "basecamp_retrieval_mcp.py")],
+        transport = PythonStdioTransport(
+            script_path=str(project_root / "basecamp_retrieval_mcp.py"),
+            python_cmd=sys.executable,
             cwd=str(project_root),
         )
-        async with stdio_client(params) as (read, write):
-            async with ClientSession(
-                read, write, read_timeout_seconds=timedelta(seconds=15)
-            ) as session:
-                await session.initialize()
-                return await session.call_tool(
-                    "call_basecamp_read_tool",
-                    {"name": "create_project", "arguments": {"name": "Example"}},
-                )
+        async with Client(transport, timeout=30) as client:
+            return await client.call_tool(
+                "call_basecamp_read_tool",
+                {"name": "create_project", "arguments": {"name": "Example"}},
+                raise_on_error=False,
+            )
 
     result = _run(exercise())
-    assert result.isError is True
+    assert result.is_error is True
     assert "Wrong executor" in result.content[0].text
 
 
@@ -205,7 +202,7 @@ def test_dispatch_preserves_typed_content_from_canonical_tool():
     with patch.object(
         basecamp_retrieval_mcp.full_mcp,
         "call_tool",
-        new=AsyncMock(return_value=(blocks, None)),
+        new=AsyncMock(return_value=ToolResult(content=blocks)),
     ):
         result = _run(
             basecamp_retrieval_mcp.call_basecamp_read_tool(

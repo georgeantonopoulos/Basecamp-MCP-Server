@@ -92,7 +92,7 @@ class TestGetTodosFilters(unittest.TestCase):
 
     def test_fastmcp_schema_keeps_filter_arguments(self):
         tools = asyncio.run(basecamp_fastmcp.mcp.list_tools())
-        schema = next(tool.inputSchema for tool in tools if tool.name == 'get_todos')
+        schema = next(tool.parameters for tool in tools if tool.name == 'get_todos')
 
         self.assertIn('completed', schema['properties'])
         self.assertIn('status', schema['properties'])

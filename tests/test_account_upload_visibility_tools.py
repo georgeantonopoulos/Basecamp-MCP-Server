@@ -90,7 +90,7 @@ def test_upload_and_visibility_tools_are_registered_and_structured():
         "update_recording_visibility", "update_upload", "get_upload_versions",
         "create_upload_version",
     }
-    fastmcp_names = set(basecamp_fastmcp.mcp._tool_manager._tools)
+    fastmcp_names = set(basecamp_fastmcp.registered_tools())
     cli_names = {tool["name"] for tool in MCPServer().tools}
     assert expected <= fastmcp_names
     assert fastmcp_names == cli_names

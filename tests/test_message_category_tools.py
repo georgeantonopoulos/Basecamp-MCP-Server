@@ -40,7 +40,7 @@ def test_message_category_client_uses_documented_endpoints():
 
 
 def test_message_category_tools_are_registered_in_both_servers():
-    fastmcp_names = set(basecamp_fastmcp.mcp._tool_manager._tools)
+    fastmcp_names = set(basecamp_fastmcp.registered_tools())
     cli_names = {tool["name"] for tool in MCPServer().tools}
     expected = {
         "get_message_category", "create_message_category",

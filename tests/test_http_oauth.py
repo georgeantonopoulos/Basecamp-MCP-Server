@@ -50,7 +50,7 @@ class FakeBasecamp:
 
 
 def _tool_server():
-    from mcp.server.fastmcp import FastMCP
+    from fastmcp import FastMCP
 
     server = FastMCP("t")
 
@@ -190,7 +190,9 @@ def test_codes_and_refresh_tokens_work_once(setup):
     form = {"grant_type": "refresh_token", "refresh_token": ann["refresh_token"], "client_id": ann["client_id"]}
     first = client.post("/token", data=form)
     assert first.status_code == 200, first.text
-    assert client.post("/token", data=form).status_code == 400
+    # Reuse is refused. FastMCP answers invalid_grant with 401, as the MCP spec asks.
+    again = client.post("/token", data=form)
+    assert again.status_code == 401 and again.json()["error"] == "invalid_grant"
     assert _whoami(client, first.json()["access_token"])["access_token"] == "bc-ann"
 
 

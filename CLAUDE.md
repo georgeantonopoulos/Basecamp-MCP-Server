@@ -15,11 +15,11 @@ Users install the published package: `uvx basecamp-mcp-server login`, then point
 uv build && uvx --from dist/*.whl basecamp-mcp-server --version
 python scripts/smoke_installed.py uvx --from dist/*.whl basecamp-mcp-server
 
-# Setup (one-time) - requires Python 3.10+
+# Setup (one-time) - requires Python 3.11+
 # Option 1: Using uv (recommended - auto-downloads Python 3.12)
 uv venv --python 3.12 venv && source venv/bin/activate && uv pip install -r requirements.txt
 
-# Option 2: Using pip (if Python 3.10+ already installed)
+# Option 2: Using pip (if Python 3.11+ already installed)
 python setup.py                      # Creates venv, installs deps, tests server
 
 # OAuth Authentication
@@ -165,6 +165,10 @@ def new_api_method(self, project_id, resource_id):
 ### Pagination Handling
 
 Basecamp paginates list endpoints (~15 items/page). See `get_todos()` in `basecamp_client.py` for the pattern using `Link` header.
+
+### Skills (MCP skills extension)
+
+Both servers serve the folders in `basecamp_mcp_server/skills/` through fastmcp's `SkillsDirectoryProvider` (`skills_provider()` in `basecamp_fastmcp.py`). Clients see them via `skills/list` and `skill://<name>/SKILL.md`; this needs MCP revision 2026-07-28, which fastmcp 4.2 negotiates. Each skill is a folder with a `SKILL.md` whose frontmatter `name` equals the folder name. `tests/test_skills.py` fails if a skill names a tool, argument or category that isn't registered, so renaming a tool means updating the skills too.
 
 ## Environment Configuration
 

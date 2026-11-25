@@ -44,7 +44,7 @@ def test_webhook_client_validates_https_and_updates_payload():
 
 
 def test_webhook_tools_are_registered_and_return_structured_results():
-    names = set(basecamp_fastmcp.mcp._tool_manager._tools)
+    names = set(basecamp_fastmcp.registered_tools())
     cli_names = {tool["name"] for tool in MCPServer().tools}
     assert {"get_webhook", "update_webhook"} <= names
     assert names == cli_names

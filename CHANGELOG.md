@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **Built-in skills.** The server now ships four skills (`project-status`, `my-work`, `card-board`, `safe-changes`) over MCP's skills extension. Claude Code 2.1.331 or later loads them automatically and lists them in `/skills` as `basecamp:<name>`; other apps ignore them.
+
+### Changed
+
+- **Built on FastMCP 4.2 and MCP revision 2026-07-28**, which skills need. Python 3.11 or later is now required (3.10 is no longer supported).
+- In HTTP sign-in mode, reusing an already-used refresh token is now refused with `401 invalid_grant` instead of `400`, as the MCP spec asks. It is still refused.
+
 ## [1.1.0] - 2026-11-11
 
 ### Added

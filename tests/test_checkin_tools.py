@@ -39,7 +39,7 @@ def test_checkin_client_uses_documented_detail_endpoints():
 
 
 def test_checkin_tools_are_registered_in_both_servers():
-    fastmcp_names = set(basecamp_fastmcp.mcp._tool_manager._tools)
+    fastmcp_names = set(basecamp_fastmcp.registered_tools())
     cli_names = {tool["name"] for tool in MCPServer().tools}
 
     assert {

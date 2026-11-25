@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 import basecamp_fastmcp as bf
 from payload_shaping import FULL_RESPONSES_ENV
 
-TOOLS = bf.mcp._tool_manager._tools
+TOOLS = bf.registered_tools()
 
 
 def _tool_fn(tool):

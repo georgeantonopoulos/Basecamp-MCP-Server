@@ -9,7 +9,7 @@ description = "MCP server that connects Claude, Cursor and other AI assistants t
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [{ name = "George Antonopoulos" }]
 keywords = ["basecamp", "mcp", "model-context-protocol", "claude", "cursor", "ai"]
 classifiers = [
@@ -18,17 +18,16 @@ classifiers = [
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Office/Business :: Groupware",
 ]
-# Keep in step with requirements.txt. mcp 2.0 removed mcp.server.fastmcp, and
-# 1.28.1 is the first 1.x release patched against the known advisories.
+# Keep in step with requirements.txt. fastmcp 4.2 speaks MCP revision 2026-07-28,
+# which clients need to load the bundled skills (basecamp_mcp_server/skills).
 dependencies = [
-    "mcp[cli]>=1.28.1,<2",
+    "fastmcp>=4.2.6,<4.3",
     "requests>=2.31.0",
-    "python-dotenv>=1.0.0",
+    "python-dotenv>=1.1.0",
     "httpx>=0.25.0",
     "anyio>=4.0.0",
 ]

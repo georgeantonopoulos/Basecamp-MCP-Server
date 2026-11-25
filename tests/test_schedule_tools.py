@@ -8,7 +8,7 @@ from mcp_server_cli import MCPServer
 
 
 def test_schedule_tools_are_registered_in_both_servers():
-    fastmcp_tools = basecamp_fastmcp.mcp._tool_manager._tools
+    fastmcp_tools = basecamp_fastmcp.registered_tools()
     cli_tools = {tool["name"] for tool in MCPServer().tools}
 
     assert {"get_schedule", "get_schedule_entries"} <= set(fastmcp_tools)

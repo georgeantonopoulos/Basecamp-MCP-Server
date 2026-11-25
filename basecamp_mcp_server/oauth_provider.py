@@ -446,15 +446,23 @@ class BasecampOAuthProvider:
         return {"access_token": user["access_token"], "account_id": user["account_id"]}
 
 
-def current_access_token() -> AccessToken | None:
-    """The MCP access token of the request being handled, if any."""
-    from mcp.server.lowlevel.server import request_ctx
+def _current_request():
+    from fastmcp.server.dependencies import get_http_request
 
     try:
-        request = request_ctx.get().request
-    except LookupError:
-        request = None
-    user = getattr(request, "scope", {}).get("user") if request is not None else None
+        return get_http_request()
+    except RuntimeError:
+        return None
+
+
+def current_access_token() -> AccessToken | None:
+    """The MCP access token of the request being handled, if any.
+
+    Read straight from the request so the provider's own token type (which carries
+    ``user_key``) comes back, rather than a converted copy.
+    """
+    request = _current_request()
+    user = request.scope.get("user") if request is not None else None
     token = getattr(user, "access_token", None)
     if token is not None:
         return token
@@ -493,13 +501,77 @@ class BasecampCredentialsMiddleware:
 
 
 def _request_scope() -> dict:
-    from mcp.server.lowlevel.server import request_ctx
-
-    try:
-        request = request_ctx.get().request
-    except LookupError:
-        return {}
+    request = _current_request()
     return getattr(request, "scope", None) or {}
+
+
+def _make_fastmcp_auth():
+    from fastmcp.server.auth import OAuthProvider
+    from mcp.server.auth.settings import ClientRegistrationOptions, RevocationOptions
+    from starlette.routing import Route
+
+    class _FastMCPAuth(OAuthProvider):
+        """Serve the Basecamp sign-in through FastMCP's OAuth server routes.
+
+        Every OAuth step is delegated to ``BasecampOAuthProvider``; this class only
+        adds the consent, callback and account-choice pages alongside the standard
+        OAuth endpoints, which FastMCP leaves unauthenticated.
+        """
+
+        def __init__(self, provider: BasecampOAuthProvider, public_url: str):
+            super().__init__(
+                base_url=public_url,
+                client_registration_options=ClientRegistrationOptions(
+                    enabled=True, valid_scopes=[SCOPE], default_scopes=[SCOPE]
+                ),
+                revocation_options=RevocationOptions(enabled=True),
+                required_scopes=[SCOPE],
+            )
+            self.basecamp = provider
+
+        async def get_client(self, client_id):
+            return await self.basecamp.get_client(client_id)
+
+        async def register_client(self, client_info):
+            return await self.basecamp.register_client(client_info)
+
+        async def authorize(self, client, params):
+            return await self.basecamp.authorize(client, params)
+
+        async def load_authorization_code(self, client, authorization_code):
+            return await self.basecamp.load_authorization_code(client, authorization_code)
+
+        async def exchange_authorization_code(self, client, authorization_code):
+            return await self.basecamp.exchange_authorization_code(client, authorization_code)
+
+        async def load_refresh_token(self, client, refresh_token):
+            return await self.basecamp.load_refresh_token(client, refresh_token)
+
+        async def exchange_refresh_token(self, client, refresh_token, scopes):
+            return await self.basecamp.exchange_refresh_token(client, refresh_token, scopes)
+
+        async def load_access_token(self, token):
+            return await self.basecamp.load_access_token(token)
+
+        async def revoke_token(self, token):
+            return await self.basecamp.revoke_token(token)
+
+        def get_routes(self, mcp_path=None):
+            basecamp = self.basecamp
+            callback_path = urlsplit(basecamp.callback_url).path or "/"
+            return [
+                *super().get_routes(mcp_path),
+                Route(callback_path, basecamp.handle_callback, methods=["GET"]),
+                Route(basecamp.consent_path, basecamp.handle_consent, methods=["GET", "POST"]),
+                Route(basecamp.account_path, basecamp.handle_account_choice, methods=["GET"]),
+            ]
+
+    return _FastMCPAuth
+
+
+def FastMCPAuth(provider: BasecampOAuthProvider, public_url: str):  # noqa: N802 - reads as a class
+    """Build the FastMCP auth provider for ``provider`` at ``public_url``."""
+    return _make_fastmcp_auth()(provider, public_url)
 
 
 def credential_resolver(provider: BasecampOAuthProvider):

@@ -24,9 +24,9 @@ def run_command(cmd, cwd=None):
         return False
 
 def check_python_version():
-    """Check if Python version is 3.10+"""
-    if sys.version_info < (3, 10):
-        print("❌ Python 3.10 or higher is required (for MCP SDK compatibility)")
+    """Check if Python version is 3.11+"""
+    if sys.version_info < (3, 11):
+        print("❌ Python 3.11 or higher is required (for FastMCP 4.2)")
         print(f"Current version: {sys.version}")
         print("\n💡 Tip: Use 'uv' to auto-download the correct Python version:")
         print("   uv venv --python 3.12 venv")
@@ -139,7 +139,7 @@ def test_mcp_server():
     venv_python = get_venv_python()
     
     # Test import
-    test_cmd = f'{venv_python} -c "import mcp; print(\\"MCP available\\")"'
+    test_cmd = f'{venv_python} -c "import fastmcp; print(\\"FastMCP available\\")"'
     if not run_command(test_cmd):
         print("❌ MCP package not available")
         return False

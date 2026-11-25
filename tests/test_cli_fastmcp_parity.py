@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import basecamp_fastmcp
+from fastmcp.tools import ToolResult
 from mcp.types import ImageContent, TextContent
 from mcp_server_cli import MCPServer, _tool_result_content
 
@@ -23,7 +24,7 @@ def test_cli_advertises_every_fastmcp_tool():
             assert by_name[tool.name] == {
                 "name": tool.name,
                 "description": tool.description or "",
-                "inputSchema": tool.inputSchema,
+                "inputSchema": tool.parameters,
             }
     # Existing CLI schemas remain stable for clients that already use them.
     projects = by_name["get_projects"]["inputSchema"]
@@ -38,7 +39,7 @@ def test_cli_routes_new_tools_through_fastmcp_validation():
     with patch.object(
         basecamp_fastmcp.mcp,
         "call_tool",
-        new=AsyncMock(return_value=([], {"result": expected})),
+        new=AsyncMock(return_value=ToolResult(structured_content={"result": expected})),
     ) as call_tool:
         result = server._execute_tool(
             "get_message_board",

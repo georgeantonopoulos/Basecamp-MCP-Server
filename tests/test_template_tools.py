@@ -55,7 +55,7 @@ def test_template_update_fetches_name_for_description_only_changes():
 
 
 def test_template_tools_are_registered_in_both_servers():
-    fastmcp_names = set(basecamp_fastmcp.mcp._tool_manager._tools)
+    fastmcp_names = set(basecamp_fastmcp.registered_tools())
     cli_names = {tool["name"] for tool in MCPServer().tools}
     expected = {
         "get_templates", "get_template", "create_template", "update_template",
