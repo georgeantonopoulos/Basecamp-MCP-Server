@@ -17,7 +17,7 @@ On the default (retrieval) server: `discover_basecamp_tools` (e.g. intent "my as
 2. **Assigned work.** `get_my_assignments` returns todos and cards assigned to them, with priorities.
 3. **Overdue.** `get_overdue_todos` with `assignee_id` set to their id.
 4. **Due soon.** `get_due_assignments` with `scope` "due_today", "due_tomorrow" and "due_later_this_week" (other values: "overdue", "due_next_week", "due_later").
-5. **Calendar.** `get_upcoming_schedule` for the next 7 days, to spot clashes with deadlines.
+5. **Calendar.** `get_upcoming_schedule` with `window_starts_on` set to today and `window_ends_on` 7 days later (both YYYY-MM-DD), to spot clashes with deadlines.
 
 ## Write-up
 

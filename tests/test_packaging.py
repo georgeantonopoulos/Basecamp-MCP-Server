@@ -70,6 +70,22 @@ def test_package_ships_every_module_the_servers_import(section):
     assert not missing, f"add to {section} in pyproject.toml: {sorted(missing)}"
 
 
+@pytest.mark.parametrize(
+    "section", ["[tool.hatch.build.targets.wheel]", "[tool.hatch.build.targets.sdist]"]
+)
+def test_package_ships_the_skills(section):
+    """The skills folder sits inside basecamp_mcp_server, so that package must be included whole."""
+    import basecamp_fastmcp
+
+    assert basecamp_fastmcp.SKILLS_DIR.is_relative_to(ROOT / "basecamp_mcp_server")
+    text = (ROOT / "pyproject.toml").read_text()
+    start = text.index(section)
+    end = text.find("\n[", start + 1)
+    block = text[start:end if end != -1 else None]
+    assert '"basecamp_mcp_server"' in block, f"{section} must include basecamp_mcp_server"
+    assert "exclude" not in block, f"check {section}'s exclude doesn't drop the skills"
+
+
 def test_cli_only_imports_shipped_modules():
     tree = ast.parse((ROOT / "basecamp_mcp_server" / "cli.py").read_text())
     imported = {
